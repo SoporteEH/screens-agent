@@ -33,7 +33,7 @@ function startProvisioningMode() {
             backgroundThrottling: true,
             devTools: false
         },
-        title: "Vinculación - ScreensWeb",
+        title: "Vinculacion - ScreensWeb",
         backgroundColor: '#0a0a0a',
         frame: false,
         resizable: false
@@ -58,16 +58,16 @@ function startProvisioningMode() {
         });
 
         socket.on('connect', () => {
-            log.info('[PROVISIONING]: Conexión exitosa. Registrando para vinculación...');
+            log.info('[PROVISIONING]: Conexion exitosa. Registrando para vinculacion...');
             socket.emit('register-for-provisioning', deviceId);
             provisionWindow.webContents.send('provision-status', {
                 type: 'success',
-                message: 'Conectado. Esperando vinculación desde el panel de control...'
+                message: 'Conectado. Esperando vinculacion desde el panel de control...'
             });
         });
 
         socket.on('connect_error', (error) => {
-            log.error(`[PROVISIONING]: Error de conexión a ${pendingServerUrl}: ${error.message}`);
+            log.error(`[PROVISIONING]: Error de conexion a ${pendingServerUrl}: ${error.message}`);
             provisionWindow.webContents.send('provision-status', {
                 type: 'error',
                 message: 'No se pudo conectar al servidor. Verifica la URL e intenta de nuevo.'
@@ -75,7 +75,7 @@ function startProvisioningMode() {
         });
 
         socket.on('provision-success', async () => {
-            log.info('[PROVISIONING]: Vinculación exitosa detectada. Solicitando token...');
+            log.info('[PROVISIONING]: Vinculacion exitosa detectada. Solicitando token...');
 
             try {
                 const response = await fetch(`${pendingServerUrl}/api/auth/agent-token`, {
@@ -96,13 +96,13 @@ function startProvisioningMode() {
                     serverUrl: pendingServerUrl
                 });
 
-                log.info('[PROVISIONING]: Configuración guardada. Reiniciando...');
+                log.info('[PROVISIONING]: Configuracion guardada. Reiniciando...');
 
                 socket.disconnect();
                 app.relaunch();
                 app.exit(0);
             } catch (err) {
-                log.error('[PROVISIONING]: Fallo al finalizar la vinculación:', err.message);
+                log.error('[PROVISIONING]: Fallo al finalizar la vinculacion:', err.message);
                 provisionWindow.webContents.send('provision-status', {
                     type: 'error',
                     message: `Error al finalizar: ${err.message}`
