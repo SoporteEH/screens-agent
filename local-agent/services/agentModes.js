@@ -5,9 +5,6 @@ const { buildDisplayMap, loadLastState } = require('./state');
 const { checkForUpdates } = require('./updater');
 const { initializeMonitors } = require('./monitors');
 
-/**
- * Inicia el agente en Modo Normal.
- */
 const startNormalMode = async (context) => {
     const {
         setDeviceId,
@@ -18,19 +15,19 @@ const startNormalMode = async (context) => {
         CONSTANTS,
         registerDevice,
         sendHeartbeat,
-        managedWindows
+        managedWindows,
     } = context;
 
     const config = loadConfig();
     const deviceId = config.deviceId;
-    let agentToken = config.agentToken;
+    const agentToken = config.agentToken;
 
     setDeviceId(deviceId);
     setAgentToken(agentToken);
 
     log.info(`[NORMAL]: ID de Maquina cargado: ${deviceId}`);
 
-    // Loop de refresco de token
+    // Loop de refresco token
     startTokenRefreshLoop(agentToken, (newToken) => {
         setAgentToken(newToken);
     });
@@ -48,7 +45,9 @@ const startNormalMode = async (context) => {
     initializeMonitors(context);
 
     // Búsqueda de actualizaciones programada
-    const updateDelay = CONSTANTS.UPDATE_CHECK_MIN_DELAY_MS + Math.random() * (CONSTANTS.UPDATE_CHECK_MAX_DELAY_MS - CONSTANTS.UPDATE_CHECK_MIN_DELAY_MS);
+    const updateDelay =
+        CONSTANTS.UPDATE_CHECK_MIN_DELAY_MS +
+        Math.random() * (CONSTANTS.UPDATE_CHECK_MAX_DELAY_MS - CONSTANTS.UPDATE_CHECK_MIN_DELAY_MS);
     setTimeout(checkForUpdates, updateDelay);
 
     // Heartbeat loop
@@ -58,10 +57,14 @@ const startNormalMode = async (context) => {
     setInterval(() => {
         if (managedWindows.size > 0) {
             log.info('[OPTIMIZATION]: Forzando limpieza de caché y storage.');
-            managedWindows.forEach(win => {
+            managedWindows.forEach((win) => {
                 if (win && !win.isDestroyed()) {
-                    win.webContents.session.clearCache().catch(err => log.error('[OPTIMIZATION] Error al limpiar caché:', err));
-                    win.webContents.session.clearStorageData().catch(err => log.error('[OPTIMIZATION] Error al limpiar storage:', err));
+                    win.webContents.session
+                        .clearCache()
+                        .catch((err) => log.error('[OPTIMIZATION] Error al limpiar caché:', err));
+                    win.webContents.session
+                        .clearStorageData()
+                        .catch((err) => log.error('[OPTIMIZATION] Error al limpiar storage:', err));
                 }
             });
         }
@@ -69,13 +72,15 @@ const startNormalMode = async (context) => {
 };
 
 /**
- * Inicia el agente en Modo Vinculación (Provisioning).
+ * Modo Vinculación (Provisioning).
  */
 const startProvisioningMode = (context) => {
     const { startProvisioningHandler } = context;
     log.info('[INIT]: No se encontro configuracion. Iniciando modo vinculacion.');
     return startProvisioningHandler({
-        get socket() { return context.socket; }
+        get socket() {
+            return context.socket;
+        },
     });
 };
 

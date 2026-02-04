@@ -38,10 +38,16 @@ async function bootstrap() {
     try {
         const constants = require('./config/constants');
         const { loadConfig, saveConfig } = require('./utils/configManager');
-        const { configureGpu, configureMemory, registerGpuCrashHandlers } = require('./services/gpu');
+        const {
+            configureGpu,
+            configureMemory,
+            registerGpuCrashHandlers,
+        } = require('./services/gpu');
         const { registerIpcHandlers } = require('./handlers/ipc');
         const { startNormalMode, startProvisioningMode } = require('./services/agentModes');
-        const { startProvisioningMode: startProvisioningHandler } = require('./handlers/provisioning');
+        const {
+            startProvisioningMode: startProvisioningHandler,
+        } = require('./handlers/provisioning');
         const { createTray } = require('./services/tray');
         const commandHandlers = require('./handlers/commands');
         const stateService = require('./services/state');
@@ -51,7 +57,10 @@ async function bootstrap() {
 
         // SINGLE INSTANCE LOCK
         const gotTheLock = app.requestSingleInstanceLock();
-        if (!gotTheLock) { app.quit(); return; }
+        if (!gotTheLock) {
+            app.quit();
+            return;
+        }
 
         // HARDWARE & MEMORY CONFIG
         configureGpu();
@@ -63,7 +72,7 @@ async function bootstrap() {
             app.setLoginItemSettings({
                 openAtLogin: true,
                 path: app.getPath('exe'),
-                args: ['--hidden']
+                args: ['--hidden'],
             });
         }
 
@@ -78,17 +87,31 @@ async function bootstrap() {
 
         // ENRICH CONTEXT WITH ACTIONS
         context.CONSTANTS = constants.CONSTANTS;
-        context.setDeviceId = (id) => { context.deviceId = id; };
-        context.setAgentToken = (token) => { context.agentToken = token; };
+        context.setDeviceId = (id) => {
+            context.deviceId = id;
+        };
+        context.setAgentToken = (token) => {
+            context.agentToken = token;
+        };
         context.startProvisioningHandler = startProvisioningHandler;
-        context.registerDevice = () => deviceService.registerDevice(context.socket, context.deviceId, context.hardwareIdToDisplayMap);
-        context.sendHeartbeat = () => socketService.sendHeartbeat(context.socket, Array.from(context.hardwareIdToDisplayMap.keys()));
-        context.restoreAllContent = () => stateService.restoreAllContentImmediately(
-            context.hardwareIdToDisplayMap,
-            context.managedWindows,
-            commandHandlers.handleShowUrl,
-            commandHandlers.createContentWindow
-        );
+        context.registerDevice = () =>
+            deviceService.registerDevice(
+                context.socket,
+                context.deviceId,
+                context.hardwareIdToDisplayMap
+            );
+        context.sendHeartbeat = () =>
+            socketService.sendHeartbeat(
+                context.socket,
+                Array.from(context.hardwareIdToDisplayMap.keys())
+            );
+        context.restoreAllContent = () =>
+            stateService.restoreAllContentImmediately(
+                context.hardwareIdToDisplayMap,
+                context.managedWindows,
+                commandHandlers.handleShowUrl,
+                commandHandlers.createContentWindow
+            );
 
         // SOCKET CONNECTION WRAPPER
         context.connectSocket = (token) => {
@@ -98,22 +121,31 @@ async function bootstrap() {
                     context.registerDevice();
                     assetsService.syncLocalAssets(context.agentToken);
                 },
-                onDisconnect: () => { context.isOnline = false; },
+                onDisconnect: () => {
+                    context.isOnline = false;
+                },
                 onReconnect: () => {
                     context.isOnline = true;
                     context.registerDevice();
                     assetsService.syncLocalAssets(context.agentToken);
-                    setTimeout(() => stateService.restoreLastState(context.hardwareIdToDisplayMap, commandHandlers.handleShowUrl), 1000);
+                    setTimeout(
+                        () =>
+                            stateService.restoreLastState(
+                                context.hardwareIdToDisplayMap,
+                                commandHandlers.handleShowUrl
+                            ),
+                        1000
+                    );
                 },
                 onCommand: (command) => {
                     log.info('[SOCKET]: Comando recibido:', command);
                     const actions = {
-                        'show_url': commandHandlers.handleShowUrl,
-                        'close_screen': commandHandlers.handleCloseScreen,
-                        'identify_screen': commandHandlers.handleIdentifyScreen,
-                        'refresh_screen': commandHandlers.handleRefreshScreen,
-                        'reboot_device': deviceService.handleRebootDevice,
-                        'force_update': require('./services/updater').handleForceUpdate
+                        show_url: commandHandlers.handleShowUrl,
+                        close_screen: commandHandlers.handleCloseScreen,
+                        identify_screen: commandHandlers.handleIdentifyScreen,
+                        refresh_screen: commandHandlers.handleRefreshScreen,
+                        reboot_device: deviceService.handleRebootDevice,
+                        force_update: require('./services/updater').handleForceUpdate,
                     };
                     if (actions[command.action]) actions[command.action](command);
                 },
@@ -127,7 +159,7 @@ async function bootstrap() {
                     try {
                         const { BrowserWindow } = require('electron');
                         const wins = BrowserWindow.getAllWindows();
-                        wins.forEach(win => {
+                        wins.forEach((win) => {
                             if (win && !win.isDestroyed() && win.webContents) {
                                 // Buscamos la ventana enviando un ping o por URL
                                 const url = win.getURL();
@@ -137,24 +169,32 @@ async function bootstrap() {
                                         serverUrl: constants.getServerUrl(),
                                         version: constants.AGENT_VERSION,
                                         status: 'Online',
-                                        deviceName: device.name
+                                        deviceName: device.name,
                                     });
                                 }
                             }
                         });
-                    } catch (e) { log.debug('Error refreshing control window:', e); }
+                    } catch (e) {
+                        log.debug('Error refreshing control window:', e);
+                    }
                 },
                 onForceReprovision: () => {
                     log.warn('[SOCKET]: Force-reprovision received.');
                     // ... same logic as before to clean config and relaunch
-                    context.managedWindows.forEach(win => { if (win && !win.isDestroyed()) win.close(); });
+                    context.managedWindows.forEach((win) => {
+                        if (win && !win.isDestroyed()) win.close();
+                    });
                     try {
-                        if (fs.existsSync(constants.CONFIG_FILE_PATH)) fs.unlinkSync(constants.CONFIG_FILE_PATH);
-                        if (fs.existsSync(constants.STATE_FILE_PATH)) fs.unlinkSync(constants.STATE_FILE_PATH);
-                    } catch (e) { log.error('Error unlinking config:', e); }
+                        if (fs.existsSync(constants.CONFIG_FILE_PATH))
+                            fs.unlinkSync(constants.CONFIG_FILE_PATH);
+                        if (fs.existsSync(constants.STATE_FILE_PATH))
+                            fs.unlinkSync(constants.STATE_FILE_PATH);
+                    } catch (e) {
+                        log.error('Error unlinking config:', e);
+                    }
                     app.relaunch();
                     app.exit(0);
-                }
+                },
             });
         };
 
@@ -196,7 +236,6 @@ async function bootstrap() {
                 app.quit();
             }
         });
-
     } catch (error) {
         log.error('FATAL BOOTSTRAP ERROR:', error);
         showErrorWindow(error);
@@ -205,12 +244,21 @@ async function bootstrap() {
 
 function showErrorWindow(error) {
     if (!app.isReady()) {
-        app.whenReady().then(() => showErrorWindow(error)).catch(() => { });
+        app.whenReady()
+            .then(() => showErrorWindow(error))
+            .catch(() => {});
         return;
     }
-    const errWin = new BrowserWindow({ width: 500, height: 400, title: "ScreensWeb Agent Update-Mode", frame: true, backgroundColor: '#1a1a1a' });
+    const errWin = new BrowserWindow({
+        width: 500,
+        height: 400,
+        title: 'ScreensWeb Agent Update-Mode',
+        frame: true,
+        backgroundColor: '#1a1a1a',
+    });
     errWin.setMenu(null);
-    errWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`
+    errWin.loadURL(
+        `data:text/html;charset=utf-8,${encodeURIComponent(`
         <body style="background:#1a1a1a;color:#ff6600;font-family:sans-serif;padding:30px;text-align:center">
             <h2 style="margin-bottom:10px">Modo reparación</h2>
             <p style="color:#ccc;margin-bottom:20px">El agente ha encontrado un error y se está intentando corregir descargando una nueva versión.</p>
@@ -219,7 +267,8 @@ function showErrorWindow(error) {
             </div>
             <p style="margin-top:20px;color:#666;font-size:12px">Buscando actualizaciones en segundo plano... No cierre esta ventana.</p>
         </body>
-    `)}`);
+    `)}`
+    );
 }
 
 // GLOBAL ERROR HANDLERS

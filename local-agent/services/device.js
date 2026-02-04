@@ -25,20 +25,22 @@ function registerDevice(socket, deviceId, hardwareIdToDisplayMap) {
     if (!socket || !socket.connected) return;
 
     const lastState = loadLastState();
-    const screenInfo = Array.from(hardwareIdToDisplayMap.entries()).map(([hardwareId, display]) => ({
-        id: hardwareId,
-        size: {
-            width: Math.round(display.size.width * display.scaleFactor),
-            height: Math.round(display.size.height * display.scaleFactor)
-        },
-        currentUrl: lastState[hardwareId]?.url || ''
-    }));
+    const screenInfo = Array.from(hardwareIdToDisplayMap.entries()).map(
+        ([hardwareId, display]) => ({
+            id: hardwareId,
+            size: {
+                width: Math.round(display.size.width * display.scaleFactor),
+                height: Math.round(display.size.height * display.scaleFactor),
+            },
+            currentUrl: lastState[hardwareId]?.url || '',
+        })
+    );
 
     log.info('[DEVICE]: Registrando dispositivo con screens:', screenInfo);
     socket.emit('registerDevice', {
         deviceId,
         screens: screenInfo,
-        agentVersion: app.getVersion()
+        agentVersion: app.getVersion(),
     });
 }
 
@@ -65,5 +67,5 @@ function handleRebootDevice() {
 module.exports = {
     getMachineId,
     registerDevice,
-    handleRebootDevice
+    handleRebootDevice,
 };

@@ -28,5 +28,5 @@ module.exports = {
     setDeviceName,
     getDeviceName,
     setDeviceId,
-    getDeviceId
+    getDeviceId,
 };

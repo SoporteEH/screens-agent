@@ -46,11 +46,11 @@ async function checkForUpdates() {
 
         // Notificar a la ventana de control
         const { BrowserWindow } = require('electron');
-        BrowserWindow.getAllWindows().forEach(win => {
+        BrowserWindow.getAllWindows().forEach((win) => {
             if (win && !win.isDestroyed()) {
                 win.webContents.send('update-status', {
                     type: 'downloading',
-                    message: `Descargando versión ${info.version}...`
+                    message: `Descargando versión ${info.version}...`,
                 });
             }
         });
@@ -62,11 +62,11 @@ async function checkForUpdates() {
 
         // Notificar a la ventana de control
         const { BrowserWindow } = require('electron');
-        BrowserWindow.getAllWindows().forEach(win => {
+        BrowserWindow.getAllWindows().forEach((win) => {
             if (win && !win.isDestroyed()) {
                 win.webContents.send('update-status', {
                     type: 'up-to-date',
-                    message: 'Agente en la última versión'
+                    message: 'Agente en la última versión',
                 });
             }
         });
@@ -78,11 +78,11 @@ async function checkForUpdates() {
 
         // Notificar error a la ventana de control
         const { BrowserWindow } = require('electron');
-        BrowserWindow.getAllWindows().forEach(win => {
+        BrowserWindow.getAllWindows().forEach((win) => {
             if (win && !win.isDestroyed()) {
                 win.webContents.send('update-status', {
                     status: 'error',
-                    message: 'Error al buscar actualización'
+                    message: 'Error al buscar actualización',
                 });
             }
         });
@@ -106,11 +106,11 @@ async function checkForUpdates() {
 
         // Notificar a la ventana de control
         const { BrowserWindow } = require('electron');
-        BrowserWindow.getAllWindows().forEach(win => {
+        BrowserWindow.getAllWindows().forEach((win) => {
             if (win && !win.isDestroyed()) {
                 win.webContents.send('update-status', {
                     type: 'downloaded',
-                    message: 'Actualización descargada. Reiniciando...'
+                    message: 'Actualización descargada. Reiniciando...',
                 });
             }
         });
@@ -126,19 +126,22 @@ async function checkForUpdates() {
     autoUpdater.allowDowngrade = true;
 
     // Iniciar la búsqueda de actualizaciones
-    autoUpdater.checkForUpdates().catch(error => {
+    autoUpdater.checkForUpdates().catch((error) => {
         log.error('[UPDATER]: Error al buscar actualizaciones:', error);
         isCheckingForUpdate = false;
     });
 
     // REINTENTO PERIODICO
     // Si la app está rota, intentará cada 10 min.
-    setInterval(() => {
-        if (!isCheckingForUpdate) {
-            log.info('[UPDATER]: Re-intento periodico de busqueda de actualizacion...');
-            autoUpdater.checkForUpdates().catch(() => { });
-        }
-    }, 10 * 60 * 1000);
+    setInterval(
+        () => {
+            if (!isCheckingForUpdate) {
+                log.info('[UPDATER]: Re-intento periodico de busqueda de actualizacion...');
+                autoUpdater.checkForUpdates().catch(() => {});
+            }
+        },
+        10 * 60 * 1000
+    );
 }
 
 /**
@@ -161,7 +164,9 @@ function setUpdating(value) {
  */
 async function handleForceUpdate() {
     if (isCheckingForUpdate) {
-        log.info('[COMMAND-UPDATE]: Ignorando comando "force_update": ya hay una busqueda de actualizacion en curso.');
+        log.info(
+            '[COMMAND-UPDATE]: Ignorando comando "force_update": ya hay una busqueda de actualizacion en curso.'
+        );
         return;
     }
     log.info('[COMMAND-UPDATE]: Received force_update command. Checking for updates now...');
@@ -170,10 +175,15 @@ async function handleForceUpdate() {
 
     await checkForUpdates();
 
-    setTimeout(() => {
-        log.info('[COMMAND-UPDATE]: Cooldown de actualizacion finalizado. Se permiten nuevas busquedas.');
-        isCheckingForUpdate = false;
-    }, 3 * 60 * 1000);
+    setTimeout(
+        () => {
+            log.info(
+                '[COMMAND-UPDATE]: Cooldown de actualizacion finalizado. Se permiten nuevas busquedas.'
+            );
+            isCheckingForUpdate = false;
+        },
+        3 * 60 * 1000
+    );
 }
 
 module.exports = {

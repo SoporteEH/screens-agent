@@ -31,12 +31,12 @@ function startProvisioningMode() {
             nodeIntegration: false,
             spellcheck: false,
             backgroundThrottling: true,
-            devTools: false
+            devTools: false,
         },
-        title: "Vinculacion - ScreensWeb",
+        title: 'Vinculacion - ScreensWeb',
         backgroundColor: '#0a0a0a',
         frame: false,
-        resizable: false
+        resizable: false,
     });
 
     provisionWindow.setMenu(null);
@@ -54,7 +54,7 @@ function startProvisioningMode() {
         socket = io(pendingServerUrl, {
             reconnection: true,
             reconnectionAttempts: 3,
-            timeout: 10000
+            timeout: 10000,
         });
 
         socket.on('connect', () => {
@@ -62,7 +62,7 @@ function startProvisioningMode() {
             socket.emit('register-for-provisioning', deviceId);
             provisionWindow.webContents.send('provision-status', {
                 type: 'success',
-                message: 'Conectado. Esperando vinculacion desde el panel de control...'
+                message: 'Conectado. Esperando vinculacion desde el panel de control...',
             });
         });
 
@@ -70,7 +70,7 @@ function startProvisioningMode() {
             log.error(`[PROVISIONING]: Error de conexion a ${pendingServerUrl}: ${error.message}`);
             provisionWindow.webContents.send('provision-status', {
                 type: 'error',
-                message: 'No se pudo conectar al servidor. Verifica la URL e intenta de nuevo.'
+                message: 'No se pudo conectar al servidor. Verifica la URL e intenta de nuevo.',
             });
         });
 
@@ -81,7 +81,7 @@ function startProvisioningMode() {
                 const response = await fetch(`${pendingServerUrl}/api/auth/agent-token`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ deviceId })
+                    body: JSON.stringify({ deviceId }),
                 });
 
                 if (!response.ok) throw new Error('Error al obtener el token del servidor');
@@ -93,7 +93,7 @@ function startProvisioningMode() {
                     deviceId,
                     provisioned: true,
                     agentToken: token,
-                    serverUrl: pendingServerUrl
+                    serverUrl: pendingServerUrl,
                 });
 
                 log.info('[PROVISIONING]: Configuracion guardada. Reiniciando...');
@@ -105,7 +105,7 @@ function startProvisioningMode() {
                 log.error('[PROVISIONING]: Fallo al finalizar la vinculacion:', err.message);
                 provisionWindow.webContents.send('provision-status', {
                     type: 'error',
-                    message: `Error al finalizar: ${err.message}`
+                    message: `Error al finalizar: ${err.message}`,
                 });
             }
         });
@@ -128,5 +128,5 @@ function startProvisioningMode() {
 }
 
 module.exports = {
-    startProvisioningMode
+    startProvisioningMode,
 };

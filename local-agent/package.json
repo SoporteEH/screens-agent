@@ -7,7 +7,11 @@
   "scripts": {
     "start": "electron . --js-flags=\"--expose-gc\"",
     "build": "electron-builder",
-    "build:prod": "node scripts/inject-config.js && electron-builder"
+    "build:prod": "node scripts/inject-config.js && electron-builder",
+    "format": "prettier --write \"**/*.js\"",
+    "format:check": "prettier --check \"**/*.js\"",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
   "keywords": [],
   "author": "SoporteEH",
@@ -24,7 +28,11 @@
   },
   "devDependencies": {
     "electron": "^38.2.1",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "prettier": "^3.8.1"
   },
   "build": {
     "appId": "com.screens.web.agent",

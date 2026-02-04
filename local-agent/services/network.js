@@ -19,12 +19,10 @@ function startNetworkMonitoring(handlers) {
             networkWasOffline = true;
             log.info('[NETWORK]: Detectada perdida de conexion a internet.');
             if (handlers.onOffline) handlers.onOffline();
-
         } else if (isOnline && networkWasOffline) {
             log.info('[NETWORK]: Conexion a internet restaurada!');
             networkWasOffline = false;
             if (handlers.onOnline) handlers.onOnline();
-
         } else if (isOnline) {
             if (handlers.onCheckOnline) handlers.onCheckOnline();
         }
@@ -34,5 +32,5 @@ function startNetworkMonitoring(handlers) {
 }
 
 module.exports = {
-    startNetworkMonitoring
+    startNetworkMonitoring,
 };

@@ -1,6 +1,6 @@
 /**
  * Script pre-build inyecta SERVER_URL en package.json
- * 
+ *
  * Lee SERVER_URL del entorno y lo inyecta en package.json
  * antes del build de electron-builder.
  */

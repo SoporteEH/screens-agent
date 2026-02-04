@@ -1,4 +1,4 @@
-const { screen, net } = require('electron');
+const { screen } = require('electron');
 const { log } = require('../utils/logConfig');
 const { startNetworkMonitoring: startNetworkService } = require('./network');
 const { buildDisplayMap, loadLastState } = require('./state');
@@ -11,9 +11,18 @@ let screenChangeTimeout;
 const initializeMonitors = (context) => {
     // Escuchar cambios de pantalla
     const onScreenChange = (reason) => {
-        const { hardwareIdToDisplayMap, managedWindows, handleShowUrl, socket, registerDevice, CONSTANTS } = context;
+        const {
+            hardwareIdToDisplayMap,
+            managedWindows,
+            handleShowUrl,
+            socket,
+            registerDevice,
+            CONSTANTS,
+        } = context;
         if (screenChangeTimeout) clearTimeout(screenChangeTimeout);
-        log.info(`[DISPLAY]: Detectado cambio de pantalla (${reason}). Esperando estabilización...`);
+        log.info(
+            `[DISPLAY]: Detectado cambio de pantalla (${reason}). Esperando estabilización...`
+        );
 
         screenChangeTimeout = setTimeout(async () => {
             log.info('[DISPLAY]: Entorno estabilizado. Actualizando mapa de pantallas.');
@@ -23,11 +32,15 @@ const initializeMonitors = (context) => {
             const currentScreenIds = Array.from(hardwareIdToDisplayMap.keys());
 
             if (reason === 'removed') {
-                const orphanedIds = previousScreenIds.filter(id => !currentScreenIds.includes(id));
+                const orphanedIds = previousScreenIds.filter(
+                    (id) => !currentScreenIds.includes(id)
+                );
                 for (const orphanedId of orphanedIds) {
                     const win = managedWindows.get(orphanedId);
                     if (win && !win.isDestroyed()) {
-                        log.info(`[DISPLAY]: Cerrando ventana huerfana para pantalla ${orphanedId}`);
+                        log.info(
+                            `[DISPLAY]: Cerrando ventana huerfana para pantalla ${orphanedId}`
+                        );
                         win.close();
                     }
                     managedWindows.delete(orphanedId);
@@ -35,20 +48,24 @@ const initializeMonitors = (context) => {
             }
 
             if (reason === 'added') {
-                const newScreenIds = currentScreenIds.filter(id => !previousScreenIds.includes(id));
+                const newScreenIds = currentScreenIds.filter(
+                    (id) => !previousScreenIds.includes(id)
+                );
                 if (newScreenIds.length > 0) {
                     log.info(`[DISPLAY]: Nuevas pantallas detectadas: ${newScreenIds.join(', ')}`);
                     const lastState = loadLastState();
                     for (const newId of newScreenIds) {
                         if (lastState[newId]) {
                             const screenData = lastState[newId];
-                            log.info(`[DISPLAY]: Restaurando contenido en pantalla ${newId}: ${screenData.url}`);
+                            log.info(
+                                `[DISPLAY]: Restaurando contenido en pantalla ${newId}: ${screenData.url}`
+                            );
                             setTimeout(() => {
                                 handleShowUrl({
                                     action: 'show_url',
                                     screenIndex: newId,
                                     url: screenData.url,
-                                    credentials: screenData.credentials || null
+                                    credentials: screenData.credentials || null,
                                 });
                             }, 500);
                         }
@@ -75,7 +92,7 @@ const initializeMonitors = (context) => {
                 log.info('[NETWORK]: Red online pero socket desconectado. Forzando reconexion...');
                 context.socket.connect();
             }
-        }
+        },
     });
 };
 

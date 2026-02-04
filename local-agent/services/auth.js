@@ -3,7 +3,6 @@
  * Gestiona refresco de token JWT
  */
 
-
 const { jwtDecode } = require('jwt-decode');
 const { log } = require('../utils/logConfig');
 const { AGENT_REFRESH_URL } = require('../config/constants');
@@ -16,9 +15,9 @@ async function refreshAgentToken(currentAgentToken) {
         const response = await fetch(AGENT_REFRESH_URL, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${currentAgentToken}`,
-                'Content-Type': 'application/json'
-            }
+                Authorization: `Bearer ${currentAgentToken}`,
+                'Content-Type': 'application/json',
+            },
         });
 
         if (!response.ok) {
@@ -33,7 +32,6 @@ async function refreshAgentToken(currentAgentToken) {
 
         log.info('[AGENT-AUTH]: Token refrescado y guardado con exito.');
         return data.token;
-
     } catch (error) {
         log.error('[AGENT-AUTH]: Fallo al refrescar el token:', error.message);
         return currentAgentToken; // Devuelve el token viejo si falla
@@ -49,32 +47,36 @@ async function refreshAgentToken(currentAgentToken) {
 function startTokenRefreshLoop(agentToken, onTokenRefreshed) {
     log.info('[AGENT-AUTH]: Iniciando bucle de verificacion de token (cada 4 horas).');
 
-    const interval = setInterval(async () => {
-        try {
-            if (!agentToken) return;
+    const interval = setInterval(
+        async () => {
+            try {
+                if (!agentToken) return;
 
-            const decoded = jwtDecode(agentToken);
-            const expTimeMs = decoded.exp * 1000;
-            const nowMs = Date.now();
-            const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+                const decoded = jwtDecode(agentToken);
+                const expTimeMs = decoded.exp * 1000;
+                const nowMs = Date.now();
+                const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
-
-            if ((expTimeMs - nowMs) < THIRTY_DAYS_MS) {
-                log.info('[AGENT-AUTH]: El token esta a punto de expirar, iniciando refresco...');
-                const newToken = await refreshAgentToken(agentToken);
-                if (newToken !== agentToken && onTokenRefreshed) {
-                    onTokenRefreshed(newToken);
+                if (expTimeMs - nowMs < THIRTY_DAYS_MS) {
+                    log.info(
+                        '[AGENT-AUTH]: El token esta a punto de expirar, iniciando refresco...'
+                    );
+                    const newToken = await refreshAgentToken(agentToken);
+                    if (newToken !== agentToken && onTokenRefreshed) {
+                        onTokenRefreshed(newToken);
+                    }
                 }
+            } catch (e) {
+                log.error('[AGENT-AUTH]: Error en el bucle de verificacion de token:', e);
             }
-        } catch (e) {
-            log.error('[AGENT-AUTH]: Error en el bucle de verificacion de token:', e);
-        }
-    }, 4 * 60 * 60 * 1000); // 4 horas
+        },
+        4 * 60 * 60 * 1000
+    ); // 4 horas
 
     return interval;
 }
 
 module.exports = {
     refreshAgentToken,
-    startTokenRefreshLoop
+    startTokenRefreshLoop,
 };

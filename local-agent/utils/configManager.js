@@ -5,11 +5,10 @@
 const Store = require('electron-store');
 const { log } = require('./logConfig');
 
-
 const store = new Store({
     name: 'config',
     encryptionKey: 'screensweb-agent-secure-key',
-    clearInvalidConfig: true
+    clearInvalidConfig: true,
 });
 
 // Carga configuración del agente

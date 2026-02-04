@@ -1,6 +1,6 @@
 /**
  * Script post-build para limpiar SERVER_URL de package.json
- * 
+ *
  * Uso: node scripts/clean-config.js
  */
 

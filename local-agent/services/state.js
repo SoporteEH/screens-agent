@@ -21,7 +21,10 @@ async function buildDisplayMap(hardwareIdToDisplayMap) {
         hardwareIdToDisplayMap.set(simpleId, display);
     });
 
-    log.info('[DISPLAY_MAP]: Mapa de pantallas actualizado:', Array.from(hardwareIdToDisplayMap.keys()));
+    log.info(
+        '[DISPLAY_MAP]: Mapa de pantallas actualizado:',
+        Array.from(hardwareIdToDisplayMap.keys())
+    );
 }
 
 // Carga último estado desde archivo JSON
@@ -35,7 +38,7 @@ function loadLastState() {
                     migratedState[key] = {
                         url: value,
                         credentials: null,
-                        timestamp: new Date().toISOString()
+                        timestamp: new Date().toISOString(),
                     };
                 } else {
                     migratedState[key] = value;
@@ -84,12 +87,16 @@ function cleanOrphanedState(hardwareIdToDisplayMap) {
 function setupAutoRefresh(screenIndex, intervalMinutes, managedWindows, autoRefreshTimers) {
     const intervalMs = intervalMinutes * 60 * 1000;
 
-    log.info(`[AUTO-REFRESH]: Configurando auto-refresh cada ${intervalMinutes} minutos para pantalla ${screenIndex}`);
+    log.info(
+        `[AUTO-REFRESH]: Configurando auto-refresh cada ${intervalMinutes} minutos para pantalla ${screenIndex}`
+    );
 
     const timerId = setInterval(() => {
         const win = managedWindows.get(screenIndex);
         if (win && !win.isDestroyed()) {
-            log.info(`[AUTO-REFRESH]: Recargando pantalla ${screenIndex} (programado cada ${intervalMinutes}min)`);
+            log.info(
+                `[AUTO-REFRESH]: Recargando pantalla ${screenIndex} (programado cada ${intervalMinutes}min)`
+            );
             win.webContents.reload();
         } else {
             log.info(`[AUTO-REFRESH]: Ventana ${screenIndex} no existe, limpiando timer`);
@@ -104,8 +111,15 @@ function setupAutoRefresh(screenIndex, intervalMinutes, managedWindows, autoRefr
 /**
  * Guarda el estado actual de una pantalla.
  */
-function saveCurrentState(screenIndex, url, credentials, refreshInterval, autoRefreshTimers, managedWindows) {
-    let state = loadLastState();
+function saveCurrentState(
+    screenIndex,
+    url,
+    credentials,
+    refreshInterval,
+    autoRefreshTimers,
+    managedWindows
+) {
+    const state = loadLastState();
 
     if (autoRefreshTimers.has(screenIndex)) {
         clearInterval(autoRefreshTimers.get(screenIndex));
@@ -118,7 +132,7 @@ function saveCurrentState(screenIndex, url, credentials, refreshInterval, autoRe
             url: url,
             credentials: credentials || null,
             refreshInterval: refreshInterval || 0,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
         };
 
         if (refreshInterval > 0) {
@@ -130,7 +144,9 @@ function saveCurrentState(screenIndex, url, credentials, refreshInterval, autoRe
 
     try {
         fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2));
-        log.info(`[STATE]: Estado guardado para pantalla ${screenIndex}: ${url || '(vacío)'}${refreshInterval ? ` (auto-refresh: ${refreshInterval}min)` : ''}`);
+        log.info(
+            `[STATE]: Estado guardado para pantalla ${screenIndex}: ${url || '(vacío)'}${refreshInterval ? ` (auto-refresh: ${refreshInterval}min)` : ''}`
+        );
     } catch (error) {
         log.error('[STATE]: Error al guardar estado:', error);
     }
@@ -156,13 +172,15 @@ function restoreLastState(hardwareIdToDisplayMap, handleShowUrlCallback) {
     let restoredCount = 0;
     for (const [stableId, screenData] of Object.entries(lastState)) {
         if (hardwareIdToDisplayMap.has(stableId)) {
-            log.info(`[STATE]: Restaurando pantalla ${stableId} con URL: ${screenData.url}${screenData.refreshInterval ? ` (auto-refresh: ${screenData.refreshInterval}min)` : ''}`);
+            log.info(
+                `[STATE]: Restaurando pantalla ${stableId} con URL: ${screenData.url}${screenData.refreshInterval ? ` (auto-refresh: ${screenData.refreshInterval}min)` : ''}`
+            );
             const command = {
                 action: 'show_url',
                 screenIndex: stableId,
                 url: screenData.url,
                 credentials: screenData.credentials || null,
-                refreshInterval: screenData.refreshInterval || 0
+                refreshInterval: screenData.refreshInterval || 0,
             };
 
             setTimeout(() => {
@@ -180,7 +198,12 @@ function restoreLastState(hardwareIdToDisplayMap, handleShowUrlCallback) {
  * Se ejecuta al inicio para garantizar que las pantallas muestren contenido
  * aunque el servidor no esté disponible.
  */
-function restoreAllContentImmediately(hardwareIdToDisplayMap, managedWindows, handleShowUrl, createContentWindow) {
+function restoreAllContentImmediately(
+    hardwareIdToDisplayMap,
+    managedWindows,
+    handleShowUrl,
+    createContentWindow
+) {
     const lastState = loadLastState();
     if (Object.keys(lastState).length === 0) {
         log.info('[STARTUP]: No hay estado previo para restaurar.');
@@ -200,7 +223,9 @@ function restoreAllContentImmediately(hardwareIdToDisplayMap, managedWindows, ha
 
             if (!hasInternet && !isLocalContent) {
                 // Sin internet y contenido remoto: crear ventana directamente con fallback
-                log.info(`[STARTUP]: Sin internet - creando ventana fallback en pantalla ${stableId}`);
+                log.info(
+                    `[STARTUP]: Sin internet - creando ventana fallback en pantalla ${stableId}`
+                );
 
                 setTimeout(() => {
                     const existingWin = managedWindows.get(stableId);
@@ -213,7 +238,7 @@ function restoreAllContentImmediately(hardwareIdToDisplayMap, managedWindows, ha
                         screenIndex: stableId,
                         url: screenData.url,
                         credentials: screenData.credentials || null,
-                        refreshInterval: screenData.refreshInterval || 0
+                        refreshInterval: screenData.refreshInterval || 0,
                     };
 
                     createContentWindow(targetDisplay, fallbackPath, command);
@@ -227,7 +252,7 @@ function restoreAllContentImmediately(hardwareIdToDisplayMap, managedWindows, ha
                         screenIndex: stableId,
                         url: screenData.url,
                         credentials: screenData.credentials || null,
-                        refreshInterval: screenData.refreshInterval || 0
+                        refreshInterval: screenData.refreshInterval || 0,
                     });
                 }, 500 * restoredCount);
             }
@@ -244,5 +269,5 @@ module.exports = {
     setupAutoRefresh,
     saveCurrentState,
     restoreLastState,
-    restoreAllContentImmediately
+    restoreAllContentImmediately,
 };

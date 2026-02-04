@@ -16,7 +16,6 @@ function createTray(serverUrl, version) {
     if (tray) return tray;
 
     try {
-
         const iconPath = path.join(__dirname, '..', 'icons', 'icon.png');
         tray = new Tray(iconPath);
 
@@ -26,7 +25,7 @@ function createTray(serverUrl, version) {
             { type: 'separator' },
             {
                 label: 'Abrir Panel de Control',
-                click: () => openControlWindow(serverUrl, version)
+                click: () => openControlWindow(serverUrl, version),
             },
             { type: 'separator' },
             {
@@ -35,14 +34,14 @@ function createTray(serverUrl, version) {
                     log.info('[TRAY]: Reiniciando agente...');
                     app.relaunch();
                     app.exit(0);
-                }
+                },
             },
             {
                 label: 'Buscar Actualización',
                 click: () => {
                     const { handleForceUpdate } = require('./updater');
                     handleForceUpdate();
-                }
+                },
             },
             { type: 'separator' },
             {
@@ -51,13 +50,12 @@ function createTray(serverUrl, version) {
                     log.info('[TRAY]: Saliendo de la aplicacion...');
                     app.isQuitting = true;
                     app.quit();
-                }
-            }
+                },
+            },
         ]);
 
         tray.setToolTip('ScreensWeb Agent');
         tray.setContextMenu(contextMenu);
-
 
         tray.on('double-click', () => {
             openControlWindow(serverUrl, version);
@@ -91,19 +89,18 @@ function openControlWindow(serverUrl, version) {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            preload: path.join(__dirname, '..', 'preload.js')
-        }
+            preload: path.join(__dirname, '..', 'preload.js'),
+        },
     });
 
     controlWindow.loadFile(path.join(__dirname, '..', 'control.html'));
-
 
     controlWindow.webContents.on('did-finish-load', () => {
         controlWindow.webContents.send('agent-info', {
             serverUrl: serverUrl || 'Desconocido',
             version: version || '1.0.0',
             status: 'Online',
-            deviceName: deviceName
+            deviceName: deviceName,
         });
     });
 
@@ -111,9 +108,7 @@ function openControlWindow(serverUrl, version) {
         controlWindow = null;
     });
 
-
     controlWindow.setMenuBarVisibility(false);
-
 
     const { ipcMain } = require('electron');
     ipcMain.removeAllListeners('window-control');
@@ -130,5 +125,5 @@ function openControlWindow(serverUrl, version) {
 
 module.exports = {
     createTray,
-    openControlWindow
+    openControlWindow,
 };

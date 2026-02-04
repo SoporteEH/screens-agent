@@ -36,17 +36,21 @@ function sendCommandFeedback(command, status, message) {
 // Programa reintento con backoff exponencial
 function scheduleRetry(command) {
     const { screenIndex } = command;
-    let attempt = (context.retryManager.get(screenIndex)?.attempt || 0) + 1;
+    const attempt = (context.retryManager.get(screenIndex)?.attempt || 0) + 1;
     const MAX_ATTEMPTS = 5;
 
     if (attempt > MAX_ATTEMPTS) {
-        log.info(`[RETRY]: Se alcanzo el maximo de ${MAX_ATTEMPTS} reintentos para la pantalla ${screenIndex}. Abortando.`);
+        log.info(
+            `[RETRY]: Se alcanzo el maximo de ${MAX_ATTEMPTS} reintentos para la pantalla ${screenIndex}. Abortando.`
+        );
         context.retryManager.delete(screenIndex);
         return;
     }
 
     const delayMs = Math.pow(2, attempt - 1) * 30 * 1000;
-    log.info(`[RETRY]: Programando reintento #${attempt} para la pantalla ${screenIndex} en ${delayMs / 1000} segundos.`);
+    log.info(
+        `[RETRY]: Programando reintento #${attempt} para la pantalla ${screenIndex} en ${delayMs / 1000} segundos.`
+    );
 
     const timerId = setTimeout(() => {
         log.info(`[RETRY]: Ejecutando reintento #${attempt} para la pantalla ${screenIndex}...`);
@@ -63,11 +67,15 @@ function createContentWindow(display, urlToLoad, command) {
     const { screenIndex, url: originalUrl, contentName } = command;
     const fallbackPath = `file://${path.join(__dirname, '../fallback.html')}`;
 
-    log.info(`[COMMAND]: Creando ventana en pantalla ${screenIndex} (${display.bounds.width}x${display.bounds.height})`);
+    log.info(
+        `[COMMAND]: Creando ventana en pantalla ${screenIndex} (${display.bounds.width}x${display.bounds.height})`
+    );
 
     const win = new BrowserWindow({
-        x: display.bounds.x, y: display.bounds.y,
-        width: display.bounds.width, height: display.bounds.height,
+        x: display.bounds.x,
+        y: display.bounds.y,
+        width: display.bounds.width,
+        height: display.bounds.height,
         fullscreen: true,
         kiosk: true,
         frame: false,
@@ -85,7 +93,7 @@ function createContentWindow(display, urlToLoad, command) {
             spellcheck: false,
             enableWebSQL: false,
             navigateOnDragDrop: false,
-        }
+        },
     });
 
     win.webContents.setZoomFactor(1);
@@ -99,13 +107,19 @@ function createContentWindow(display, urlToLoad, command) {
     }, 2000);
 
     win.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
-        log.error(`[RESILIENCE]: Fallo al cargar URL '${validatedURL}'. Razón: ${errorDescription}`);
+        log.error(
+            `[RESILIENCE]: Fallo al cargar URL '${validatedURL}'. Razón: ${errorDescription}`
+        );
 
         if (validatedURL === fallbackPath) return;
 
         if (command.commandId) {
             const displayName = contentName ? `'${contentName}'` : `la URL '${originalUrl}'`;
-            sendCommandFeedback(command, 'error', `Fallo al cargar ${displayName}. Razón: ${errorDescription}`);
+            sendCommandFeedback(
+                command,
+                'error',
+                `Fallo al cargar ${displayName}. Razón: ${errorDescription}`
+            );
         }
 
         const isNetworkError = errorCode <= -100 && errorCode >= -199;
@@ -123,8 +137,8 @@ function createContentWindow(display, urlToLoad, command) {
             context.retryManager.delete(screenIndex);
         }
         if (windowSession) {
-            windowSession.clearCache().catch(() => { });
-            windowSession.clearStorageData().catch(() => { });
+            windowSession.clearCache().catch(() => {});
+            windowSession.clearStorageData().catch(() => {});
         }
     });
 
@@ -146,12 +160,23 @@ function handleShowUrl(command, currentAttempt = 0) {
 
     const targetDisplay = context.hardwareIdToDisplayMap.get(screenIndex);
     if (!targetDisplay) {
-        sendCommandFeedback(command, 'error', `Pantalla con ID de hardware '${screenIndex}' no encontrada.`);
+        sendCommandFeedback(
+            command,
+            'error',
+            `Pantalla con ID de hardware '${screenIndex}' no encontrada.`
+        );
         return;
     }
 
     if (context.saveCurrentState) {
-        context.saveCurrentState(screenIndex, url, credentials, refreshInterval || 0, context.autoRefreshTimers, context.managedWindows);
+        context.saveCurrentState(
+            screenIndex,
+            url,
+            credentials,
+            refreshInterval || 0,
+            context.autoRefreshTimers,
+            context.managedWindows
+        );
     }
 
     const { net } = require('electron');
@@ -189,7 +214,10 @@ function handleShowUrl(command, currentAttempt = 0) {
         // Logic for Sportradar
         if (url.startsWith('https://lcr.sportradar.com') && !!credentials) {
             win.webContents.on('did-finish-load', () => {
-                if (!win.isDestroyed() && win.webContents.getURL().startsWith('https://lcr.sportradar.com')) {
+                if (
+                    !win.isDestroyed() &&
+                    win.webContents.getURL().startsWith('https://lcr.sportradar.com')
+                ) {
                     const script = `
                         (() => {
                             return new Promise((resolve) => {
@@ -222,7 +250,9 @@ function handleShowUrl(command, currentAttempt = 0) {
                             });
                         })();
                     `;
-                    win.webContents.executeJavaScript(script).catch(err => log.error('[AUTOLOGIN] Error:', err));
+                    win.webContents
+                        .executeJavaScript(script)
+                        .catch((err) => log.error('[AUTOLOGIN] Error:', err));
                 }
             });
         }
@@ -231,12 +261,19 @@ function handleShowUrl(command, currentAttempt = 0) {
         win.focus();
 
         if (context.socket && context.socket.connected) {
-            context.socket.emit('reportScreenState', { deviceId: context.deviceId, screenId: screenIndex, url });
+            context.socket.emit('reportScreenState', {
+                deviceId: context.deviceId,
+                screenId: screenIndex,
+                url,
+            });
         }
 
         const displayName = contentName || url;
-        sendCommandFeedback(command, 'success', `Enviando '${displayName}' a la pantalla ${screenIndex}`);
-
+        sendCommandFeedback(
+            command,
+            'success',
+            `Enviando '${displayName}' a la pantalla ${screenIndex}`
+        );
     } catch (error) {
         const errorMsg = `Error inesperado al ejecutar show_url: ${error.message}`;
         log.error(`[COMMAND]: ${errorMsg}`);
@@ -254,14 +291,29 @@ function handleCloseScreen(command) {
         if (win && !win.isDestroyed()) win.close();
 
         if (context.saveCurrentState) {
-            context.saveCurrentState(screenIndex, null, null, 0, context.autoRefreshTimers, context.managedWindows);
+            context.saveCurrentState(
+                screenIndex,
+                null,
+                null,
+                0,
+                context.autoRefreshTimers,
+                context.managedWindows
+            );
         }
         if (context.socket && context.socket.connected) {
-            context.socket.emit('reportScreenState', { deviceId: context.deviceId, screenId: screenIndex, url: '' });
+            context.socket.emit('reportScreenState', {
+                deviceId: context.deviceId,
+                screenId: screenIndex,
+                url: '',
+            });
         }
         sendCommandFeedback(command, 'success', `Pantalla ${screenIndex} cerrada`);
     } catch (error) {
-        sendCommandFeedback(command, 'error', `Error al cerrar pantalla ${screenIndex}: ${error.message}`);
+        sendCommandFeedback(
+            command,
+            'error',
+            `Error al cerrar pantalla ${screenIndex}: ${error.message}`
+        );
     }
 }
 
@@ -273,13 +325,21 @@ function handleRefreshScreen(command) {
     try {
         const win = context.managedWindows.get(screenIndex);
         if (!win || win.isDestroyed()) {
-            sendCommandFeedback(command, 'error', `Pantalla ${screenIndex} no tiene contenido activo`);
+            sendCommandFeedback(
+                command,
+                'error',
+                `Pantalla ${screenIndex} no tiene contenido activo`
+            );
             return;
         }
         win.webContents.reload();
         sendCommandFeedback(command, 'success', `Pantalla ${screenIndex} recargada`);
     } catch (error) {
-        sendCommandFeedback(command, 'error', `Error al recargar pantalla ${screenIndex}: ${error.message}`);
+        sendCommandFeedback(
+            command,
+            'error',
+            `Error al recargar pantalla ${screenIndex}: ${error.message}`
+        );
     }
 }
 
@@ -299,10 +359,15 @@ function handleIdentifyScreen(command) {
     }
 
     const identifyWin = new BrowserWindow({
-        x: targetDisplay.bounds.x, y: targetDisplay.bounds.y,
-        width: targetDisplay.bounds.width, height: targetDisplay.bounds.height,
-        frame: false, transparent: true, alwaysOnTop: true, skipTaskbar: true,
-        webPreferences: { preload: path.join(__dirname, '../identify-preload.js') }
+        x: targetDisplay.bounds.x,
+        y: targetDisplay.bounds.y,
+        width: targetDisplay.bounds.width,
+        height: targetDisplay.bounds.height,
+        frame: false,
+        transparent: true,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        webPreferences: { preload: path.join(__dirname, '../identify-preload.js') },
     });
     identifyWin.setMenu(null);
     identifyWin.loadFile(path.join(__dirname, '../identify.html'));
@@ -325,5 +390,5 @@ module.exports = {
     handleIdentifyScreen,
     handleRefreshScreen,
     sendCommandFeedback,
-    createContentWindow
+    createContentWindow,
 };

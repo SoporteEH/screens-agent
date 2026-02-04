@@ -17,29 +17,30 @@ function hasGpuFailed() {
             const config = JSON.parse(fs.readFileSync(GPU_CONFIG_FILE, 'utf8'));
             return config.gpuFailed === true;
         }
-    } catch (e) { }
+    } catch (e) {}
     return false;
 }
 
 // Marca la GPU como fallida para futuros inicios
 function markGpuAsFailed() {
     try {
-        fs.writeFileSync(GPU_CONFIG_FILE, JSON.stringify({ gpuFailed: true, failedAt: new Date().toISOString() }));
+        fs.writeFileSync(
+            GPU_CONFIG_FILE,
+            JSON.stringify({ gpuFailed: true, failedAt: new Date().toISOString() })
+        );
         log.info('[GPU]: Marcada como fallida. Proximo inicio usara renderizado por software.');
     } catch (e) {
         log.error('[GPU]: Error guardando estado:', e);
     }
 }
 
-
 function resetGpuState() {
     try {
         if (fs.existsSync(GPU_CONFIG_FILE)) {
             fs.unlinkSync(GPU_CONFIG_FILE);
         }
-    } catch (e) { }
+    } catch (e) {}
 }
-
 
 function configureGpu() {
     if (hasGpuFailed()) {
@@ -51,7 +52,6 @@ function configureGpu() {
         app.commandLine.appendSwitch('enable-gpu-rasterization');
     }
 }
-
 
 function configureMemory() {
     // Limitar heap de JavaScript a 384MB (reducido de 512MB)
@@ -68,8 +68,10 @@ function configureMemory() {
     app.commandLine.appendSwitch('disable-http-cache');
 
     // Deshabilitar features innecesarias de Chromium
-    app.commandLine.appendSwitch('disable-features',
-        'MediaRouter,AudioServiceOutOfProcess,CalculateNativeWinOcclusion,HardwareMediaKeyHandling');
+    app.commandLine.appendSwitch(
+        'disable-features',
+        'MediaRouter,AudioServiceOutOfProcess,CalculateNativeWinOcclusion,HardwareMediaKeyHandling'
+    );
 
     // Deshabilitar servicios no utilizados
     app.commandLine.appendSwitch('disable-extensions');
@@ -82,7 +84,6 @@ function configureMemory() {
     log.info('[MEMORY]: ización de memoria aplicada');
 }
 
-
 function registerGpuCrashHandlers() {
     app.on('gpu-process-crashed', (event, killed) => {
         log.error(`[GPU]: Proceso GPU crasheo (killed: ${killed}). Marcando para fallback.`);
@@ -91,7 +92,9 @@ function registerGpuCrashHandlers() {
 
     app.on('render-process-gone', (event, webContents, details) => {
         if (details.reason === 'crashed' || details.reason === 'gpu-dead') {
-            log.error(`[GPU]: Proceso de renderizado fallo (razon: ${details.reason}). Marcando GPU como fallida.`);
+            log.error(
+                `[GPU]: Proceso de renderizado fallo (razon: ${details.reason}). Marcando GPU como fallida.`
+            );
             markGpuAsFailed();
         }
     });

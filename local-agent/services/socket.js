@@ -16,7 +16,7 @@ function connectToSocketServer(token, handlers) {
         reconnectionDelayMax: CONSTANTS.SOCKET_RECONNECT_DELAY_MAX_MS,
         randomizationFactor: 0.5,
         timeout: 20000,
-        auth: { token }
+        auth: { token },
     });
 
     socket.on('connect', () => {
@@ -51,7 +51,6 @@ function connectToSocketServer(token, handlers) {
         log.error(`[SOCKET]: Error de conexion: ${error.message}`);
     });
 
-
     socket.on('command', (command) => {
         if (handlers.onCommand) handlers.onCommand(command);
     });
@@ -80,5 +79,5 @@ function sendHeartbeat(socket, screenIds) {
 
 module.exports = {
     connectToSocketServer,
-    sendHeartbeat
+    sendHeartbeat,
 };
