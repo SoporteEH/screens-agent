@@ -239,6 +239,7 @@ local-agent/
 │   └── constants.js           # Centralized configuration (URLs, timeouts, paths)
 ├── handlers/
 │   ├── commands.js            # Remote command handlers (show_url, close_screen, etc.)
+│   ├── ipc.js                 # IPC message handlers between main and renderer
 │   └── provisioning.js        # Device provisioning flow
 ├── services/
 │   ├── assets.js              # Local asset synchronization
