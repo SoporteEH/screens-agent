@@ -1,12 +1,10 @@
 /**
  * Asset Sync Service
- * Descarga y mantiene contenidos locales actualizados
  */
 
 const fs = require('fs');
 const path = require('path');
 const { Readable } = require('stream');
-
 const { log } = require('../utils/logConfig');
 const {
     SYNC_API_URL,
@@ -20,83 +18,67 @@ async function syncDir(assets, targetDir, remotePath) {
         fs.mkdirSync(targetDir, { recursive: true });
     }
 
-    const serverAssetMap = new Map(assets.map((asset) => [asset.serverFilename, asset]));
+    const serverAssetMap = new Map(assets.map((a) => [a.serverFilename, a]));
     const localFiles = fs.readdirSync(targetDir);
 
-    // Elimina archivos locales que no están en la lista del servidor
-    const filesToDelete = localFiles.filter((file) => !serverAssetMap.has(file));
-    for (const fileToDelete of filesToDelete) {
+    const filesToDelete = localFiles.filter((f) => !serverAssetMap.has(f));
+    for (const file of filesToDelete) {
         try {
-            fs.unlinkSync(path.join(targetDir, fileToDelete));
-            log.info(
-                `[SYNC]: Archivo obsoleto eliminado de ${path.basename(targetDir)}: ${fileToDelete}`
-            );
+            fs.unlinkSync(path.join(targetDir, file));
+            log.info(`[SYNC]: Eliminado obsoleto: ${file}`);
         } catch (err) {
-            log.error(`[SYNC]: Error al eliminar ${fileToDelete} en ${targetDir}:`, err);
+            log.error(`[SYNC]: Error eliminando ${file}:`, err);
         }
     }
 
-    // Descarga archivos nuevos
-    const filesToDownload = assets.filter((asset) => !localFiles.includes(asset.serverFilename));
-    for (const assetToDownload of filesToDownload) {
-        log.info(
-            `[SYNC]: Descargando activo (${assetToDownload.assetType || 'general'}): ${assetToDownload.originalFilename}...`
-        );
-        const downloadUrl = `${SERVER_URL}${remotePath}${assetToDownload.serverFilename}`;
-        const destinationPath = path.join(targetDir, assetToDownload.serverFilename);
+    const filesToDownload = assets.filter((a) => !localFiles.includes(a.serverFilename));
+    for (const asset of filesToDownload) {
+        log.info(`[SYNC]: Descargando: ${asset.originalFilename}`);
+        const url = `${SERVER_URL}${remotePath}${asset.serverFilename}`;
+        const destPath = path.join(targetDir, asset.serverFilename);
 
         try {
-            const downloadResponse = await fetch(downloadUrl);
-            if (!downloadResponse.ok)
-                throw new Error(`Fallo la descarga: ${downloadResponse.statusText}`);
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`Fallo: ${res.statusText}`);
 
-            const fileStream = fs.createWriteStream(destinationPath);
+            const fileStream = fs.createWriteStream(destPath);
             await new Promise((resolve, reject) => {
-                Readable.fromWeb(downloadResponse.body).pipe(fileStream);
+                Readable.fromWeb(res.body).pipe(fileStream);
                 fileStream.on('finish', resolve);
                 fileStream.on('error', reject);
             });
-            log.info(`[SYNC]: Descarga completa: ${assetToDownload.originalFilename}`);
+            log.info(`[SYNC]: Completado: ${asset.originalFilename}`);
         } catch (err) {
-            log.error(`[SYNC]: Error al descargar ${assetToDownload.originalFilename}: `, err);
-            if (fs.existsSync(destinationPath)) {
-                fs.unlinkSync(destinationPath);
-            }
+            log.error(`[SYNC]: Error descargando ${asset.originalFilename}:`, err);
+            if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
         }
     }
 }
 
 async function syncLocalAssets(agentToken) {
-    log.info('[SYNC]: Iniciando proceso de sincronizacion de activos locales...');
+    log.info('[SYNC]: Iniciando sincronización...');
 
     try {
-        const response = await fetch(SYNC_API_URL, {
+        const res = await fetch(SYNC_API_URL, {
             headers: { Authorization: `Bearer ${agentToken}` },
         });
-        if (!response.ok) {
-            throw new Error(
-                `Error del servidor al obtener la lista de activos: ${response.status}`
-            );
-        }
-        const serverAssets = await response.json();
-        const generalAssets = serverAssets.filter((a) => a.assetType !== 'playlist');
-        const playlistAssets = serverAssets.filter((a) => a.assetType === 'playlist');
+        if (!res.ok) throw new Error(`Error servidor: ${res.status}`);
 
-        log.info(
-            `[SYNC]: Pendientes ${generalAssets.length} generales y ${playlistAssets.length} recursos de playlist.`
-        );
+        const assets = await res.json();
+        const generalAssets = assets.filter((a) => a.assetType !== 'playlist');
+        const playlistAssets = assets.filter((a) => a.assetType === 'playlist');
+
+        log.info(`[SYNC]: ${generalAssets.length} generales, ${playlistAssets.length} playlist`);
 
         await syncDir(generalAssets, CONTENT_DIR, '/local-assets/');
         await syncDir(playlistAssets, PLAYLIST_ASSETS_DIR, '/playlist-assets/');
 
-        log.info('[SYNC]: Proceso de sincronizacion finalizado.');
+        log.info('[SYNC]: Sincronización completada.');
         return true;
     } catch (error) {
-        log.error('[SYNC]: Error critico durante la sincronizacion:', error.message);
+        log.error('[SYNC]: Error:', error.message);
         return false;
     }
 }
 
-module.exports = {
-    syncLocalAssets,
-};
+module.exports = { syncLocalAssets };

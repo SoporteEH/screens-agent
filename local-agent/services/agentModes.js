@@ -1,7 +1,11 @@
+/**
+ * Agent Modes - Normal y Provisioning
+ */
+
 const { log } = require('../utils/logConfig');
 const { loadConfig } = require('../utils/configManager');
 const { startTokenRefreshLoop } = require('./auth');
-const { buildDisplayMap, loadLastState } = require('./state');
+const { buildDisplayMap } = require('./state');
 const { checkForUpdates } = require('./updater');
 const { initializeMonitors } = require('./monitors');
 
@@ -13,71 +17,43 @@ const startNormalMode = async (context) => {
         restoreAllContent,
         connectSocket,
         CONSTANTS,
-        registerDevice,
         sendHeartbeat,
         managedWindows,
     } = context;
 
     const config = loadConfig();
-    const deviceId = config.deviceId;
-    const agentToken = config.agentToken;
+    setDeviceId(config.deviceId);
+    setAgentToken(config.agentToken);
 
-    setDeviceId(deviceId);
-    setAgentToken(agentToken);
+    log.info(`[NORMAL]: Device ID: ${config.deviceId}`);
 
-    log.info(`[NORMAL]: ID de Maquina cargado: ${deviceId}`);
-
-    // Loop de refresco token
-    startTokenRefreshLoop(agentToken, (newToken) => {
-        setAgentToken(newToken);
-    });
-
-    // Mapeo de hardware
+    startTokenRefreshLoop(config.agentToken, setAgentToken);
     await buildDisplayMap(hardwareIdToDisplayMap);
-
-    // Restaurar contenido inmediatamente
     restoreAllContent();
-
-    // Conectar WebSocket
-    connectSocket(agentToken);
-
-    // Inicializar monitores (Screen, Network)
+    connectSocket(config.agentToken);
     initializeMonitors(context);
 
-    // Búsqueda de actualizaciones programada
     const updateDelay =
         CONSTANTS.UPDATE_CHECK_MIN_DELAY_MS +
         Math.random() * (CONSTANTS.UPDATE_CHECK_MAX_DELAY_MS - CONSTANTS.UPDATE_CHECK_MIN_DELAY_MS);
     setTimeout(checkForUpdates, updateDelay);
 
-    // Heartbeat loop
     setInterval(sendHeartbeat, CONSTANTS.HEARTBEAT_INTERVAL_MS);
 
-    // GC & Cache cleanup
     setInterval(() => {
-        if (managedWindows.size > 0) {
-            log.info('[OPTIMIZATION]: Forzando limpieza de caché y storage.');
-            managedWindows.forEach((win) => {
-                if (win && !win.isDestroyed()) {
-                    win.webContents.session
-                        .clearCache()
-                        .catch((err) => log.error('[OPTIMIZATION] Error al limpiar caché:', err));
-                    win.webContents.session
-                        .clearStorageData()
-                        .catch((err) => log.error('[OPTIMIZATION] Error al limpiar storage:', err));
-                }
-            });
-        }
+        if (managedWindows.size === 0) return;
+        log.info('[OPTIMIZATION]: Limpiando caché.');
+        managedWindows.forEach((win) => {
+            if (win?.isDestroyed()) return;
+            win.webContents.session.clearCache().catch(() => {});
+            win.webContents.session.clearStorageData().catch(() => {});
+        });
     }, CONSTANTS.GC_INTERVAL_MS);
 };
 
-/**
- * Modo Vinculación (Provisioning).
- */
 const startProvisioningMode = (context) => {
-    const { startProvisioningHandler } = context;
-    log.info('[INIT]: No se encontro configuracion. Iniciando modo vinculacion.');
-    return startProvisioningHandler({
+    log.info('[INIT]: Sin configuración. Modo vinculación.');
+    return context.startProvisioningHandler({
         get socket() {
             return context.socket;
         },

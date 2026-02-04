@@ -1,13 +1,11 @@
 /**
- * Socket Service
- * Gestiona conexión WebSocket y eventos
+ * Socket Service - Conexión WebSocket
  */
 
 const { io } = require('socket.io-client');
 const { log, heartbeatLog } = require('../utils/logConfig');
 const { SERVER_URL, CONSTANTS } = require('../config/constants');
 
-// Establece conexión WebSocket con servidor
 function connectToSocketServer(token, handlers) {
     const socket = io(SERVER_URL, {
         reconnection: true,
@@ -20,59 +18,38 @@ function connectToSocketServer(token, handlers) {
     });
 
     socket.on('connect', () => {
-        log.info('[SOCKET]: Conectado al servidor de WebSocket.');
+        log.info('[SOCKET]: Conectado.');
         if (handlers.onConnect) handlers.onConnect();
     });
 
     socket.on('disconnect', (reason) => {
-        log.info(`[SOCKET]: Desconectado del servidor. Razon: ${reason}`);
+        log.info(`[SOCKET]: Desconectado: ${reason}`);
         if (handlers.onDisconnect) handlers.onDisconnect(reason);
 
         if (reason === 'io server disconnect') {
-            log.info('[SOCKET]: El servidor cerro la conexion. Reconectando manualmente...');
             socket.connect();
         }
     });
 
     socket.on('reconnect', (attemptNumber) => {
-        log.info(`[SOCKET]: Reconectado exitosamente despues de ${attemptNumber} intentos.`);
+        log.info(`[SOCKET]: Reconectado (intento ${attemptNumber})`);
         if (handlers.onReconnect) handlers.onReconnect(attemptNumber);
     });
 
-    socket.on('reconnect_attempt', (attemptNumber) => {
-        log.info(`[SOCKET]: Intento de reconexion #${attemptNumber}...`);
-    });
+    socket.on('reconnect_attempt', (n) => log.info(`[SOCKET]: Reconectando #${n}...`));
+    socket.on('reconnect_error', (err) => log.error(`[SOCKET]: Error reconexión: ${err.message}`));
+    socket.on('connect_error', (err) => log.error(`[SOCKET]: Error conexión: ${err.message}`));
 
-    socket.on('reconnect_error', (error) => {
-        log.error(`[SOCKET]: Error en intento de reconexion: ${error.message}`);
-    });
-
-    socket.on('connect_error', (error) => {
-        log.error(`[SOCKET]: Error de conexion: ${error.message}`);
-    });
-
-    socket.on('command', (command) => {
-        if (handlers.onCommand) handlers.onCommand(command);
-    });
-
-    socket.on('device-info', (device) => {
-        if (handlers.onDeviceInfo) handlers.onDeviceInfo(device);
-    });
-
-    socket.on('assets-updated', () => {
-        if (handlers.onAssetsUpdated) handlers.onAssetsUpdated();
-    });
-
-    socket.on('force-reprovision', () => {
-        if (handlers.onForceReprovision) handlers.onForceReprovision();
-    });
+    socket.on('command', (cmd) => handlers.onCommand?.(cmd));
+    socket.on('device-info', (device) => handlers.onDeviceInfo?.(device));
+    socket.on('assets-updated', () => handlers.onAssetsUpdated?.());
+    socket.on('force-reprovision', () => handlers.onForceReprovision?.());
 
     return socket;
 }
 
-// Envía heartbeat al servidor
 function sendHeartbeat(socket, screenIds) {
-    if (!socket || !socket.connected) return;
+    if (!socket?.connected) return;
     socket.emit('heartbeat', { screenIds });
     heartbeatLog.info(screenIds);
 }

@@ -1,6 +1,5 @@
 /**
- * Authentication Service
- * Gestiona refresco de token JWT
+ * Authentication Service - Refresco de JWT
  */
 
 const { jwtDecode } = require('jwt-decode');
@@ -8,9 +7,11 @@ const { log } = require('../utils/logConfig');
 const { AGENT_REFRESH_URL } = require('../config/constants');
 const { loadConfig, saveConfig } = require('../utils/configManager');
 
-// Refresca token JWT del agente
+const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
 async function refreshAgentToken(currentAgentToken) {
-    log.info('[AGENT-AUTH]: Intentando refrescar el token...');
+    log.info('[AUTH]: Refrescando token...');
     try {
         const response = await fetch(AGENT_REFRESH_URL, {
             method: 'POST',
@@ -30,50 +31,35 @@ async function refreshAgentToken(currentAgentToken) {
         config.agentToken = data.token;
         saveConfig(config);
 
-        log.info('[AGENT-AUTH]: Token refrescado y guardado con exito.');
+        log.info('[AUTH]: Token refrescado.');
         return data.token;
     } catch (error) {
-        log.error('[AGENT-AUTH]: Fallo al refrescar el token:', error.message);
-        return currentAgentToken; // Devuelve el token viejo si falla
+        log.error('[AUTH]: Error refrescando token:', error.message);
+        return currentAgentToken;
     }
 }
 
-/**
- * Inicia un bucle periódico para verificar la validez del token y refrescarlo si es necesario.
- * @param {string} agentToken - El token actual
- * @param {Function} onTokenRefreshed - Callback cuando el token se refresca
- * @returns {NodeJS.Timeout} El ID del intervalo
- */
 function startTokenRefreshLoop(agentToken, onTokenRefreshed) {
-    log.info('[AGENT-AUTH]: Iniciando bucle de verificacion de token (cada 4 horas).');
+    log.info('[AUTH]: Iniciando loop de verificación (cada 4h)');
 
-    const interval = setInterval(
-        async () => {
-            try {
-                if (!agentToken) return;
+    return setInterval(async () => {
+        try {
+            if (!agentToken) return;
 
-                const decoded = jwtDecode(agentToken);
-                const expTimeMs = decoded.exp * 1000;
-                const nowMs = Date.now();
-                const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+            const decoded = jwtDecode(agentToken);
+            const expTimeMs = decoded.exp * 1000;
 
-                if (expTimeMs - nowMs < THIRTY_DAYS_MS) {
-                    log.info(
-                        '[AGENT-AUTH]: El token esta a punto de expirar, iniciando refresco...'
-                    );
-                    const newToken = await refreshAgentToken(agentToken);
-                    if (newToken !== agentToken && onTokenRefreshed) {
-                        onTokenRefreshed(newToken);
-                    }
+            if (expTimeMs - Date.now() < THIRTY_DAYS_MS) {
+                log.info('[AUTH]: Token próximo a expirar, refrescando...');
+                const newToken = await refreshAgentToken(agentToken);
+                if (newToken !== agentToken) {
+                    onTokenRefreshed?.(newToken);
                 }
-            } catch (e) {
-                log.error('[AGENT-AUTH]: Error en el bucle de verificacion de token:', e);
             }
-        },
-        4 * 60 * 60 * 1000
-    ); // 4 horas
-
-    return interval;
+        } catch (e) {
+            log.error('[AUTH]: Error en loop de verificación:', e);
+        }
+    }, FOUR_HOURS_MS);
 }
 
 module.exports = {

@@ -42,11 +42,11 @@ log.hooks.push((message, transport) => {
         request.setHeader('Content-Type', 'application/json');
         request.setHeader('Authorization', `Bearer ${config.agentToken}`);
 
-        request.on('error', () => { });
+        request.on('error', () => {});
 
         request.write(JSON.stringify(logData));
         request.end();
-    } catch (e) { }
+    } catch (e) {}
 
     return message;
 });

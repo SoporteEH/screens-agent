@@ -1,17 +1,15 @@
 /**
- * Tray Service - Gestiona el icono en la bandeja de sistema
+ * Tray Service - Icono de bandeja del sistema
  */
 
-const { Tray, Menu, app, BrowserWindow } = require('electron');
+const { Tray, Menu, app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { log } = require('../utils/logConfig');
+const { getDeviceName } = require('./identity');
 
 let tray = null;
 let controlWindow = null;
 
-const { getDeviceName } = require('./identity');
-
-// Inicializa icono de bandeja
 function createTray(serverUrl, version) {
     if (tray) return tray;
 
@@ -23,31 +21,25 @@ function createTray(serverUrl, version) {
             { label: `ScreensWeb Agent v${version}`, enabled: false },
             { label: 'Servidor: ' + (serverUrl || 'No configurado'), enabled: false },
             { type: 'separator' },
-            {
-                label: 'Abrir Panel de Control',
-                click: () => openControlWindow(serverUrl, version),
-            },
+            { label: 'Abrir Panel de Control', click: () => openControlWindow(serverUrl, version) },
             { type: 'separator' },
             {
                 label: 'Reiniciar Agente',
                 click: () => {
-                    log.info('[TRAY]: Reiniciando agente...');
+                    log.info('[TRAY]: Reiniciando...');
                     app.relaunch();
                     app.exit(0);
                 },
             },
             {
                 label: 'Buscar Actualización',
-                click: () => {
-                    const { handleForceUpdate } = require('./updater');
-                    handleForceUpdate();
-                },
+                click: () => require('./updater').handleForceUpdate(),
             },
             { type: 'separator' },
             {
                 label: 'Salir',
                 click: () => {
-                    log.info('[TRAY]: Saliendo de la aplicacion...');
+                    log.info('[TRAY]: Saliendo...');
                     app.isQuitting = true;
                     app.quit();
                 },
@@ -56,26 +48,20 @@ function createTray(serverUrl, version) {
 
         tray.setToolTip('ScreensWeb Agent');
         tray.setContextMenu(contextMenu);
-
-        tray.on('double-click', () => {
-            openControlWindow(serverUrl, version);
-        });
+        tray.on('double-click', () => openControlWindow(serverUrl, version));
 
         return tray;
     } catch (error) {
-        log.error('[TRAY]: Error al crear el tray icon:', error);
+        log.error('[TRAY]: Error al crear tray:', error);
         return null;
     }
 }
 
-// Abre ventana de control
 function openControlWindow(serverUrl, version) {
     if (controlWindow) {
         controlWindow.focus();
         return;
     }
-
-    const deviceName = getDeviceName();
 
     controlWindow = new BrowserWindow({
         width: 420,
@@ -100,7 +86,7 @@ function openControlWindow(serverUrl, version) {
             serverUrl: serverUrl || 'Desconocido',
             version: version || '1.0.0',
             status: 'Online',
-            deviceName: deviceName,
+            deviceName: getDeviceName(),
         });
     });
 
@@ -110,15 +96,11 @@ function openControlWindow(serverUrl, version) {
 
     controlWindow.setMenuBarVisibility(false);
 
-    const { ipcMain } = require('electron');
     ipcMain.removeAllListeners('window-control');
-    ipcMain.on('window-control', (event, action) => {
+    ipcMain.on('window-control', (_event, action) => {
         if (controlWindow && !controlWindow.isDestroyed()) {
-            if (action === 'minimize') {
-                controlWindow.minimize();
-            } else if (action === 'close') {
-                controlWindow.close();
-            }
+            if (action === 'minimize') controlWindow.minimize();
+            else if (action === 'close') controlWindow.close();
         }
     });
 }
