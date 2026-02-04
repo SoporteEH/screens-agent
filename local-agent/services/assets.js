@@ -56,7 +56,7 @@ async function syncDir(assets, targetDir, remotePath) {
 }
 
 async function syncLocalAssets(agentToken) {
-    log.info('[SYNC]: Iniciando sincronización...');
+    log.info('[SYNC]: Iniciando sincronizacion...');
 
     try {
         const res = await fetch(SYNC_API_URL, {
@@ -73,7 +73,7 @@ async function syncLocalAssets(agentToken) {
         await syncDir(generalAssets, CONTENT_DIR, '/local-assets/');
         await syncDir(playlistAssets, PLAYLIST_ASSETS_DIR, '/playlist-assets/');
 
-        log.info('[SYNC]: Sincronización completada.');
+        log.info('[SYNC]: Sincronizacion completada.');
         return true;
     } catch (error) {
         log.error('[SYNC]: Error:', error.message);

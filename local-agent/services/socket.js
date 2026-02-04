@@ -1,5 +1,5 @@
 /**
- * Socket Service - Conexión WebSocket
+ * Socket Service - Conexion WebSocket
  */
 
 const { io } = require('socket.io-client');
@@ -37,8 +37,8 @@ function connectToSocketServer(token, handlers) {
     });
 
     socket.on('reconnect_attempt', (n) => log.info(`[SOCKET]: Reconectando #${n}...`));
-    socket.on('reconnect_error', (err) => log.error(`[SOCKET]: Error reconexión: ${err.message}`));
-    socket.on('connect_error', (err) => log.error(`[SOCKET]: Error conexión: ${err.message}`));
+    socket.on('reconnect_error', (err) => log.error(`[SOCKET]: Error reconexion: ${err.message}`));
+    socket.on('connect_error', (err) => log.error(`[SOCKET]: Error conexion: ${err.message}`));
 
     socket.on('command', (cmd) => handlers.onCommand?.(cmd));
     socket.on('device-info', (device) => handlers.onDeviceInfo?.(device));

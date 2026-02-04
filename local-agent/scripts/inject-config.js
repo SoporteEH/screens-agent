@@ -19,7 +19,7 @@ if (!SERVER_URL) {
 const packagePath = path.join(__dirname, '..', 'package.json');
 const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
 
-// Inyecta la configuración
+// Inyecta la configuracion
 packageJson.config = packageJson.config || {};
 packageJson.config.serverUrl = SERVER_URL;
 

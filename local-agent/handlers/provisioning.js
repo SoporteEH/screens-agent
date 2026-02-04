@@ -12,7 +12,7 @@ const { SERVER_URL } = require('../config/constants');
 const { saveConfig } = require('../utils/configManager');
 const { getMachineId } = require('../services/device');
 
-// Inicia proceso de vinculación
+// Inicia proceso de vinculacion
 function startProvisioningMode() {
     const deviceId = getMachineId();
     let pendingServerUrl = '';
@@ -88,7 +88,7 @@ function startProvisioningMode() {
 
                 const { token } = await response.json();
 
-                // Guardamos todo, incluyendo la URL que funcionó
+                // Guardamos todo, incluyendo la URL que funciono
                 saveConfig({
                     deviceId,
                     provisioned: true,
@@ -111,7 +111,7 @@ function startProvisioningMode() {
         });
     });
 
-    // Manejadores básicos
+    // Manejadores basicos
     ipcMain.on('window-control', (event, action) => {
         if (!provisionWindow || provisionWindow.isDestroyed()) return;
         if (action === 'minimize') provisionWindow.minimize();

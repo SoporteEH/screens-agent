@@ -1,5 +1,5 @@
 /**
- * - Rotación automática de logs por tamaño, limitada a 7 archivos
+ * - Rotacion automatica de logs por tamano, limitada a 7 archivos
  * - Tipos: main, updater, heartbeat
  */
 
@@ -111,7 +111,7 @@ const updaterLog = {
         const now = Date.now();
 
         if (now - this._lastUpdateCheck > 10 * 60 * 1000) {
-            log.info(`[UPDATER]: Verificación periódica - Versión actual: ${version}`);
+            log.info(`[UPDATER]: Verificacion periodica - Version actual: ${version}`);
             this._lastUpdateCheck = now;
         }
     },

@@ -8,12 +8,12 @@ const fs = require('fs');
 const { log } = require('../utils/logConfig');
 const { STATE_FILE_PATH } = require('../config/constants');
 
-// Construye mapa de pantallas ordenado por posición
+// Construye mapa de pantallas ordenado por posicion
 async function buildDisplayMap(hardwareIdToDisplayMap) {
     hardwareIdToDisplayMap.clear();
     const displays = screen.getAllDisplays();
 
-    // Ordena pantallas por posición X (izquierda a derecha)
+    // Ordena pantallas por posicion X (izquierda a derecha)
     displays.sort((a, b) => a.bounds.x - b.bounds.x);
 
     displays.forEach((display, index) => {
@@ -27,7 +27,7 @@ async function buildDisplayMap(hardwareIdToDisplayMap) {
     );
 }
 
-// Carga último estado desde archivo JSON
+// Carga ultimo estado desde archivo JSON
 function loadLastState() {
     try {
         if (fs.existsSync(STATE_FILE_PATH)) {
@@ -68,21 +68,21 @@ function cleanOrphanedState(hardwareIdToDisplayMap) {
         if (validIds.includes(id)) {
             cleanedState[id] = url;
         } else {
-            log.info(`[STATE]: Limpiando entrada huérfana para pantalla inexistente: ${id}`);
+            log.info(`[STATE]: Limpiando entrada huerfana para pantalla inexistente: ${id}`);
         }
     }
 
     try {
         fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(cleanedState, null, 2));
     } catch (error) {
-        log.error('[STATE]: Error al limpiar estado huérfano:', error);
+        log.error('[STATE]: Error al limpiar estado huerfano:', error);
     }
 
     return cleanedState;
 }
 
 /**
- * Configura un timer de auto-refresh para una pantalla específica.
+ * Configura un timer de auto-refresh para una pantalla especifica.
  */
 function setupAutoRefresh(screenIndex, intervalMinutes, managedWindows, autoRefreshTimers) {
     const intervalMs = intervalMinutes * 60 * 1000;
@@ -145,7 +145,7 @@ function saveCurrentState(
     try {
         fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2));
         log.info(
-            `[STATE]: Estado guardado para pantalla ${screenIndex}: ${url || '(vacío)'}${refreshInterval ? ` (auto-refresh: ${refreshInterval}min)` : ''}`
+            `[STATE]: Estado guardado para pantalla ${screenIndex}: ${url || '(vacio)'}${refreshInterval ? ` (auto-refresh: ${refreshInterval}min)` : ''}`
         );
     } catch (error) {
         log.error('[STATE]: Error al guardar estado:', error);
@@ -196,7 +196,7 @@ function restoreLastState(hardwareIdToDisplayMap, handleShowUrlCallback) {
 /**
  * Restaura TODO el contenido inmediatamente sin depender del servidor.
  * Se ejecuta al inicio para garantizar que las pantallas muestren contenido
- * aunque el servidor no esté disponible.
+ * aunque el servidor no este disponible.
  */
 function restoreAllContentImmediately(
     hardwareIdToDisplayMap,

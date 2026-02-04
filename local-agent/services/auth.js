@@ -40,7 +40,7 @@ async function refreshAgentToken(currentAgentToken) {
 }
 
 function startTokenRefreshLoop(agentToken, onTokenRefreshed) {
-    log.info('[AUTH]: Iniciando loop de verificación (cada 4h)');
+    log.info('[AUTH]: Iniciando loop de verificacion (cada 4h)');
 
     return setInterval(async () => {
         try {
@@ -50,14 +50,14 @@ function startTokenRefreshLoop(agentToken, onTokenRefreshed) {
             const expTimeMs = decoded.exp * 1000;
 
             if (expTimeMs - Date.now() < THIRTY_DAYS_MS) {
-                log.info('[AUTH]: Token próximo a expirar, refrescando...');
+                log.info('[AUTH]: Token proximo a expirar, refrescando...');
                 const newToken = await refreshAgentToken(agentToken);
                 if (newToken !== agentToken) {
                     onTokenRefreshed?.(newToken);
                 }
             }
         } catch (e) {
-            log.error('[AUTH]: Error en loop de verificación:', e);
+            log.error('[AUTH]: Error en loop de verificacion:', e);
         }
     }, FOUR_HOURS_MS);
 }

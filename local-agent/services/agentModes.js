@@ -42,7 +42,7 @@ const startNormalMode = async (context) => {
 
     setInterval(() => {
         if (managedWindows.size === 0) return;
-        log.info('[OPTIMIZATION]: Limpiando caché.');
+        log.info('[OPTIMIZATION]: Limpiando cache.');
         managedWindows.forEach((win) => {
             if (win?.isDestroyed()) return;
             win.webContents.session.clearCache().catch(() => {});
@@ -52,7 +52,7 @@ const startNormalMode = async (context) => {
 };
 
 const startProvisioningMode = (context) => {
-    log.info('[INIT]: Sin configuración. Modo vinculación.');
+    log.info('[INIT]: Sin configuracion. Modo vinculacion.');
     return context.startProvisioningHandler({
         get socket() {
             return context.socket;

@@ -32,7 +32,7 @@ function createTray(serverUrl, version) {
                 },
             },
             {
-                label: 'Buscar Actualización',
+                label: 'Buscar Actualizacion',
                 click: () => require('./updater').handleForceUpdate(),
             },
             { type: 'separator' },

@@ -44,7 +44,7 @@ function configureGpu() {
         log.info('[GPU]: Usando renderizado por software.');
         app.disableHardwareAcceleration();
     } else {
-        log.info('[GPU]: Usando aceleración por hardware.');
+        log.info('[GPU]: Usando aceleracion por hardware.');
         app.commandLine.appendSwitch('enable-gpu-rasterization');
     }
 }
@@ -66,18 +66,18 @@ function configureMemory() {
     app.commandLine.appendSwitch('disable-notifications');
     app.commandLine.appendSwitch('disable-domain-reliability');
 
-    log.info('[MEMORY]: Optimización aplicada.');
+    log.info('[MEMORY]: Optimizacion aplicada.');
 }
 
 function registerGpuCrashHandlers() {
     app.on('gpu-process-crashed', (_event, killed) => {
-        log.error(`[GPU]: Proceso crasheó (killed: ${killed})`);
+        log.error(`[GPU]: Proceso crasheo (killed: ${killed})`);
         markGpuAsFailed();
     });
 
     app.on('render-process-gone', (_event, _webContents, details) => {
         if (details.reason === 'crashed' || details.reason === 'gpu-dead') {
-            log.error(`[GPU]: Renderizado falló (${details.reason})`);
+            log.error(`[GPU]: Renderizado fallo (${details.reason})`);
             markGpuAsFailed();
         }
     });

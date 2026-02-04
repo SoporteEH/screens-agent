@@ -31,7 +31,7 @@ function saveConfig(config) {
 function deleteConfig() {
     try {
         store.clear();
-        log.info('[CONFIG]: Configuración eliminada.');
+        log.info('[CONFIG]: Configuracion eliminada.');
     } catch (error) {
         log.error('[CONFIG]: Error limpiando:', error);
     }

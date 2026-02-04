@@ -14,7 +14,7 @@ const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
 if (packageJson.config?.serverUrl) {
     delete packageJson.config.serverUrl;
 
-    // Si config queda vacío, eliminarlo también
+    // Si config queda vacio, eliminarlo tambien
     if (Object.keys(packageJson.config).length === 0) {
         delete packageJson.config;
     }

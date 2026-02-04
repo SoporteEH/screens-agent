@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electron', {
-    // Identificación
+    // Identificacion
     onDeviceId: (callback) => ipcRenderer.on('device-id', (event, ...args) => callback(...args)),
 
     // Panel de control

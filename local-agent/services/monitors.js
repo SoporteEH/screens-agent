@@ -35,7 +35,7 @@ const initializeMonitors = (context) => {
                 for (const id of orphanedIds) {
                     const win = managedWindows.get(id);
                     if (win && !win.isDestroyed()) {
-                        log.info(`[DISPLAY]: Cerrando ventana huérfana: ${id}`);
+                        log.info(`[DISPLAY]: Cerrando ventana huerfana: ${id}`);
                         win.close();
                     }
                     managedWindows.delete(id);

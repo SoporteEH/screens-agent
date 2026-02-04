@@ -1,6 +1,6 @@
 /**
  * Command Handlers
- * Gestiona ejecución de comandos remotos
+ * Gestiona ejecucion de comandos remotos
  */
 
 const { BrowserWindow, app } = require('electron');
@@ -16,7 +16,7 @@ function initializeHandlers(ctx) {
     context = ctx;
 }
 
-// Envía feedback del comando al servidor
+// Envia feedback del comando al servidor
 function sendCommandFeedback(command, status, message) {
     if (!command || !command.commandId) return;
     if (command.silent) return;
@@ -61,7 +61,7 @@ function scheduleRetry(command) {
 }
 
 /**
- * Crea una ventana de contenido perfectamente configurada para señalización.
+ * Crea una ventana de contenido perfectamente configurada para senalizacion.
  */
 function createContentWindow(display, urlToLoad, command) {
     const { screenIndex, url: originalUrl, contentName } = command;
@@ -84,8 +84,8 @@ function createContentWindow(display, urlToLoad, command) {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            // WARNING: Desactivado para permitir iframes y contenido mixto en señalización.
-            // Solo URLs seguras deberian llegar aquí (validadas en backend).
+            // WARNING: Desactivado para permitir iframes y contenido mixto en senalizacion.
+            // Solo URLs seguras deberian llegar aqui (validadas en backend).
             webSecurity: false,
             allowRunningInsecureContent: true,
             backgroundThrottling: true,
@@ -108,7 +108,7 @@ function createContentWindow(display, urlToLoad, command) {
 
     win.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
         log.error(
-            `[RESILIENCE]: Fallo al cargar URL '${validatedURL}'. Razón: ${errorDescription}`
+            `[RESILIENCE]: Fallo al cargar URL '${validatedURL}'. Razon: ${errorDescription}`
         );
 
         if (validatedURL === fallbackPath) return;
@@ -118,7 +118,7 @@ function createContentWindow(display, urlToLoad, command) {
             sendCommandFeedback(
                 command,
                 'error',
-                `Fallo al cargar ${displayName}. Razón: ${errorDescription}`
+                `Fallo al cargar ${displayName}. Razon: ${errorDescription}`
             );
         }
 

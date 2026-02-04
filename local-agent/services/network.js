@@ -15,10 +15,10 @@ function startNetworkMonitoring(handlers) {
 
         if (!isOnline && !wasOffline) {
             wasOffline = true;
-            log.info('[NETWORK]: Sin conexión.');
+            log.info('[NETWORK]: Sin conexion.');
             handlers.onOffline?.();
         } else if (isOnline && wasOffline) {
-            log.info('[NETWORK]: Conexión restaurada.');
+            log.info('[NETWORK]: Conexion restaurada.');
             wasOffline = false;
             handlers.onOnline?.();
         } else if (isOnline) {

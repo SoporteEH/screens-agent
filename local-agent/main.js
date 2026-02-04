@@ -155,7 +155,7 @@ async function bootstrap() {
                     const { setDeviceName, getDeviceName } = require('./services/identity');
                     setDeviceName(device.name);
 
-                    // Notificar a la ventana de control si está abierta
+                    // Notificar a la ventana de control si esta abierta
                     try {
                         const { BrowserWindow } = require('electron');
                         const wins = BrowserWindow.getAllWindows();
@@ -260,8 +260,8 @@ function showErrorWindow(error) {
     errWin.loadURL(
         `data:text/html;charset=utf-8,${encodeURIComponent(`
         <body style="background:#1a1a1a;color:#ff6600;font-family:sans-serif;padding:30px;text-align:center">
-            <h2 style="margin-bottom:10px">Modo reparación</h2>
-            <p style="color:#ccc;margin-bottom:20px">El agente ha encontrado un error y se está intentando corregir descargando una nueva versión.</p>
+            <h2 style="margin-bottom:10px">Modo reparacion</h2>
+            <p style="color:#ccc;margin-bottom:20px">El agente ha encontrado un error y se esta intentando corregir descargando una nueva version.</p>
             <div style="background:#000;padding:15px;border-radius:8px;text-align:left;font-family:monospace;font-size:11px;color:#ef4444;height:120px;overflow:auto;border:1px solid #333">
                 ${error.stack || error.message}
             </div>
