@@ -41,18 +41,20 @@ async function refreshAgentToken(currentAgentToken) {
 
 function startTokenRefreshLoop(agentToken, onTokenRefreshed) {
     log.info('[AUTH]: Iniciando loop de verificacion (cada 4h)');
+    let currentToken = agentToken;
 
     return setInterval(async () => {
         try {
-            if (!agentToken) return;
+            if (!currentToken) return;
 
-            const decoded = jwtDecode(agentToken);
+            const decoded = jwtDecode(currentToken);
             const expTimeMs = decoded.exp * 1000;
 
             if (expTimeMs - Date.now() < THIRTY_DAYS_MS) {
                 log.info('[AUTH]: Token proximo a expirar, refrescando...');
-                const newToken = await refreshAgentToken(agentToken);
-                if (newToken !== agentToken) {
+                const newToken = await refreshAgentToken(currentToken);
+                if (newToken !== currentToken) {
+                    currentToken = newToken;
                     onTokenRefreshed?.(newToken);
                 }
             }

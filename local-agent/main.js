@@ -92,6 +92,9 @@ async function bootstrap() {
         };
         context.setAgentToken = (token) => {
             context.agentToken = token;
+            if (context.socket) {
+                context.socket.auth.token = token;
+            }
         };
         context.startProvisioningHandler = startProvisioningHandler;
         context.registerDevice = () =>
