@@ -3,10 +3,16 @@
  * Gestiona ejecucion de comandos remotos
  */
 
-const { BrowserWindow, app } = require('electron');
+const { BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { log } = require('../utils/logConfig');
+const zlib = require('zlib');
+const axios = require('axios');
+const { createReadStream, createWriteStream } = require('fs');
+const { pipeline } = require('stream');
+const { promisify } = require('util');
+const pipe = promisify(pipeline);
 const { CONTENT_DIR } = require('../config/constants');
 
 let context = {};
@@ -137,8 +143,8 @@ function createContentWindow(display, urlToLoad, command) {
             context.retryManager.delete(screenIndex);
         }
         if (windowSession) {
-            windowSession.clearCache().catch(() => {});
-            windowSession.clearStorageData().catch(() => {});
+            windowSession.clearCache().catch(() => { });
+            windowSession.clearStorageData().catch(() => { });
         }
     });
 
@@ -383,6 +389,56 @@ function handleIdentifyScreen(command) {
     }, 10000);
 }
 
+async function handleGetLogs(command) {
+    const logPath = log.transports.file.getFile().path;
+    const gzipPath = `${logPath}.gz`;
+
+    try {
+        if (!fs.existsSync(logPath)) {
+            sendCommandFeedback(command, 'error', 'Archivo de logs no encontrado.');
+            return;
+        }
+
+        log.info(`[COMMAND] Compriendo logs: ${logPath}`);
+
+        const gzip = zlib.createGzip();
+        const source = fs.createReadStream(logPath);
+        const destination = fs.createWriteStream(gzipPath);
+        await pipe(source, gzip, destination);
+
+        log.info(`[COMMAND] Subiendo logs: ${gzipPath}`);
+
+        const fileContent = fs.readFileSync(gzipPath);
+        const FormData = require('form-data');
+        const form = new FormData();
+        form.append('logFile', fileContent, { filename: `agent-${context.deviceId}.log.gz` });
+
+        const constants = require('../config/constants');
+        const uploadUrl = `${constants.getServerUrl()}/api/logs/upload-debug`;
+
+        const response = await axios.post(uploadUrl, form, {
+            headers: {
+                ...form.getHeaders(),
+                'Authorization': `Bearer ${context.agentToken}`
+            }
+        });
+
+        if (response.data && response.data.success) {
+            sendCommandFeedback(command, 'success', `Logs listos. URL de descarga: ${response.data.downloadUrl}`);
+        } else {
+            throw new Error('Respuesta de servidor inválida');
+        }
+
+        // Limpiar archivo temporal
+        if (fs.existsSync(gzipPath)) fs.unlinkSync(gzipPath);
+
+    } catch (error) {
+        log.error('[COMMAND] Error en GetLogs:', error);
+        sendCommandFeedback(command, 'error', `Error al procesar logs: ${error.message}`);
+        if (fs.existsSync(gzipPath)) fs.unlinkSync(gzipPath);
+    }
+}
+
 module.exports = {
     initializeHandlers,
     handleShowUrl,
@@ -391,4 +447,5 @@ module.exports = {
     handleRefreshScreen,
     sendCommandFeedback,
     createContentWindow,
+    handleGetLogs,
 };

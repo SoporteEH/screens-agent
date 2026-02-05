@@ -146,6 +146,7 @@ async function bootstrap() {
                         refresh_screen: commandHandlers.handleRefreshScreen,
                         reboot_device: deviceService.handleRebootDevice,
                         force_update: require('./services/updater').handleForceUpdate,
+                        get_logs: commandHandlers.handleGetLogs,
                     };
                     if (actions[command.action]) actions[command.action](command);
                 },
@@ -246,7 +247,7 @@ function showErrorWindow(error) {
     if (!app.isReady()) {
         app.whenReady()
             .then(() => showErrorWindow(error))
-            .catch(() => {});
+            .catch(() => { });
         return;
     }
     const errWin = new BrowserWindow({
