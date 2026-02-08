@@ -7,6 +7,7 @@
     <title>Control Panel</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="css/theme.css">
     <style>
         * {
             margin: 0;
@@ -14,10 +15,12 @@
             box-sizing: border-box;
         }
 
+
+
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #1a1a1a;
-            color: #ffffff;
+            background: var(--color-bg-base);
+            color: var(--color-text-primary);
             min-height: 100vh;
             display: flex;
             flex-direction: column;
@@ -31,8 +34,8 @@
             align-items: center;
             justify-content: space-between;
             height: 32px;
-            background: #1a1a1a;
-            border-bottom: 1px solid #2c2c2c;
+            background: var(--color-bg-base);
+            border-bottom: 1px solid var(--color-border);
             -webkit-app-region: drag;
             user-select: none;
             padding: 0 12px;
@@ -40,7 +43,7 @@
 
         .title-bar-text {
             font-size: 12px;
-            color: #888888;
+            color: var(--color-text-secondary);
             font-weight: 500;
         }
 
@@ -67,12 +70,12 @@
         }
 
         .title-bar-button.close:hover {
-            background: #ef4444;
+            background: var(--color-error-text);
         }
 
         .title-bar-button .material-icons {
             font-size: 16px;
-            color: #888888;
+            color: var(--color-text-secondary);
         }
 
         .title-bar-button.close:hover .material-icons {
@@ -109,9 +112,9 @@
         .logo {
             width: 48px;
             height: 48px;
-            background: linear-gradient(135deg, #ff6600, #ff8533);
+            background: var(--color-primary);
             border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(255, 102, 0, 0.3);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -125,13 +128,13 @@
         .title {
             font-size: 24px;
             font-weight: 700;
-            color: #ffffff;
+            color: var(--color-text-primary);
             letter-spacing: -0.5px;
         }
 
         .version-badge {
             font-size: 13px;
-            color: #aaaaaa;
+            color: var(--color-text-secondary);
             font-weight: 600;
             margin-top: -4px;
         }
@@ -139,11 +142,11 @@
         /* Card */
         .card {
             width: 100%;
-            background: #2c2c2c;
+            background: var(--color-bg-surface);
             border-radius: 12px;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
             padding: 24px;
-            border: 1px solid #3d3d3d;
+            border: 1px solid var(--color-border);
         }
 
         /* Status Section */
@@ -153,28 +156,28 @@
             justify-content: space-between;
             padding-bottom: 24px;
             margin-bottom: 24px;
-            border-bottom: 1px solid rgba(61, 61, 61, 0.5);
+            border-bottom: 1px solid var(--color-border);
         }
 
         .status-label {
             font-size: 14px;
             font-weight: 500;
-            color: #888888;
+            color: var(--color-text-secondary);
         }
 
         .status-badge {
             display: flex;
             align-items: center;
             gap: 8px;
-            background: rgba(34, 197, 94, 0.1);
+            background: var(--color-success-bg);
             padding: 6px 12px;
             border-radius: 20px;
-            border: 1px solid rgba(34, 197, 94, 0.2);
+            border: 1px solid var(--color-success-border);
         }
 
         .status-badge.offline {
-            background: rgba(239, 68, 68, 0.1);
-            border-color: rgba(239, 68, 68, 0.2);
+            background: var(--color-error-bg);
+            border-color: var(--color-error-border);
         }
 
         .status-dot {
@@ -188,7 +191,7 @@
             position: absolute;
             width: 100%;
             height: 100%;
-            background: #1d9248;
+            background: var(--color-success-text);
             border-radius: 50%;
             animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
             opacity: 0.75;
@@ -199,13 +202,13 @@
             position: absolute;
             width: 100%;
             height: 100%;
-            background: #1d9248;
+            background: var(--color-success-text);
             border-radius: 50%;
         }
 
         .status-badge.offline .status-dot::before,
         .status-badge.offline .status-dot::after {
-            background: #ef4444;
+            background: var(--color-error-text);
         }
 
         @keyframes ping {
@@ -220,13 +223,13 @@
         .status-text {
             font-size: 12px;
             font-weight: 600;
-            color: #1da850;
+            color: var(--color-success-text);
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
 
         .status-badge.offline .status-text {
-            color: #ef4444;
+            color: var(--color-error-text);
         }
 
         /* Buttons */
@@ -258,14 +261,13 @@
         }
 
         .btn-primary {
-            background: #ff6600;
+            background: var(--color-primary);
             color: white;
-            box-shadow: 0 4px 6px rgba(255, 102, 0, 0.2);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
         }
 
         .btn-primary:hover {
-            background: #e65c00;
-            box-shadow: 0 6px 12px rgba(255, 102, 0, 0.3);
+            background: var(--color-primary-hover);
             transform: translateY(-1px);
         }
 
@@ -280,8 +282,8 @@
         }
 
         .btn-secondary {
-            background: #3d3d3d;
-            color: #ffffff;
+            background: var(--color-border);
+            color: var(--color-text-primary);
         }
 
         .btn-secondary:hover {
@@ -294,17 +296,17 @@
         }
 
         .btn-secondary .material-icons {
-            color: #888888;
+            color: var(--color-text-secondary);
         }
 
         .btn-danger {
             background: transparent;
-            color: #ef4444;
-            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--color-error-text);
+            border: 1px solid var(--color-error-border);
         }
 
         .btn-danger:hover {
-            background: rgba(239, 68, 68, 0.1);
+            background: var(--color-error-bg);
         }
 
         /* Spinner */
@@ -565,6 +567,7 @@
         </div>
     </div>
 
+    </script>
     <script>
         document.getElementById('current-year').textContent = new Date().getFullYear();
 

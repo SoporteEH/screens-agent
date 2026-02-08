@@ -11,7 +11,7 @@ const fs = require('fs');
 // OPTIMIZATION: Manual GC
 app.commandLine.appendSwitch('js-flags', '--expose-gc');
 
-// 1. AUTO-UPDATER INITIALIZATION (CRITICAL)
+// AUTO-UPDATER INITIALIZATION
 try {
     const { configureUpdater, checkForUpdates } = require('./services/updater');
     configureUpdater();
@@ -20,7 +20,7 @@ try {
     log.error('Fatal: Failed to initialize auto-updater:', updaterError);
 }
 
-// GLOBAL STATE (Managed via context)
+// GLOBAL STATE
 const context = {
     deviceId: null,
     agentToken: null,
@@ -33,7 +33,7 @@ const context = {
     autoRefreshTimers: new Map(),
 };
 
-// 2. BOOTSTRAP
+// BOOTSTRAP
 async function bootstrap() {
     try {
         const constants = require('./config/constants');
@@ -159,13 +159,13 @@ async function bootstrap() {
                     const { setDeviceName, getDeviceName } = require('./services/identity');
                     setDeviceName(device.name);
 
-                    // Notificar a la ventana de control si esta abierta
+                    // Notify the control window if it is open
                     try {
                         const { BrowserWindow } = require('electron');
                         const wins = BrowserWindow.getAllWindows();
                         wins.forEach((win) => {
                             if (win && !win.isDestroyed() && win.webContents) {
-                                // Buscamos la ventana enviando un ping o por URL
+                                // We look for the window by sending a ping or by URL
                                 const url = win.getURL();
                                 if (url.includes('control.html')) {
                                     const constants = require('./config/constants');
@@ -184,7 +184,6 @@ async function bootstrap() {
                 },
                 onForceReprovision: () => {
                     log.warn('[SOCKET]: Force-reprovision received.');
-                    // ... same logic as before to clean config and relaunch
                     context.managedWindows.forEach((win) => {
                         if (win && !win.isDestroyed()) win.close();
                     });

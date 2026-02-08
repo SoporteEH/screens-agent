@@ -1,8 +1,10 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="UTF-8">
     <title>Identificar Pantalla</title>
+    <link rel="stylesheet" href="css/theme.css">
     <style>
         body {
             display: flex;
@@ -15,6 +17,7 @@
             font-family: sans-serif;
             overflow: hidden;
         }
+
         h1 {
             font-size: 15vw;
             font-weight: bold;
@@ -22,12 +25,14 @@
         }
     </style>
 </head>
+
 <body>
-<h1 id="identifier"></h1>
-<script>
-    window.electronAPI.onSetIdentifier((text) => {
-        document.getElementById('identifier').innerText = text;
-    });
-</script>
+    <h1 id="identifier"></h1>
+    <script>
+        window.electronAPI.onSetIdentifier((text) => {
+            document.getElementById('identifier').innerText = text;
+        });
+    </script>
 </body>
+
 </html>

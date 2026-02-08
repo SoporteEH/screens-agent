@@ -6,6 +6,10 @@
   "main": "main.js",
   "scripts": {
     "start": "electron . --js-flags=\"--expose-gc\"",
+    "inject:b": "set AGENT_THEME=B&& node scripts/inject-config.js",
+    "inject:default": "set AGENT_THEME=default&& node scripts/inject-config.js",
+    "start:b": "npm run inject:b && npm start",
+    "start:default": "npm run inject:default && npm start",
     "build": "electron-builder",
     "build:prod": "node scripts/inject-config.js && electron-builder",
     "format": "prettier --write \"**/*.js\"",
@@ -97,5 +101,8 @@
       "owner": "SoporteEH",
       "repo": "ScreensWeb-agent"
     }
+  },
+  "config": {
+    "serverUrl": "http://localhost:3000"
   }
 }
