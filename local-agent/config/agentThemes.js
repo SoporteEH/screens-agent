@@ -5,7 +5,7 @@ const agentThemes = {
     default: {
         '--color-primary': '#cf6716',
         '--color-primary-hover': '#e67e22',
-        '--color-secondary': '#2c3e50',
+        '--color-secondary': '#5e381fff',
         '--color-bg-base': '#121212',
         '--color-bg-surface': '#1e1e1e',
         '--color-bg-input': '#2d2d2d',

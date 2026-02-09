@@ -14,7 +14,7 @@ const AGENT_THEME = process.env.AGENT_THEME || 'default';
 
 if (!SERVER_URL) {
     console.error('ERROR: SERVER_URL environment variable is required');
-    console.error('Usage: SERVER_URL=http://your-server.com AGENT_THEME=LUCKIA node scripts/inject-config.js');
+    console.error('Usage: SERVER_URL=http://your-server.com AGENT_THEME=default node scripts/inject-config.js');
     process.exit(1);
 }
 
