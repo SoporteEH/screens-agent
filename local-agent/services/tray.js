@@ -48,8 +48,6 @@ function createTray(serverUrl, version) {
 
         tray.setToolTip('ScreensWeb Agent');
         tray.setContextMenu(contextMenu);
-        tray.on('double-click', () => openControlWindow(serverUrl, version));
-
         return tray;
     } catch (error) {
         log.error('[TRAY]: Error al crear tray:', error);
@@ -57,7 +55,14 @@ function createTray(serverUrl, version) {
     }
 }
 
-function openControlWindow(serverUrl, version) {
+
+function updateControlWindow(info) {
+    if (controlWindow && !controlWindow.isDestroyed()) {
+        controlWindow.webContents.send('agent-info', info);
+    }
+}
+
+function openControlWindow(serverUrl, version, initialStatus = { isOnline: true }) {
     if (controlWindow) {
         controlWindow.focus();
         return;
@@ -85,8 +90,8 @@ function openControlWindow(serverUrl, version) {
         controlWindow.webContents.send('agent-info', {
             serverUrl: serverUrl || 'Desconocido',
             version: version || '1.0.0',
-            status: 'Online',
-            deviceName: getDeviceName(),
+            status: initialStatus.isOnline ? 'Online' : 'Offline',
+            deviceName: initialStatus.deviceName || getDeviceName(),
         });
     });
 
@@ -105,7 +110,9 @@ function openControlWindow(serverUrl, version) {
     });
 }
 
+
 module.exports = {
     createTray,
     openControlWindow,
+    updateControlWindow,
 };

@@ -3,7 +3,7 @@ const { log } = require('../utils/logConfig');
 const { openControlWindow } = require('../services/tray');
 const { handleForceUpdate } = require('../services/updater');
 
-const registerIpcHandlers = (getServerUrl, AGENT_VERSION) => {
+const registerIpcHandlers = (getServerUrl, AGENT_VERSION, getStatus) => {
     ipcMain.on('agent-action', (event, { action, data }) => {
         log.info(`[IPC]: Recibida accion: ${action}`);
 
@@ -25,7 +25,8 @@ const registerIpcHandlers = (getServerUrl, AGENT_VERSION) => {
                 app.quit();
                 break;
             case 'open-control':
-                openControlWindow(getServerUrl(), AGENT_VERSION);
+                const status = typeof getStatus === 'function' ? getStatus() : { isOnline: true };
+                openControlWindow(getServerUrl(), AGENT_VERSION, status);
                 break;
         }
     });

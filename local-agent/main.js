@@ -48,7 +48,8 @@ async function bootstrap() {
         const {
             startProvisioningMode: startProvisioningHandler,
         } = require('./handlers/provisioning');
-        const { createTray } = require('./services/tray');
+        const { createTray, updateControlWindow } = require('./services/tray');
+        const { getDeviceName } = require('./services/identity');
         const commandHandlers = require('./handlers/commands');
         const stateService = require('./services/state');
         const socketService = require('./services/socket');
@@ -76,8 +77,22 @@ async function bootstrap() {
             });
         }
 
+        // HELPER: Broadcast status to control window
+        const broadcastAppStatus = () => {
+            const statusInfo = {
+                serverUrl: constants.getServerUrl(),
+                version: constants.AGENT_VERSION,
+                status: context.isOnline ? 'Online' : 'Offline',
+                deviceName: getDeviceName(),
+            };
+            updateControlWindow(statusInfo);
+        };
+
         // IPC HANDLERS
-        registerIpcHandlers(constants.getServerUrl, constants.AGENT_VERSION);
+        registerIpcHandlers(constants.getServerUrl, constants.AGENT_VERSION, () => ({
+            isOnline: context.isOnline,
+            deviceName: getDeviceName(),
+        }));
 
         // COMMAND HANDLER INITIALIZATION
         context.isOnline = () => context.isOnline;
@@ -126,6 +141,7 @@ async function bootstrap() {
                 },
                 onDisconnect: () => {
                     context.isOnline = false;
+                    broadcastAppStatus();
                 },
                 onReconnect: () => {
                     context.isOnline = true;
@@ -158,29 +174,7 @@ async function bootstrap() {
                     log.info('[SOCKET]: Device info received:', device.name);
                     const { setDeviceName, getDeviceName } = require('./services/identity');
                     setDeviceName(device.name);
-
-                    // Notify the control window if it is open
-                    try {
-                        const { BrowserWindow } = require('electron');
-                        const wins = BrowserWindow.getAllWindows();
-                        wins.forEach((win) => {
-                            if (win && !win.isDestroyed() && win.webContents) {
-                                // We look for the window by sending a ping or by URL
-                                const url = win.getURL();
-                                if (url.includes('control.html')) {
-                                    const constants = require('./config/constants');
-                                    win.webContents.send('agent-info', {
-                                        serverUrl: constants.getServerUrl(),
-                                        version: constants.AGENT_VERSION,
-                                        status: 'Online',
-                                        deviceName: device.name,
-                                    });
-                                }
-                            }
-                        });
-                    } catch (e) {
-                        log.debug('Error refreshing control window:', e);
-                    }
+                    broadcastAppStatus();
                 },
                 onForceReprovision: () => {
                     log.warn('[SOCKET]: Force-reprovision received.');
@@ -203,20 +197,35 @@ async function bootstrap() {
 
         // NETWORK HANDLERS
         context.onNetworkOffline = () => {
+            log.info('[NETWORK]: Detectado OFFLINE. Iniciando fallback...');
             context.isOnline = false;
+            broadcastAppStatus();
+
             const fallbackPath = `file://${path.join(__dirname, 'fallback.html')}`;
             const lastState = stateService.loadLastState();
+
             context.managedWindows.forEach((win, screenId) => {
                 if (win && !win.isDestroyed()) {
-                    const screenData = lastState[screenId];
-                    if (screenData && screenData.url && !screenData.url.startsWith('local:')) {
-                        win.loadURL(fallbackPath);
+                    // Normalizamos screenId a string para asegurar match con lastState keys
+                    const screenIdStr = String(screenId);
+                    const screenData = lastState[screenIdStr];
+
+                    // Si no hay data (asumimos remoto) o si hay data y no es local -> Fallback
+                    if (!screenData || (screenData.url && !screenData.url.startsWith('local:'))) {
+                        log.info(`[NETWORK]: Aplicando fallback en pantalla ${screenIdStr}`);
+                        try {
+                            win.loadURL(fallbackPath);
+                        } catch (e) {
+                            log.error(`[NETWORK]: Error aplicando fallback en pantalla ${screenIdStr}:`, e);
+                        }
                     }
                 }
             });
         };
         context.onNetworkOnline = () => {
+            log.info('[NETWORK]: Detectado ONLINE. Intentando reconectar...');
             context.isOnline = true;
+            broadcastAppStatus();
             if (context.socket && !context.socket.connected) context.socket.connect();
             context.restoreAllContent();
         };
