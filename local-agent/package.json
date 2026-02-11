@@ -1,6 +1,6 @@
 {
   "name": "local-agent",
-  "version": "1.1.18",
+  "version": "1.1.19",
   "private": true,
   "description": "ScreensWeb Local Agent",
   "main": "main.js",
@@ -52,6 +52,7 @@
       "handlers/**/*",
       "utils/**/*",
       "icons/**/*",
+      "css/**/*",
       "*.html",
       "preload.js",
       "identify-preload.js",
@@ -103,6 +104,6 @@
     }
   },
   "config": {
-    "serverUrl": "http://localhost:3000"
+    "serverUrl": "http://192.168.1.134:3000"
   }
 }
