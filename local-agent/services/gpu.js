@@ -15,7 +15,7 @@ function hasGpuFailed() {
             const config = JSON.parse(fs.readFileSync(GPU_CONFIG_FILE, 'utf8'));
             return config.gpuFailed === true;
         }
-    } catch (_e) {}
+    } catch (_e) { }
     return false;
 }
 
@@ -36,7 +36,7 @@ function resetGpuState() {
         if (fs.existsSync(GPU_CONFIG_FILE)) {
             fs.unlinkSync(GPU_CONFIG_FILE);
         }
-    } catch (_e) {}
+    } catch (_e) { }
 }
 
 function configureGpu() {
@@ -46,12 +46,15 @@ function configureGpu() {
     } else {
         log.info('[GPU]: Usando aceleracion por hardware.');
         app.commandLine.appendSwitch('enable-gpu-rasterization');
+        app.commandLine.appendSwitch('ignore-gpu-blocklist');
+        app.commandLine.appendSwitch('enable-accelerated-video-decode');
+        app.commandLine.appendSwitch('enable-zero-copy');
     }
 }
 
 function configureMemory() {
     app.commandLine.appendSwitch('js-flags', '--max-old-space-size=384 --max-semi-space-size=2');
-    app.commandLine.appendSwitch('renderer-process-limit', '3');
+    app.commandLine.appendSwitch('renderer-process-limit', '6');
     app.commandLine.appendSwitch('disk-cache-size', '5242880');
     app.commandLine.appendSwitch('media-cache-size', '5242880');
     app.commandLine.appendSwitch('disable-http-cache');

@@ -87,6 +87,7 @@ function createContentWindow(display, urlToLoad, command) {
         frame: false,
         show: false,
         backgroundColor: '#000000',
+        paintWhenInitiallyHidden: false,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -99,6 +100,7 @@ function createContentWindow(display, urlToLoad, command) {
             spellcheck: false,
             enableWebSQL: false,
             navigateOnDragDrop: false,
+            autoplayPolicy: 'no-user-gesture-required',
         },
     });
 
