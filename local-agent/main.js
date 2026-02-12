@@ -142,9 +142,11 @@ async function bootstrap() {
                 onDisconnect: () => {
                     context.isOnline = false;
                     broadcastAppStatus();
+                    context.onNetworkOffline();
                 },
                 onReconnect: () => {
                     context.isOnline = true;
+                    broadcastAppStatus();
                     context.registerDevice();
                     assetsService.syncLocalAssets(context.agentToken);
                     setTimeout(
@@ -196,9 +198,17 @@ async function bootstrap() {
         };
 
         // NETWORK HANDLERS
+        let fallbackApplied = false;
+
         context.onNetworkOffline = () => {
+            if (fallbackApplied) {
+                log.info('[NETWORK]: Fallback ya aplicado, ignorando evento duplicado.');
+                context.isOnline = false;
+                return;
+            }
             log.info('[NETWORK]: Detectado OFFLINE. Iniciando fallback...');
             context.isOnline = false;
+            fallbackApplied = true;
             broadcastAppStatus();
 
             const fallbackPath = `file://${path.join(__dirname, 'fallback.html')}`;
@@ -225,9 +235,18 @@ async function bootstrap() {
         context.onNetworkOnline = () => {
             log.info('[NETWORK]: Detectado ONLINE. Intentando reconectar...');
             context.isOnline = true;
+            fallbackApplied = false;
             broadcastAppStatus();
             if (context.socket && !context.socket.connected) context.socket.connect();
-            context.restoreAllContent();
+            // Usar restoreLastState (runtime) en vez de restoreAllContent (startup)
+            setTimeout(
+                () =>
+                    stateService.restoreLastState(
+                        context.hardwareIdToDisplayMap,
+                        commandHandlers.handleShowUrl
+                    ),
+                2000
+            );
         };
 
         // START APP
