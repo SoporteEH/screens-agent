@@ -40,7 +40,7 @@ function resetGpuState() {
 }
 
 function configureGpu() {
-    // Leemos la variable de entorno para desactivar GPU totalmente
+
     const disableGpu = process.env.DISABLE_GPU === 'true';
 
     if (disableGpu) {

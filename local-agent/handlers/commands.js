@@ -257,48 +257,73 @@ function handleShowUrl(command, currentAttempt = 0) {
 
         win.webContents.removeAllListeners('did-finish-load');
 
-        // Logic for Sportradar
-        if (url.startsWith('https://lcr.sportradar.com') && !!credentials) {
-            win.webContents.on('did-finish-load', () => {
-                if (
-                    !win.isDestroyed() &&
-                    win.webContents.getURL().startsWith('https://lcr.sportradar.com')
-                ) {
-                    const script = `
+
+        // Logic for Sportradar / LuckiaTV - Use did-frame-finish-load to support iframes (Player Mode)
+        const checkIsTargetUrl = (testUrl) => {
+            if (!testUrl) return false;
+            return testUrl.startsWith('https://lcr.sportradar.com') ||
+                testUrl.toLowerCase().includes('luckiatv') ||
+                testUrl.includes('luckia-tv');
+        };
+
+        if (!!credentials) {
+            win.webContents.on('did-frame-finish-load', (event, isMainFrame, frameProcessId, frameRoutingId) => {
+                const frames = win.webContents.getAllFrames();
+                const frame = frames.find(f => f.routingId === frameRoutingId);
+
+                if (frame && !win.isDestroyed() && (checkIsTargetUrl(frame.url) || (isMainFrame && checkIsTargetUrl(url)))) {
+                    log.info(`[AUTOLOGIN]: Target frame detected (${frame.url}). Injecting credentials...`);
+
+                    const injectionScript = `
                         (() => {
-                            return new Promise((resolve) => {
-                                const setNativeValue = (element, value) => {
-                                    const valueSetter = Object.getOwnPropertyDescriptor(element, 'value').set;
-                                    const prototype = Object.getPrototypeOf(element);
-                                    const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value').set;
-                                    if (valueSetter && valueSetter !== prototypeValueSetter) {
-                                        prototypeValueSetter.call(element, value);
-                                    } else {
-                                        valueSetter.call(element, value);
-                                    }
-                                    element.dispatchEvent(new Event('input', { bubbles: true }));
-                                };
-                                let attempts = 0;
-                                const tryLogin = () => {
-                                    const usernameInput = document.querySelector('input[name="username"]');
-                                    const passwordInput = document.querySelector('input[name="password"]');
-                                    const loginButton = document.querySelector('button[type="submit"]');
-                                    if (usernameInput && passwordInput && loginButton) {
-                                        setNativeValue(usernameInput, ${JSON.stringify(credentials.username)});
-                                        setNativeValue(passwordInput, ${JSON.stringify(credentials.password)});
-                                        setTimeout(() => { loginButton.click(); resolve({ success: true, attempts }); }, 200);
-                                        return;
-                                    }
-                                    if (attempts++ < 20) setTimeout(tryLogin, 500);
-                                    else resolve({ success: false, reason: 'Timeout' });
-                                };
-                                tryLogin();
-                            });
+                            console.log('[AUTOLOGIN] Script injected in frame: ' + window.location.href);
+                            const setNativeValue = (element, value) => {
+                                const valueSetter = Object.getOwnPropertyDescriptor(element, 'value').set;
+                                const prototype = Object.getPrototypeOf(element);
+                                const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value').set;
+                                if (valueSetter && valueSetter !== prototypeValueSetter) {
+                                    prototypeValueSetter.call(element, value);
+                                } else {
+                                    valueSetter.call(element, value);
+                                }
+                                element.dispatchEvent(new Event('input', { bubbles: true }));
+                            };
+
+                            let attempts = 0;
+                            const maxAttempts = 40; // 20 seconds total
+                            
+                            const tryLogin = () => {
+                                // Improved selectors
+                                const userField = document.querySelector('input[name="username"], input[id*="user"], input[type="text"]');
+                                const passField = document.querySelector('input[name="password"], input[id*="pass"], input[type="password"]');
+                                const loginBtn = document.querySelector('button[type="submit"], button.login, .btn-primary, button[id*="login"]');
+
+                                if (userField && passField && loginBtn) {
+                                    console.log('[AUTOLOGIN] Form found. Filling credentials...');
+                                    setNativeValue(userField, ${JSON.stringify(credentials.username)});
+                                    setNativeValue(passField, ${JSON.stringify(credentials.password)});
+                                    
+                                    setTimeout(() => { 
+                                        console.log('[AUTOLOGIN] Clicking login button...');
+                                        loginBtn.click();
+                                    }, 500);
+                                    return;
+                                }
+
+                                if (attempts++ < maxAttempts) {
+                                    setTimeout(tryLogin, 500);
+                                } else {
+                                    console.warn('[AUTOLOGIN] Form not found after ' + maxAttempts + ' attempts.');
+                                }
+                            };
+                            
+                            if (document.readyState === 'complete') tryLogin();
+                            else window.addEventListener('load', tryLogin);
                         })();
                     `;
-                    win.webContents
-                        .executeJavaScript(script)
-                        .catch((err) => log.error('[AUTOLOGIN] Error:', err));
+
+                    frame.executeJavaScript(injectionScript)
+                        .catch(err => log.error('[AUTOLOGIN] Execution Error:', err));
                 }
             });
         }
