@@ -40,20 +40,23 @@ function resetGpuState() {
 }
 
 function configureGpu() {
-    // if (hasGpuFailed()) {
-    //     log.info('[GPU]: Usando renderizado por software (check bypasseado).');
-    //     app.disableHardwareAcceleration();
-    // } else {
-    log.info('[GPU]: Usando aceleracion por hardware.');
+    // Leemos la variable de entorno para desactivar GPU totalmente
+    const disableGpu = process.env.DISABLE_GPU === 'true';
+
+    if (disableGpu) {
+        log.info('[GPU]: Hardware acceleration DISABLED (via DISABLE_GPU environment variable).');
+        app.disableHardwareAcceleration();
+        return;
+    }
+
+    log.info('[GPU]: Usando aceleracion por hardware (Comportamiento Conservador).');
+
+    // Optimizaciones basicas de rasterizado y decodificacion
     app.commandLine.appendSwitch('enable-gpu-rasterization');
-    app.commandLine.appendSwitch('ignore-gpu-blocklist');
     app.commandLine.appendSwitch('enable-accelerated-video-decode');
     app.commandLine.appendSwitch('enable-zero-copy');
-
-    // Windows specific optimizations
     app.commandLine.appendSwitch('use-angle', 'default');
     app.commandLine.appendSwitch('enable-webgl');
-    // }
 }
 
 function configureMemory() {
