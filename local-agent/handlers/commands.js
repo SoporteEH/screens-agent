@@ -161,6 +161,11 @@ function createContentWindow(display, urlToLoad, command) {
 function handleShowUrl(command, currentAttempt = 0) {
     const { screenIndex, url, credentials, contentName, refreshInterval } = command;
 
+    if (!url || !url.trim()) {
+        logger.error(`[COMMAND] URL vacía recibida para pantalla ${screenIndex}. Ignorando.`);
+        sendCommandFeedback(command, 'error', `URL vacía, no se puede cargar`);
+        return;
+    }
     if (context.retryManager.has(screenIndex)) {
         clearTimeout(context.retryManager.get(screenIndex).timerId);
         context.retryManager.delete(screenIndex);
