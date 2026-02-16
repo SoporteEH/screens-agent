@@ -204,6 +204,39 @@ function handleShowUrl(command, currentAttempt = 0) {
     }
 
     let finalUrl = url;
+
+    // PLAYER MODE CHECK
+    const { loadConfig } = require('../utils/configManager');
+    const { getServerUrl } = require('../config/constants');
+    const config = loadConfig();
+    const serverUrl = config.serverUrl || getServerUrl();
+    const isPlayerMode = !!serverUrl && config.deviceId;
+
+    if (isPlayerMode) {
+        const playerUrl = `${serverUrl}/player/${config.deviceId}/${screenIndex}`;
+
+        if (url !== playerUrl) {
+            log.info(`[COMMAND]: Player Mode active. Delegating content '${url}' to player page.`);
+
+            let win = context.managedWindows.get(screenIndex);
+            if (!win || win.isDestroyed()) {
+                // If window doesn't exist, create it pointing to PLAYER URL
+                log.info(`[COMMAND]: Window missing in Player Mode. Recreating with player URL.`);
+                createContentWindow(targetDisplay, playerUrl, { ...command, url: playerUrl });
+                return;
+            }
+
+            // If window exists, ensure it's on the player URL
+            const currentWinUrl = win.webContents.getURL();
+            if (!currentWinUrl.includes('/player/')) {
+                log.info(`[COMMAND]: Restoring player URL on screen ${screenIndex}.`);
+                win.loadURL(playerUrl);
+            }
+
+            return;
+        }
+    }
+
     if (url.startsWith('local:')) {
         const filename = url.substring(6);
         const filePath = path.join(CONTENT_DIR, filename);

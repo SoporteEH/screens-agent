@@ -149,14 +149,32 @@ async function bootstrap() {
                     broadcastAppStatus();
                     context.registerDevice();
                     assetsService.syncLocalAssets(context.agentToken);
-                    setTimeout(
-                        () =>
-                            stateService.restoreLastState(
-                                context.hardwareIdToDisplayMap,
-                                commandHandlers.handleShowUrl
-                            ),
-                        1000
-                    );
+
+                    // Reload player URLs on all screens
+                    const { loadConfig } = require('./utils/configManager');
+                    const onlineConfig = loadConfig();
+                    const serverUrl = onlineConfig.serverUrl || constants.getServerUrl();
+
+                    if (serverUrl && onlineConfig.deviceId) {
+                        setTimeout(() => {
+                            context.managedWindows.forEach((win, screenId) => {
+                                if (win && !win.isDestroyed()) {
+                                    const playerUrl = `${serverUrl}/player/${onlineConfig.deviceId}/${screenId}`;
+                                    log.info(`[SOCKET]: Reconectado. Reloading player URL for screen ${screenId}`);
+                                    win.loadURL(playerUrl);
+                                }
+                            });
+                        }, 1000);
+                    } else {
+                        setTimeout(
+                            () =>
+                                stateService.restoreLastState(
+                                    context.hardwareIdToDisplayMap,
+                                    commandHandlers.handleShowUrl
+                                ),
+                            1000
+                        );
+                    }
                 },
                 onCommand: (command) => {
                     log.info('[SOCKET]: Comando recibido:', command);
@@ -238,15 +256,32 @@ async function bootstrap() {
             fallbackApplied = false;
             broadcastAppStatus();
             if (context.socket && !context.socket.connected) context.socket.connect();
-            // Usar restoreLastState (runtime) en vez de restoreAllContent (startup)
-            setTimeout(
-                () =>
-                    stateService.restoreLastState(
-                        context.hardwareIdToDisplayMap,
-                        commandHandlers.handleShowUrl
-                    ),
-                2000
-            );
+
+            // Reload player URLs on all screens
+            const { loadConfig } = require('./utils/configManager');
+            const onlineConfig = loadConfig();
+            const serverUrl = onlineConfig.serverUrl || constants.getServerUrl();
+
+            if (serverUrl && onlineConfig.deviceId) {
+                setTimeout(() => {
+                    context.managedWindows.forEach((win, screenId) => {
+                        if (win && !win.isDestroyed()) {
+                            const playerUrl = `${serverUrl}/player/${onlineConfig.deviceId}/${screenId}`;
+                            log.info(`[NETWORK]: Reloading player URL for screen ${screenId}`);
+                            win.loadURL(playerUrl);
+                        }
+                    });
+                }, 2000);
+            } else {
+                setTimeout(
+                    () =>
+                        stateService.restoreLastState(
+                            context.hardwareIdToDisplayMap,
+                            commandHandlers.handleShowUrl
+                        ),
+                    2000
+                );
+            }
         };
 
         // START APP

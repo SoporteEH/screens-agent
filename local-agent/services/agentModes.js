@@ -29,7 +29,34 @@ const startNormalMode = async (context) => {
 
     startTokenRefreshLoop(config.agentToken, setAgentToken);
     await buildDisplayMap(hardwareIdToDisplayMap);
-    restoreAllContent();
+
+    const serverUrl = config.serverUrl || require('../config/constants').getServerUrl();
+
+    if (serverUrl) {
+        // Player Mode: load server-rendered player page per screen
+        const { handleShowUrl } = require('../handlers/commands');
+        const screens = Array.from(hardwareIdToDisplayMap.keys());
+
+        screens.forEach((screenIndex, i) => {
+            const playerUrl = `${serverUrl}/player/${config.deviceId}/${screenIndex}`;
+            log.info(`[PLAYER]: Loading player URL for screen ${screenIndex}: ${playerUrl}`);
+
+            setTimeout(() => {
+                handleShowUrl({
+                    action: 'show_url',
+                    screenIndex,
+                    url: playerUrl,
+                    contentName: `Player ${screenIndex}`,
+                    silent: true,
+                });
+            }, 500 * i);
+        });
+    } else {
+        // Fallback: legacy restore
+        log.info('[NORMAL]: No server URL, using legacy content restore');
+        restoreAllContent();
+    }
+
     connectSocket(config.agentToken);
     initializeMonitors(context);
 
@@ -45,8 +72,8 @@ const startNormalMode = async (context) => {
         log.info('[OPTIMIZATION]: Limpiando cache.');
         managedWindows.forEach((win) => {
             if (win?.isDestroyed()) return;
-            win.webContents.session.clearCache().catch(() => {});
-            win.webContents.session.clearStorageData().catch(() => {});
+            win.webContents.session.clearCache().catch(() => { });
+            win.webContents.session.clearStorageData().catch(() => { });
         });
     }, CONSTANTS.GC_INTERVAL_MS);
 };
