@@ -1,17 +1,10 @@
-/**
- * ScreensWeb Local Agent
- * Orchestrator Main Process
- */
-
 const { app, BrowserWindow, screen, net, ipcMain } = require('electron');
 const { log } = require('./utils/logConfig');
 const path = require('path');
 const fs = require('fs');
 
-// OPTIMIZATION: Manual GC
 app.commandLine.appendSwitch('js-flags', '--expose-gc');
 
-// AUTO-UPDATER INITIALIZATION
 try {
     const { configureUpdater, checkForUpdates } = require('./services/updater');
     configureUpdater();
@@ -156,9 +149,26 @@ async function bootstrap() {
                     const serverUrl = onlineConfig.serverUrl || constants.getServerUrl();
 
                     if (serverUrl && onlineConfig.deviceId) {
+                        const savedState = stateService.loadLastState();
                         setTimeout(() => {
                             context.managedWindows.forEach((win, screenId) => {
-                                if (win && !win.isDestroyed()) {
+                                if (!win || win.isDestroyed()) return;
+                                const screenData = savedState[String(screenId)];
+                                const isAutologinUrl = screenData?.url && (
+                                    screenData.url.startsWith('https://lcr.sportradar.com') ||
+                                    screenData.url.toLowerCase().includes('luckiatv') ||
+                                    screenData.url.includes('luckia-tv')
+                                );
+                                if (isAutologinUrl && screenData.credentials) {
+                                    log.info(`[SOCKET]: Reconectado. Re-applying autologin for screen ${screenId}: ${screenData.url}`);
+                                    commandHandlers.handleShowUrl({
+                                        action: 'show_url',
+                                        screenIndex: screenId,
+                                        url: screenData.url,
+                                        credentials: screenData.credentials,
+                                        refreshInterval: screenData.refreshInterval || 0,
+                                    });
+                                } else {
                                     const playerUrl = `${serverUrl}/player/${onlineConfig.deviceId}/${screenId}`;
                                     log.info(`[SOCKET]: Reconectado. Reloading player URL for screen ${screenId}`);
                                     win.loadURL(playerUrl);

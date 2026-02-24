@@ -1,7 +1,3 @@
-/**
- * Command Handlers
- * Gestiona ejecucion de comandos remotos
- */
 
 const { BrowserWindow } = require('electron');
 const path = require('path');
@@ -91,6 +87,7 @@ function createContentWindow(display, urlToLoad, command) {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
+            nodeIntegrationInSubFrames: true,
             // WARNING: Desactivado para permitir iframes y contenido mixto en senalizacion.
             // Solo URLs seguras deberian llegar aqui (validadas en backend).
             webSecurity: false,
@@ -162,7 +159,7 @@ function handleShowUrl(command, currentAttempt = 0) {
     const { screenIndex, url, credentials, contentName, refreshInterval } = command;
 
     if (!url || !url.trim()) {
-        logger.error(`[COMMAND] URL vacía recibida para pantalla ${screenIndex}. Ignorando.`);
+        log.error(`[COMMAND] URL vacía recibida para pantalla ${screenIndex}. Ignorando.`);
         sendCommandFeedback(command, 'error', `URL vacía, no se puede cargar`);
         return;
     }
@@ -212,7 +209,16 @@ function handleShowUrl(command, currentAttempt = 0) {
     const serverUrl = config.serverUrl || getServerUrl();
     const isPlayerMode = !!serverUrl && config.deviceId;
 
-    if (isPlayerMode) {
+    // For autologin URLs (sportradar/luckiatv), bypass Player Mode and load directly
+    // so we can inject credentials into the main frame without cross-origin iframe issues.
+    const checkIsAutologinUrl = (testUrl) => {
+        if (!testUrl) return false;
+        return testUrl.startsWith('https://lcr.sportradar.com') ||
+            testUrl.toLowerCase().includes('luckiatv') ||
+            testUrl.includes('luckia-tv');
+    };
+
+    if (isPlayerMode && !checkIsAutologinUrl(url)) {
         const playerUrl = `${serverUrl}/player/${config.deviceId}/${screenIndex}`;
 
         if (url !== playerUrl) {
@@ -220,13 +226,10 @@ function handleShowUrl(command, currentAttempt = 0) {
 
             let win = context.managedWindows.get(screenIndex);
             if (!win || win.isDestroyed()) {
-                // If window doesn't exist, create it pointing to PLAYER URL
                 log.info(`[COMMAND]: Window missing in Player Mode. Recreating with player URL.`);
-                createContentWindow(targetDisplay, playerUrl, { ...command, url: playerUrl });
-                return;
+                win = createContentWindow(targetDisplay, playerUrl, { ...command, url: playerUrl });
             }
 
-            // If window exists, ensure it's on the player URL
             const currentWinUrl = win.webContents.getURL();
             if (!currentWinUrl.includes('/player/')) {
                 log.info(`[COMMAND]: Restoring player URL on screen ${screenIndex}.`);
@@ -256,9 +259,10 @@ function handleShowUrl(command, currentAttempt = 0) {
         }
 
         win.webContents.removeAllListeners('did-finish-load');
+        win.webContents.removeAllListeners('did-navigate-in-page');
+        win.webContents.removeAllListeners('did-navigate');
 
-
-        // Logic for Sportradar / LuckiaTV - Use did-frame-finish-load to support iframes (Player Mode)
+        // Logic for Sportradar / LuckiaTV autologin
         const checkIsTargetUrl = (testUrl) => {
             if (!testUrl) return false;
             return testUrl.startsWith('https://lcr.sportradar.com') ||
@@ -267,64 +271,75 @@ function handleShowUrl(command, currentAttempt = 0) {
         };
 
         if (!!credentials) {
-            win.webContents.on('did-frame-finish-load', (event, isMainFrame, frameProcessId, frameRoutingId) => {
-                const frames = win.webContents.getAllFrames();
-                const frame = frames.find(f => f.routingId === frameRoutingId);
+            const injectionScript = `
+                (() => {
+                    if (window.__autologinStarted) return;
+                    window.__autologinStarted = true;
+                    console.log('[AUTOLOGIN] Script started at: ' + window.location.href);
 
-                if (frame && !win.isDestroyed() && (checkIsTargetUrl(frame.url) || (isMainFrame && checkIsTargetUrl(url)))) {
-                    log.info(`[AUTOLOGIN]: Target frame detected (${frame.url}). Injecting credentials...`);
+                    const setNativeValue = (element, value) => {
+                        const valueSetter = Object.getOwnPropertyDescriptor(element, 'value').set;
+                        const prototype = Object.getPrototypeOf(element);
+                        const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value').set;
+                        if (valueSetter && valueSetter !== prototypeValueSetter) {
+                            prototypeValueSetter.call(element, value);
+                        } else {
+                            valueSetter.call(element, value);
+                        }
+                        element.dispatchEvent(new Event('input', { bubbles: true }));
+                    };
 
-                    const injectionScript = `
-                        (() => {
-                            console.log('[AUTOLOGIN] Script injected in frame: ' + window.location.href);
-                            const setNativeValue = (element, value) => {
-                                const valueSetter = Object.getOwnPropertyDescriptor(element, 'value').set;
-                                const prototype = Object.getPrototypeOf(element);
-                                const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value').set;
-                                if (valueSetter && valueSetter !== prototypeValueSetter) {
-                                    prototypeValueSetter.call(element, value);
-                                } else {
-                                    valueSetter.call(element, value);
-                                }
-                                element.dispatchEvent(new Event('input', { bubbles: true }));
-                            };
+                    let attempts = 0;
+                    const maxAttempts = 60;
 
-                            let attempts = 0;
-                            const maxAttempts = 40; // 20 seconds total
-                            
-                            const tryLogin = () => {
-                                // Improved selectors
-                                const userField = document.querySelector('input[name="username"], input[id*="user"], input[type="text"]');
-                                const passField = document.querySelector('input[name="password"], input[id*="pass"], input[type="password"]');
-                                const loginBtn = document.querySelector('button[type="submit"], button.login, .btn-primary, button[id*="login"]');
+                    const tryLogin = () => {
+                        const userField = document.querySelector('input[name="username"], input[id*="user"], input[type="text"]');
+                        const passField = document.querySelector('input[name="password"], input[id*="pass"], input[type="password"]');
+                        const loginBtn = document.querySelector('button[type="submit"], button.login, .btn-primary, button[id*="login"]');
 
-                                if (userField && passField && loginBtn) {
-                                    console.log('[AUTOLOGIN] Form found. Filling credentials...');
-                                    setNativeValue(userField, ${JSON.stringify(credentials.username)});
-                                    setNativeValue(passField, ${JSON.stringify(credentials.password)});
-                                    
-                                    setTimeout(() => { 
-                                        console.log('[AUTOLOGIN] Clicking login button...');
-                                        loginBtn.click();
-                                    }, 500);
-                                    return;
-                                }
+                        if (userField && passField && loginBtn) {
+                            console.log('[AUTOLOGIN] Form found. Filling credentials...');
+                            setNativeValue(userField, ${JSON.stringify(credentials.username)});
+                            setNativeValue(passField, ${JSON.stringify(credentials.password)});
+                            setTimeout(() => {
+                                console.log('[AUTOLOGIN] Clicking login button...');
+                                loginBtn.click();
+                            }, 500);
+                            return;
+                        }
 
-                                if (attempts++ < maxAttempts) {
-                                    setTimeout(tryLogin, 500);
-                                } else {
-                                    console.warn('[AUTOLOGIN] Form not found after ' + maxAttempts + ' attempts.');
-                                }
-                            };
-                            
-                            if (document.readyState === 'complete') tryLogin();
-                            else window.addEventListener('load', tryLogin);
-                        })();
-                    `;
+                        if (attempts++ < maxAttempts) {
+                            setTimeout(tryLogin, 500);
+                        } else {
+                            console.warn('[AUTOLOGIN] Form not found after ' + maxAttempts + ' attempts.');
+                        }
+                    };
 
-                    frame.executeJavaScript(injectionScript)
+                    tryLogin();
+                })();
+            `;
+
+            const injectIfTarget = (sourceUrl) => {
+                if (!win.isDestroyed() && checkIsTargetUrl(sourceUrl)) {
+                    log.info(`[AUTOLOGIN]: Injecting into ${sourceUrl}`);
+                    win.webContents.executeJavaScript(injectionScript)
                         .catch(err => log.error('[AUTOLOGIN] Execution Error:', err));
                 }
+            };
+
+            // Fires when main frame finishes loading (initial load)
+            win.webContents.on('did-finish-load', () => {
+                injectIfTarget(win.webContents.getURL());
+            });
+
+            // Fires on SPA hash/history navigation (e.g. redirect to /#/login)
+            win.webContents.on('did-navigate-in-page', (event, navUrl) => {
+                injectIfTarget(navUrl);
+            });
+
+            // Fires on full cross-origin navigations
+            win.webContents.on('did-navigate', (event, navUrl) => {
+                injectIfTarget(navUrl);
             });
         }
 

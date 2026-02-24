@@ -34,21 +34,42 @@ const startNormalMode = async (context) => {
 
     if (serverUrl) {
         // Player Mode: load server-rendered player page per screen
+        // Exception: if a screen has a saved autologin URL (sportradar/luckiatv), restore it directly
         const { handleShowUrl } = require('../handlers/commands');
+        const { loadLastState } = require('./state');
+        const savedState = loadLastState();
         const screens = Array.from(hardwareIdToDisplayMap.keys());
 
-        screens.forEach((screenIndex, i) => {
-            const playerUrl = `${serverUrl}/player/${config.deviceId}/${screenIndex}`;
-            log.info(`[PLAYER]: Loading player URL for screen ${screenIndex}: ${playerUrl}`);
+        const isAutologinUrl = (url) => url && (
+            url.startsWith('https://lcr.sportradar.com') ||
+            url.toLowerCase().includes('luckiatv') ||
+            url.includes('luckia-tv')
+        );
 
+        screens.forEach((screenIndex, i) => {
+            const screenData = savedState[String(screenIndex)];
             setTimeout(() => {
-                handleShowUrl({
-                    action: 'show_url',
-                    screenIndex,
-                    url: playerUrl,
-                    contentName: `Player ${screenIndex}`,
-                    silent: true,
-                });
+                if (isAutologinUrl(screenData?.url) && screenData.credentials) {
+                    log.info(`[PLAYER]: Screen ${screenIndex} has autologin URL, restoring directly: ${screenData.url}`);
+                    handleShowUrl({
+                        action: 'show_url',
+                        screenIndex,
+                        url: screenData.url,
+                        credentials: screenData.credentials,
+                        refreshInterval: screenData.refreshInterval || 0,
+                        silent: true,
+                    });
+                } else {
+                    const playerUrl = `${serverUrl}/player/${config.deviceId}/${screenIndex}`;
+                    log.info(`[PLAYER]: Loading player URL for screen ${screenIndex}: ${playerUrl}`);
+                    handleShowUrl({
+                        action: 'show_url',
+                        screenIndex,
+                        url: playerUrl,
+                        contentName: `Player ${screenIndex}`,
+                        silent: true,
+                    });
+                }
             }, 500 * i);
         });
     } else {
