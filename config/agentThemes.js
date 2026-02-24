@@ -20,7 +20,7 @@ const agentThemes = {
         '--color-success-text': '#1d9248',
         '--color-error-bg': 'rgba(239, 68, 68, 0.1)',
         '--color-error-border': 'rgba(239, 68, 68, 0.2)',
-        '--color-error-text': '#ef4444'
+        '--color-error-text': '#ef4444',
     },
     b: {
         '--color-primary': '#126a32ff',
@@ -40,8 +40,8 @@ const agentThemes = {
         '--color-success-text': '#059669',
         '--color-error-bg': 'rgba(239, 68, 68, 0.1)',
         '--color-error-border': 'rgba(239, 68, 68, 0.2)',
-        '--color-error-text': '#ef4444'
-    }
+        '--color-error-text': '#ef4444',
+    },
 };
 
 module.exports = agentThemes;

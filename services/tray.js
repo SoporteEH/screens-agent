@@ -55,7 +55,6 @@ function createTray(serverUrl, version) {
     }
 }
 
-
 function updateControlWindow(info) {
     if (controlWindow && !controlWindow.isDestroyed()) {
         controlWindow.webContents.send('agent-info', info);
@@ -109,7 +108,6 @@ function openControlWindow(serverUrl, version, initialStatus = { isOnline: true 
         }
     });
 }
-
 
 module.exports = {
     createTray,

@@ -15,7 +15,7 @@ function hasGpuFailed() {
             const config = JSON.parse(fs.readFileSync(GPU_CONFIG_FILE, 'utf8'));
             return config.gpuFailed === true;
         }
-    } catch (_e) { }
+    } catch (_e) {}
     return false;
 }
 
@@ -36,11 +36,10 @@ function resetGpuState() {
         if (fs.existsSync(GPU_CONFIG_FILE)) {
             fs.unlinkSync(GPU_CONFIG_FILE);
         }
-    } catch (_e) { }
+    } catch (_e) {}
 }
 
 function configureGpu() {
-
     const disableGpu = process.env.DISABLE_GPU === 'true';
 
     if (disableGpu) {

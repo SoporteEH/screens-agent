@@ -154,13 +154,15 @@ async function bootstrap() {
                             context.managedWindows.forEach((win, screenId) => {
                                 if (!win || win.isDestroyed()) return;
                                 const screenData = savedState[String(screenId)];
-                                const isAutologinUrl = screenData?.url && (
-                                    screenData.url.startsWith('https://lcr.sportradar.com') ||
-                                    screenData.url.toLowerCase().includes('luckiatv') ||
-                                    screenData.url.includes('luckia-tv')
-                                );
+                                const isAutologinUrl =
+                                    screenData?.url &&
+                                    (screenData.url.startsWith('https://lcr.sportradar.com') ||
+                                        screenData.url.toLowerCase().includes('luckiatv') ||
+                                        screenData.url.includes('luckia-tv'));
                                 if (isAutologinUrl && screenData.credentials) {
-                                    log.info(`[SOCKET]: Reconectado. Re-applying autologin for screen ${screenId}: ${screenData.url}`);
+                                    log.info(
+                                        `[SOCKET]: Reconectado. Re-applying autologin for screen ${screenId}: ${screenData.url}`
+                                    );
                                     commandHandlers.handleShowUrl({
                                         action: 'show_url',
                                         screenIndex: screenId,
@@ -170,7 +172,9 @@ async function bootstrap() {
                                     });
                                 } else {
                                     const playerUrl = `${serverUrl}/player/${onlineConfig.deviceId}/${screenId}`;
-                                    log.info(`[SOCKET]: Reconectado. Reloading player URL for screen ${screenId}`);
+                                    log.info(
+                                        `[SOCKET]: Reconectado. Reloading player URL for screen ${screenId}`
+                                    );
                                     win.loadURL(playerUrl);
                                 }
                             });
@@ -254,7 +258,10 @@ async function bootstrap() {
                         try {
                             win.loadURL(fallbackPath);
                         } catch (e) {
-                            log.error(`[NETWORK]: Error aplicando fallback en pantalla ${screenIdStr}:`, e);
+                            log.error(
+                                `[NETWORK]: Error aplicando fallback en pantalla ${screenIdStr}:`,
+                                e
+                            );
                         }
                     }
                 }
@@ -322,7 +329,7 @@ function showErrorWindow(error) {
     if (!app.isReady()) {
         app.whenReady()
             .then(() => showErrorWindow(error))
-            .catch(() => { });
+            .catch(() => {});
         return;
     }
     const errWin = new BrowserWindow({

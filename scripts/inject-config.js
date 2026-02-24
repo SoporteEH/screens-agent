@@ -11,10 +11,11 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const SERVER_URL = process.env.SERVER_URL;
 const AGENT_THEME = process.env.AGENT_THEME || 'default';
 
-
 if (!SERVER_URL) {
     console.error('ERROR: SERVER_URL environment variable is required');
-    console.error('Usage: SERVER_URL=http://your-server.com AGENT_THEME=default node scripts/inject-config.js');
+    console.error(
+        'Usage: SERVER_URL=http://your-server.com AGENT_THEME=default node scripts/inject-config.js'
+    );
     process.exit(1);
 }
 
@@ -27,7 +28,6 @@ packageJson.config.serverUrl = SERVER_URL;
 
 fs.writeFileSync(packagePath, JSON.stringify(packageJson, null, 2) + '\n');
 console.log(`SERVER_URL inyectado en package.json: ${SERVER_URL}`);
-
 
 // Inyección de Tema
 const themeColors = agentThemes[AGENT_THEME.toLowerCase()] || agentThemes.default;

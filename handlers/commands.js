@@ -1,4 +1,3 @@
-
 const { BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -142,8 +141,8 @@ function createContentWindow(display, urlToLoad, command) {
             context.retryManager.delete(screenIndex);
         }
         if (windowSession) {
-            windowSession.clearCache().catch(() => { });
-            windowSession.clearStorageData().catch(() => { });
+            windowSession.clearCache().catch(() => {});
+            windowSession.clearStorageData().catch(() => {});
         }
     });
 
@@ -213,9 +212,11 @@ function handleShowUrl(command, currentAttempt = 0) {
     // so we can inject credentials into the main frame without cross-origin iframe issues.
     const checkIsAutologinUrl = (testUrl) => {
         if (!testUrl) return false;
-        return testUrl.startsWith('https://lcr.sportradar.com') ||
+        return (
+            testUrl.startsWith('https://lcr.sportradar.com') ||
             testUrl.toLowerCase().includes('luckiatv') ||
-            testUrl.includes('luckia-tv');
+            testUrl.includes('luckia-tv')
+        );
     };
 
     if (isPlayerMode && !checkIsAutologinUrl(url)) {
@@ -265,9 +266,11 @@ function handleShowUrl(command, currentAttempt = 0) {
         // Logic for Sportradar / LuckiaTV autologin
         const checkIsTargetUrl = (testUrl) => {
             if (!testUrl) return false;
-            return testUrl.startsWith('https://lcr.sportradar.com') ||
+            return (
+                testUrl.startsWith('https://lcr.sportradar.com') ||
                 testUrl.toLowerCase().includes('luckiatv') ||
-                testUrl.includes('luckia-tv');
+                testUrl.includes('luckia-tv')
+            );
         };
 
         if (!!credentials) {
@@ -322,8 +325,9 @@ function handleShowUrl(command, currentAttempt = 0) {
             const injectIfTarget = (sourceUrl) => {
                 if (!win.isDestroyed() && checkIsTargetUrl(sourceUrl)) {
                     log.info(`[AUTOLOGIN]: Injecting into ${sourceUrl}`);
-                    win.webContents.executeJavaScript(injectionScript)
-                        .catch(err => log.error('[AUTOLOGIN] Execution Error:', err));
+                    win.webContents
+                        .executeJavaScript(injectionScript)
+                        .catch((err) => log.error('[AUTOLOGIN] Execution Error:', err));
                 }
             };
 
@@ -499,19 +503,22 @@ async function handleGetLogs(command) {
         const response = await axios.post(uploadUrl, form, {
             headers: {
                 ...form.getHeaders(),
-                'Authorization': `Bearer ${context.agentToken}`
-            }
+                Authorization: `Bearer ${context.agentToken}`,
+            },
         });
 
         if (response.data && response.data.success) {
-            sendCommandFeedback(command, 'success', `Logs listos. URL de descarga: ${response.data.downloadUrl}`);
+            sendCommandFeedback(
+                command,
+                'success',
+                `Logs listos. URL de descarga: ${response.data.downloadUrl}`
+            );
         } else {
             throw new Error('Respuesta de servidor inválida');
         }
 
         // Limpiar archivo temporal
         if (fs.existsSync(gzipPath)) fs.unlinkSync(gzipPath);
-
     } catch (error) {
         log.error('[COMMAND] Error en GetLogs:', error);
         sendCommandFeedback(command, 'error', `Error al procesar logs: ${error.message}`);

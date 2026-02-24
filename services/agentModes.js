@@ -40,17 +40,19 @@ const startNormalMode = async (context) => {
         const savedState = loadLastState();
         const screens = Array.from(hardwareIdToDisplayMap.keys());
 
-        const isAutologinUrl = (url) => url && (
-            url.startsWith('https://lcr.sportradar.com') ||
-            url.toLowerCase().includes('luckiatv') ||
-            url.includes('luckia-tv')
-        );
+        const isAutologinUrl = (url) =>
+            url &&
+            (url.startsWith('https://lcr.sportradar.com') ||
+                url.toLowerCase().includes('luckiatv') ||
+                url.includes('luckia-tv'));
 
         screens.forEach((screenIndex, i) => {
             const screenData = savedState[String(screenIndex)];
             setTimeout(() => {
                 if (isAutologinUrl(screenData?.url) && screenData.credentials) {
-                    log.info(`[PLAYER]: Screen ${screenIndex} has autologin URL, restoring directly: ${screenData.url}`);
+                    log.info(
+                        `[PLAYER]: Screen ${screenIndex} has autologin URL, restoring directly: ${screenData.url}`
+                    );
                     handleShowUrl({
                         action: 'show_url',
                         screenIndex,
@@ -61,7 +63,9 @@ const startNormalMode = async (context) => {
                     });
                 } else {
                     const playerUrl = `${serverUrl}/player/${config.deviceId}/${screenIndex}`;
-                    log.info(`[PLAYER]: Loading player URL for screen ${screenIndex}: ${playerUrl}`);
+                    log.info(
+                        `[PLAYER]: Loading player URL for screen ${screenIndex}: ${playerUrl}`
+                    );
                     handleShowUrl({
                         action: 'show_url',
                         screenIndex,
@@ -93,8 +97,8 @@ const startNormalMode = async (context) => {
         log.info('[OPTIMIZATION]: Limpiando cache.');
         managedWindows.forEach((win) => {
             if (win?.isDestroyed()) return;
-            win.webContents.session.clearCache().catch(() => { });
-            win.webContents.session.clearStorageData().catch(() => { });
+            win.webContents.session.clearCache().catch(() => {});
+            win.webContents.session.clearStorageData().catch(() => {});
         });
     }, CONSTANTS.GC_INTERVAL_MS);
 };

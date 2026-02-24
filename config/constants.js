@@ -34,12 +34,12 @@ const CONSTANTS = {
     TOKEN_CHECK_INTERVAL_MS: 4 * 60 * 60 * 1000, // Verifica token cada 4 horas
     UPDATE_CHECK_MIN_DELAY_MS: 15000, // Delay minimo antes de buscar updates
     UPDATE_CHECK_MAX_DELAY_MS: 60000, // Delay maximo antes de buscar updates
-    SCREEN_DEBOUNCE_MS: 500,          // Debounce para cambios de pantalla
+    SCREEN_DEBOUNCE_MS: 500, // Debounce para cambios de pantalla
     RETRY_BACKOFF_BASE_MS: 30 * 1000, // Base para backoff exponencial
-    MAX_RETRIES: 5,                   // Maximo de reintentos
+    MAX_RETRIES: 5, // Maximo de reintentos
     GC_INTERVAL_MS: 4 * 60 * 60 * 1000, // Garbage collection cada 4 horas
     NETWORK_CHECK_INTERVAL_MS: 10 * 1000, // Monitoreo de red cada 10 segundos
-    SOCKET_RECONNECT_DELAY_MAX_MS: 60 * 1000,// Maximo delay entre reconexiones
+    SOCKET_RECONNECT_DELAY_MAX_MS: 60 * 1000, // Maximo delay entre reconexiones
 };
 
 let AGENT_VERSION = 'Unknown';
