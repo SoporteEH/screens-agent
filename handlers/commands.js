@@ -87,10 +87,8 @@ function createContentWindow(display, urlToLoad, command) {
             nodeIntegration: false,
             contextIsolation: true,
             nodeIntegrationInSubFrames: true,
-            // WARNING: Desactivado para permitir iframes y contenido mixto en senalizacion.
-            // Solo URLs seguras deberian llegar aqui (validadas en backend).
-            webSecurity: false,
-            allowRunningInsecureContent: true,
+            webSecurity: true,
+            allowRunningInsecureContent: false,
             backgroundThrottling: true,
             devTools: false,
             spellcheck: false,
@@ -102,6 +100,25 @@ function createContentWindow(display, urlToLoad, command) {
 
     win.webContents.setZoomFactor(1);
     win.webContents.setVisualZoomLevelLimits(1, 1);
+
+    win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+        const responseHeaders = Object.keys(details.responseHeaders).reduce((acc, key) => {
+            const lowerKey = key.toLowerCase();
+            if (lowerKey === 'x-frame-options' || lowerKey === 'frame-options') {
+                return acc;
+            }
+            if (lowerKey === 'content-security-policy') {
+                let cspMatch = details.responseHeaders[key][0];
+                cspMatch = cspMatch.replace(/frame-ancestors[^;]+;?/gi, '');
+                acc[key] = [cspMatch];
+                return acc;
+            }
+            acc[key] = details.responseHeaders[key];
+            return acc;
+        }, {});
+
+        callback({ cancel: false, responseHeaders });
+    });
 
     win.once('ready-to-show', () => win.show());
 
@@ -141,8 +158,8 @@ function createContentWindow(display, urlToLoad, command) {
             context.retryManager.delete(screenIndex);
         }
         if (windowSession) {
-            windowSession.clearCache().catch(() => {});
-            windowSession.clearStorageData().catch(() => {});
+            windowSession.clearCache().catch(() => { });
+            windowSession.clearStorageData().catch(() => { });
         }
     });
 
@@ -208,8 +225,7 @@ function handleShowUrl(command, currentAttempt = 0) {
     const serverUrl = config.serverUrl || getServerUrl();
     const isPlayerMode = !!serverUrl && config.deviceId;
 
-    // For autologin URLs (sportradar/luckiatv), bypass Player Mode and load directly
-    // so we can inject credentials into the main frame without cross-origin iframe issues.
+    // For autologin URLs bypass Player Mode and load directly
     const checkIsAutologinUrl = (testUrl) => {
         if (!testUrl) return false;
         return (
@@ -242,7 +258,7 @@ function handleShowUrl(command, currentAttempt = 0) {
     }
 
     if (url.startsWith('local:')) {
-        const filename = url.substring(6);
+        const filename = path.basename(url.substring(6));
         const filePath = path.join(CONTENT_DIR, filename);
         if (!fs.existsSync(filePath)) {
             const errorMsg = `Error: Activo local no encontrado: ${filename}.`;
@@ -322,12 +338,19 @@ function handleShowUrl(command, currentAttempt = 0) {
                 })();
             `;
 
+            let lastLoggedUrl = null;
             const injectIfTarget = (sourceUrl) => {
                 if (!win.isDestroyed() && checkIsTargetUrl(sourceUrl)) {
-                    log.info(`[AUTOLOGIN]: Injecting into ${sourceUrl}`);
+                    const shouldLog = lastLoggedUrl !== sourceUrl;
+                    if (shouldLog) {
+                        log.info(`[AUTOLOGIN]: Injecting into ${sourceUrl}`);
+                        lastLoggedUrl = sourceUrl;
+                    }
                     win.webContents
                         .executeJavaScript(injectionScript)
-                        .catch((err) => log.error('[AUTOLOGIN] Execution Error:', err));
+                        .catch((err) => {
+                            if (shouldLog) log.error('[AUTOLOGIN] Execution Error:', err);
+                        });
                 }
             };
 
@@ -343,6 +366,7 @@ function handleShowUrl(command, currentAttempt = 0) {
 
             // Fires on full cross-origin navigations
             win.webContents.on('did-navigate', (event, navUrl) => {
+                lastLoggedUrl = null; // Reset on full navigation
                 injectIfTarget(navUrl);
             });
         }
