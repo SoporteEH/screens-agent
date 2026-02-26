@@ -127,7 +127,7 @@ The ScreensWeb Agent is installed on venue PCs to display dynamic content on one
 
 ```bash
 git clone <repository-url>
-cd ScreensWeb-agent/local-agent
+cd ScreensWeb-agent
 npm install
 ```
 
@@ -145,7 +145,7 @@ The agent requires the backend server URL for operation.
 
 ### Development Configuration
 
-Create a `.env` file in the `local-agent` directory:
+Create a `.env` file in the root directory:
 
 ```env
 SERVER_URL=http://localhost:3000
@@ -234,7 +234,7 @@ The agent uses `electron-updater` for seamless updates.
 ## Project Structure
 
 ```
-local-agent/
+ScreensWeb-agent/
 ├── config/
 │   └── constants.js           # Centralized configuration (URLs, timeouts, paths)
 ├── handlers/
