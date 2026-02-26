@@ -26,7 +26,6 @@ const context = {
     autoRefreshTimers: new Map(),
 };
 
-// BOOTSTRAP
 async function bootstrap() {
     try {
         const constants = require('./config/constants');
@@ -132,10 +131,10 @@ async function bootstrap() {
                     context.registerDevice();
                     assetsService.syncLocalAssets(context.agentToken);
                 },
-                onDisconnect: () => {
+                onDisconnect: (reason) => {
                     context.isOnline = false;
                     broadcastAppStatus();
-                    context.onNetworkOffline();
+                    context.onNetworkOffline('SOCKET_DISCONNECT');
                 },
                 onReconnect: () => {
                     context.isOnline = true;
@@ -232,16 +231,23 @@ async function bootstrap() {
         // NETWORK HANDLERS
         let fallbackApplied = false;
 
-        context.onNetworkOffline = () => {
-            if (fallbackApplied) {
-                log.info('[NETWORK]: Fallback ya aplicado, ignorando evento duplicado.');
-                context.isOnline = false;
+        context.onNetworkOffline = (reason = 'UNKNOWN') => {
+            log.info(`[NETWORK]: Detectado OFFLINE. Motivo: ${reason}`);
+            context.isOnline = false;
+            broadcastAppStatus();
+
+            if (reason !== 'NO_INTERNET') {
+                log.info('[NETWORK]: El equipo tiene conexion a internet. Manteniendo contenido reproduciendose (bypass fallback).');
                 return;
             }
-            log.info('[NETWORK]: Detectado OFFLINE. Iniciando fallback...');
-            context.isOnline = false;
+
+            if (fallbackApplied) {
+                log.info('[NETWORK]: Fallback ya aplicado, ignorando evento duplicado.');
+                return;
+            }
+
+            log.info('[NETWORK]: Iniciando fallback por falta de internet...');
             fallbackApplied = true;
-            broadcastAppStatus();
 
             const fallbackPath = `file://${path.join(__dirname, 'fallback.html')}`;
             const lastState = stateService.loadLastState();
@@ -329,7 +335,7 @@ function showErrorWindow(error) {
     if (!app.isReady()) {
         app.whenReady()
             .then(() => showErrorWindow(error))
-            .catch(() => {});
+            .catch(() => { });
         return;
     }
     const errWin = new BrowserWindow({

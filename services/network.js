@@ -53,33 +53,29 @@ function pingServer() {
 }
 
 function startNetworkMonitoring(handlers) {
-    let wasOffline = false;
+    let lastState = { osOnline: net.isOnline(), serverReachable: true };
     log.info('[NETWORK]: Iniciando monitoreo con ping activo.');
 
     return setInterval(async () => {
         const osOnline = net.isOnline();
+        // Solo intentar ping si el OS confirma que hay conexión
+        const serverReachable = osOnline ? await pingServer() : false;
 
-        if (!osOnline) {
-            // OS dice offline → definitivamente offline
-            if (!wasOffline) {
-                wasOffline = true;
+        if (osOnline !== lastState.osOnline || serverReachable !== lastState.serverReachable) {
+            log.info(`[NETWORK]: Estado cambiado. OS Online: ${osOnline}, Server Reachable: ${serverReachable}`);
+
+            if (!osOnline) {
                 log.info('[NETWORK]: Sin conexion (OS).');
-                handlers.onOffline?.();
+                handlers.onOffline?.('NO_INTERNET');
+            } else if (!serverReachable) {
+                log.info('[NETWORK]: Servidor inalcanzable (ping fallido).');
+                handlers.onOffline?.('NO_SERVER');
+            } else {
+                log.info('[NETWORK]: Conexion restaurada.');
+                handlers.onOnline?.();
             }
-            return;
-        }
 
-        // OS dice online → verificar con ping real al servidor
-        const serverReachable = await pingServer();
-
-        if (!serverReachable && !wasOffline) {
-            wasOffline = true;
-            log.info('[NETWORK]: Servidor inalcanzable (ping fallido).');
-            handlers.onOffline?.();
-        } else if (serverReachable && wasOffline) {
-            log.info('[NETWORK]: Conexion restaurada (ping exitoso).');
-            wasOffline = false;
-            handlers.onOnline?.();
+            lastState = { osOnline, serverReachable };
         } else if (serverReachable) {
             handlers.onCheckOnline?.();
         }

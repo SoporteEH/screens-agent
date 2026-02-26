@@ -72,7 +72,7 @@ const initializeMonitors = (context) => {
     screen.on('display-metrics-changed', () => onScreenChange('metrics-changed'));
 
     startNetworkMonitoring({
-        onOffline: () => context.onNetworkOffline(),
+        onOffline: (reason) => context.onNetworkOffline(reason),
         onOnline: () => context.onNetworkOnline(),
         onCheckOnline: () => {
             if (context.socket && !context.socket.connected) {
