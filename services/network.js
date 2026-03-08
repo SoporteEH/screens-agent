@@ -62,7 +62,9 @@ function startNetworkMonitoring(handlers) {
         const serverReachable = osOnline ? await pingServer() : false;
 
         if (osOnline !== lastState.osOnline || serverReachable !== lastState.serverReachable) {
-            log.info(`[NETWORK]: Estado cambiado. OS Online: ${osOnline}, Server Reachable: ${serverReachable}`);
+            log.info(
+                `[NETWORK]: Estado cambiado. OS Online: ${osOnline}, Server Reachable: ${serverReachable}`
+            );
 
             if (!osOnline) {
                 log.info('[NETWORK]: Sin conexion (OS).');
@@ -82,4 +84,4 @@ function startNetworkMonitoring(handlers) {
     }, CONSTANTS.NETWORK_CHECK_INTERVAL_MS);
 }
 
-module.exports = { startNetworkMonitoring };
+module.exports = { startNetworkMonitoring, pingServer };

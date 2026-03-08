@@ -1,102 +1,133 @@
 /**
- * - Rotacion automatica de logs por tamano, limitada a 7 archivos
- * - Tipos: main, updater, heartbeat
+ * - Separate files: general (all), error (warn+error)
+ * - Daily rotation with 10MB max size per file
+ * - 90-day retention with automatic cleanup
+ * - Remote error forwarding to server API
  */
 
-const log = require('electron-log');
+const winston = require('winston');
+const DailyRotateFile = require('winston-daily-rotate-file');
 const path = require('path');
+const fs = require('fs');
+const { app } = require('electron');
 
-log.transports.file.level = 'info';
-log.transports.console.level = 'debug';
+const LOG_DIR = app.getPath('logs');
 
-log.hooks.push((message, transport) => {
-    if (transport !== log.transports.file) return message;
-    if (message.level !== 'error' && message.level !== 'warn') return message;
+if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+}
 
-    try {
-        const { SERVER_URL, AGENT_VERSION } = require('../config/constants');
-        const { loadConfig } = require('./configManager');
-        const { net } = require('electron');
 
-        if (!SERVER_URL) return message;
+const fileFormat = winston.format.combine(
+    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss.SSS' }),
+    winston.format.printf(({ timestamp, level, message }) => {
+        return `[${timestamp}] [${level.toUpperCase()}] ${message}`;
+    })
+);
 
-        const config = loadConfig();
-        if (!config.deviceId || !config.agentToken) return message;
+const consoleFormat = winston.format.combine(
+    winston.format.colorize(),
+    winston.format.timestamp({ format: 'HH:mm:ss.SSS' }),
+    winston.format.printf(({ timestamp, level, message }) => {
+        return `[${timestamp}] [${level}] ${message}`;
+    })
+);
 
-        const logData = {
-            level: message.level,
-            message: message.data
-                .map((d) => (typeof d === 'object' ? JSON.stringify(d) : d))
-                .join(' '),
-            deviceId: config.deviceId,
-            agentVersion: AGENT_VERSION,
-            timestamp: new Date().toISOString(),
-        };
-
-        const request = net.request({
-            method: 'POST',
-            url: `${SERVER_URL}/api/logs`,
-            useSessionCookies: false,
-        });
-
-        request.setHeader('Content-Type', 'application/json');
-        request.setHeader('Authorization', `Bearer ${config.agentToken}`);
-
-        request.on('error', () => {});
-
-        request.write(JSON.stringify(logData));
-        request.end();
-    } catch (e) {}
-
-    return message;
+const generalTransport = new DailyRotateFile({
+    dirname: LOG_DIR,
+    filename: 'general-%DATE%.log',
+    datePattern: 'YYYY-MM-DD',
+    maxSize: '10m',
+    maxFiles: '90d',
+    level: 'info',
 });
 
-log.transports.file.maxSize = 10 * 1024 * 1024;
-log.transports.file.format = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}';
+const errorTransport = new DailyRotateFile({
+    dirname: LOG_DIR,
+    filename: 'error-%DATE%.log',
+    datePattern: 'YYYY-MM-DD',
+    maxSize: '10m',
+    maxFiles: '90d',
+    level: 'warn',
+});
 
-log.transports.file.archiveLog = (oldPath) => {
-    const info = path.parse(oldPath);
-    const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
-    return path.join(info.dir, `${info.name}.${timestamp}${info.ext}`);
-};
+// Remote transport: forwards warn/error to server API
+class ServerLogTransport extends winston.Transport {
+    constructor(opts) {
+        super({ ...opts, level: 'warn' });
+    }
 
-function cleanOldLogs() {
-    const fs = require('fs');
-    const logDir = path.dirname(log.transports.file.getFile().path);
-    const maxAge = 7 * 24 * 60 * 60 * 1000;
+    log(info, callback) {
+        setTimeout(() => {
+            try {
+                const { SERVER_URL, AGENT_VERSION } = require('../config/constants');
+                const { loadConfig } = require('./configManager');
+                const { net } = require('electron');
 
-    try {
-        const files = fs.readdirSync(logDir);
-        const now = Date.now();
+                if (!SERVER_URL) return callback();
+                const config = loadConfig();
+                if (!config.deviceId || !config.agentToken) return callback();
 
-        files.forEach((file) => {
-            if (file.startsWith('main') && file.endsWith('.log')) {
-                const filePath = path.join(logDir, file);
-                const stats = fs.statSync(filePath);
-
-                if (now - stats.mtimeMs > maxAge) {
-                    fs.unlinkSync(filePath);
-                    log.info(`[CLEANUP]: Log antiguo eliminado: ${file}`);
-                }
+                const request = net.request({
+                    method: 'POST',
+                    url: `${SERVER_URL}/api/logs`,
+                    useSessionCookies: false,
+                });
+                request.setHeader('Content-Type', 'application/json');
+                request.setHeader('Authorization', `Bearer ${config.agentToken}`);
+                request.on('error', () => {});
+                const body = JSON.stringify({
+                    level: info.level,
+                    message: info.message,
+                    deviceId: config.deviceId,
+                    agentVersion: AGENT_VERSION,
+                    timestamp: new Date().toISOString(),
+                });
+                request.write(body);
+                request.end();
+            } catch (e) {
+                void e;
             }
-        });
-    } catch (error) {
-        log.error('[CLEANUP]: Error limpiando logs:', error);
+            callback();
+        }, 0);
     }
 }
 
-cleanOldLogs();
+const winstonLogger = winston.createLogger({
+    format: fileFormat,
+    transports: [
+        generalTransport,
+        errorTransport,
+        new ServerLogTransport(),
+        new winston.transports.Console({ level: 'debug', format: consoleFormat }),
+    ],
+});
 
-setInterval(cleanOldLogs, 24 * 60 * 60 * 1000);
+// Proxy to support multi-arg calls: log.error('msg:', errorObj)
+function formatArgs(args) {
+    return args
+        .map((a) => {
+            if (a instanceof Error) return a.stack || a.message;
+            if (typeof a === 'object') return JSON.stringify(a);
+            return String(a);
+        })
+        .join(' ');
+}
+
+const log = {
+    error: (...args) => winstonLogger.error(formatArgs(args)),
+    warn: (...args) => winstonLogger.warn(formatArgs(args)),
+    info: (...args) => winstonLogger.info(formatArgs(args)),
+    debug: (...args) => winstonLogger.debug(formatArgs(args)),
+};
 
 const heartbeatLog = {
     _counter: 0,
     _lastLog: 0,
 
-    info: function (_message) {
+    info(_message) {
         this._counter++;
         const now = Date.now();
-
         if (this._counter % 10 === 0 || now - this._lastLog > 5 * 60 * 1000) {
             log.debug(`[HEARTBEAT]: Latidos enviados (ultimos 5 min): ${this._counter % 10 || 10}`);
             this._lastLog = now;
@@ -107,23 +138,43 @@ const heartbeatLog = {
 const updaterLog = {
     _lastUpdateCheck: 0,
 
-    logCheck: function (version) {
+    logCheck(version) {
         const now = Date.now();
-
         if (now - this._lastUpdateCheck > 10 * 60 * 1000) {
             log.info(`[UPDATER]: Verificacion periodica - Version actual: ${version}`);
             this._lastUpdateCheck = now;
         }
     },
 
-    logUpdate: function (message) {
+    logUpdate(message) {
         log.info(`[UPDATER]: ${message}`);
     },
 };
+
+// --- Helpers ---
+
+function getLogDir() {
+    return LOG_DIR;
+}
+
+function getGeneralLogPath() {
+    const date = new Date().toISOString().split('T')[0];
+    return path.join(LOG_DIR, `general-${date}.log`);
+}
+
+function getTodayLogPaths() {
+    const date = new Date().toISOString().split('T')[0];
+    return [
+        { name: 'general', path: path.join(LOG_DIR, `general-${date}.log`) },
+        { name: 'error', path: path.join(LOG_DIR, `error-${date}.log`) },
+    ];
+}
 
 module.exports = {
     log,
     heartbeatLog,
     updaterLog,
-    cleanOldLogs,
+    getLogDir,
+    getGeneralLogPath,
+    getTodayLogPaths,
 };

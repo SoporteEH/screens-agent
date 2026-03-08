@@ -236,8 +236,15 @@ async function bootstrap() {
             context.isOnline = false;
             broadcastAppStatus();
 
+            if (reason === 'NO_SERVER') {
+                log.info(
+                    '[NETWORK]: Servidor inalcanzable pero hay internet. Manteniendo contenido actual.'
+                );
+                return;
+            }
+
             if (reason !== 'NO_INTERNET') {
-                log.info('[NETWORK]: El equipo tiene conexion a internet. Manteniendo contenido reproduciendose (bypass fallback).');
+                log.info('[NETWORK]: Manteniendo contenido reproduciendose (bypass fallback).');
                 return;
             }
 
@@ -254,11 +261,9 @@ async function bootstrap() {
 
             context.managedWindows.forEach((win, screenId) => {
                 if (win && !win.isDestroyed()) {
-                    // Normalizamos screenId a string para asegurar match con lastState keys
                     const screenIdStr = String(screenId);
                     const screenData = lastState[screenIdStr];
 
-                    // Si no hay data (asumimos remoto) o si hay data y no es local -> Fallback
                     if (!screenData || (screenData.url && !screenData.url.startsWith('local:'))) {
                         log.info(`[NETWORK]: Aplicando fallback en pantalla ${screenIdStr}`);
                         try {
@@ -335,7 +340,7 @@ function showErrorWindow(error) {
     if (!app.isReady()) {
         app.whenReady()
             .then(() => showErrorWindow(error))
-            .catch(() => { });
+            .catch(() => {});
         return;
     }
     const errWin = new BrowserWindow({

@@ -5,9 +5,12 @@
 const { log } = require('../utils/logConfig');
 const { loadConfig } = require('../utils/configManager');
 const { startTokenRefreshLoop } = require('./auth');
-const { buildDisplayMap } = require('./state');
+const { buildDisplayMap, loadLastState } = require('./state');
 const { checkForUpdates } = require('./updater');
 const { initializeMonitors } = require('./monitors');
+const { pingServer } = require('./network');
+const { getCachedPlayerFileUrl, hasCachedPlayer, isServerDependentUrl } = require('./playerCache');
+const { net } = require('electron');
 
 const startNormalMode = async (context) => {
     const {
@@ -33,12 +36,12 @@ const startNormalMode = async (context) => {
     const serverUrl = config.serverUrl || require('../config/constants').getServerUrl();
 
     if (serverUrl) {
-        // Player Mode: load server-rendered player page per screen
-        // Exception: if a screen has a saved autologin URL (sportradar/luckiatv), restore it directly
-        const { handleShowUrl } = require('../handlers/commands');
-        const { loadLastState } = require('./state');
+        const { handleShowUrl, createContentWindow } = require('../handlers/commands');
         const savedState = loadLastState();
         const screens = Array.from(hardwareIdToDisplayMap.keys());
+        const serverAvailable = await pingServer();
+
+        log.info(`[NORMAL]: Server available: ${serverAvailable}`);
 
         const isAutologinUrl = (url) =>
             url &&
@@ -61,7 +64,7 @@ const startNormalMode = async (context) => {
                         refreshInterval: screenData.refreshInterval || 0,
                         silent: true,
                     });
-                } else {
+                } else if (serverAvailable) {
                     const playerUrl = `${serverUrl}/player/${config.deviceId}/${screenIndex}`;
                     log.info(
                         `[PLAYER]: Loading player URL for screen ${screenIndex}: ${playerUrl}`
@@ -73,6 +76,63 @@ const startNormalMode = async (context) => {
                         contentName: `Player ${screenIndex}`,
                         silent: true,
                     });
+                } else {
+                    const currentUrl = screenData?.url || '';
+                    const hasInternet = net.isOnline();
+                    const targetDisplay = hardwareIdToDisplayMap.get(screenIndex);
+
+                    if (
+                        currentUrl &&
+                        !isServerDependentUrl(currentUrl, serverUrl) &&
+                        hasInternet
+                    ) {
+                        log.info(
+                            `[PLAYER]: Server offline but external URL available for screen ${screenIndex}: ${currentUrl}`
+                        );
+                        if (targetDisplay) {
+                            createContentWindow(targetDisplay, currentUrl, {
+                                action: 'show_url',
+                                screenIndex,
+                                url: currentUrl,
+                                credentials: screenData.credentials || null,
+                                refreshInterval: screenData.refreshInterval || 0,
+                                contentName: `Screen ${screenIndex} (direct)`,
+                                silent: true,
+                            });
+                        }
+                    } else if (hasCachedPlayer(screenIndex) || currentUrl) {
+                        const offlineUrl = getCachedPlayerFileUrl(
+                            screenIndex,
+                            currentUrl,
+                            serverUrl
+                        );
+                        log.info(
+                            `[PLAYER]: Server offline. Loading cached player for screen ${screenIndex} (content: ${currentUrl || 'none'})`
+                        );
+                        if (targetDisplay) {
+                            createContentWindow(targetDisplay, offlineUrl, {
+                                action: 'show_url',
+                                screenIndex,
+                                url: currentUrl || `${serverUrl}/player/${config.deviceId}/${screenIndex}`,
+                                contentName: `Player ${screenIndex} (offline)`,
+                                silent: true,
+                            });
+                        }
+                    } else {
+                        log.info(
+                            `[PLAYER]: Server offline, no cache for screen ${screenIndex}. Showing fallback.`
+                        );
+                        if (targetDisplay) {
+                            const fallbackPath = `file://${require('path').join(__dirname, '../fallback.html')}`;
+                            createContentWindow(targetDisplay, fallbackPath, {
+                                action: 'show_url',
+                                screenIndex,
+                                url: '',
+                                contentName: `Player ${screenIndex} (fallback)`,
+                                silent: true,
+                            });
+                        }
+                    }
                 }
             }, 500 * i);
         });
@@ -94,11 +154,10 @@ const startNormalMode = async (context) => {
 
     setInterval(() => {
         if (managedWindows.size === 0) return;
-        log.info('[OPTIMIZATION]: Limpiando cache.');
+        log.info('[OPTIMIZATION]: Limpiando HTTP cache (preservando storageData).');
         managedWindows.forEach((win) => {
             if (win?.isDestroyed()) return;
             win.webContents.session.clearCache().catch(() => {});
-            win.webContents.session.clearStorageData().catch(() => {});
         });
     }, CONSTANTS.GC_INTERVAL_MS);
 };

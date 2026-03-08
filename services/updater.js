@@ -10,7 +10,6 @@ let isCheckingForUpdate = false;
 
 function configureUpdater() {
     autoUpdater.logger = log;
-    autoUpdater.logger.transports.file.level = 'info';
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowDowngrade = true;

@@ -2,13 +2,9 @@ const { BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { log } = require('../utils/logConfig');
-const zlib = require('zlib');
 const axios = require('axios');
-const { createReadStream, createWriteStream } = require('fs');
-const { pipeline } = require('stream');
-const { promisify } = require('util');
-const pipe = promisify(pipeline);
 const { CONTENT_DIR } = require('../config/constants');
+const { cachePlayerHTML, cacheContentURL } = require('../services/playerCache');
 
 let context = {};
 
@@ -35,20 +31,13 @@ function sendCommandFeedback(command, status, message) {
 }
 
 // Programa reintento con backoff exponencial
+const MAX_RETRY_DELAY_MS = 2 * 60 * 1000;
+
 function scheduleRetry(command) {
     const { screenIndex } = command;
     const attempt = (context.retryManager.get(screenIndex)?.attempt || 0) + 1;
-    const MAX_ATTEMPTS = 5;
 
-    if (attempt > MAX_ATTEMPTS) {
-        log.info(
-            `[RETRY]: Se alcanzo el maximo de ${MAX_ATTEMPTS} reintentos para la pantalla ${screenIndex}. Abortando.`
-        );
-        context.retryManager.delete(screenIndex);
-        return;
-    }
-
-    const delayMs = Math.pow(2, attempt - 1) * 30 * 1000;
+    const delayMs = Math.min(Math.pow(2, attempt - 1) * 30 * 1000, MAX_RETRY_DELAY_MS);
     log.info(
         `[RETRY]: Programando reintento #${attempt} para la pantalla ${screenIndex} en ${delayMs / 1000} segundos.`
     );
@@ -127,28 +116,47 @@ function createContentWindow(display, urlToLoad, command) {
         if (!win.isDestroyed() && !win.isVisible()) win.show();
     }, 2000);
 
-    win.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
-        log.error(
-            `[RESILIENCE]: Fallo al cargar URL '${validatedURL}'. Razon: ${errorDescription}`
-        );
-
-        if (validatedURL === fallbackPath) return;
-
-        if (command.commandId) {
-            const displayName = contentName ? `'${contentName}'` : `la URL '${originalUrl}'`;
-            sendCommandFeedback(
-                command,
-                'error',
-                `Fallo al cargar ${displayName}. Razon: ${errorDescription}`
-            );
+    win.webContents.on('did-finish-load', () => {
+        const loadedUrl = win.webContents.getURL();
+        if (loadedUrl.includes('/player/') && screenIndex) {
+            win.webContents
+                .executeJavaScript('document.documentElement.outerHTML')
+                .then((html) => cachePlayerHTML(screenIndex, html))
+                .catch(() => {});
+            if (context.retryManager.has(screenIndex)) {
+                clearTimeout(context.retryManager.get(screenIndex).timerId);
+                context.retryManager.delete(screenIndex);
+            }
         }
-
-        const isNetworkError = errorCode <= -100 && errorCode >= -199;
-        if (!originalUrl.startsWith('local:') && isNetworkError) {
-            scheduleRetry(command);
-        }
-        win.loadURL(fallbackPath);
     });
+
+    win.webContents.on(
+        'did-fail-load',
+        (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+            if (!isMainFrame) return;
+
+            log.error(
+                `[RESILIENCE]: Fallo al cargar URL '${validatedURL}'. Razon: ${errorDescription}`
+            );
+
+            if (validatedURL === fallbackPath) return;
+
+            if (command.commandId) {
+                const displayName = contentName ? `'${contentName}'` : `la URL '${originalUrl}'`;
+                sendCommandFeedback(
+                    command,
+                    'error',
+                    `Fallo al cargar ${displayName}. Razon: ${errorDescription}`
+                );
+            }
+
+            const isNetworkError = errorCode <= -100 && errorCode >= -199;
+            if (!originalUrl.startsWith('local:') && isNetworkError) {
+                scheduleRetry(command);
+            }
+            win.loadURL(fallbackPath);
+        }
+    );
 
     const windowSession = win.webContents.session;
     win.on('closed', () => {
@@ -158,8 +166,8 @@ function createContentWindow(display, urlToLoad, command) {
             context.retryManager.delete(screenIndex);
         }
         if (windowSession) {
-            windowSession.clearCache().catch(() => { });
-            windowSession.clearStorageData().catch(() => { });
+            windowSession.clearCache().catch(() => {});
+            windowSession.clearStorageData().catch(() => {});
         }
     });
 
@@ -171,7 +179,7 @@ function createContentWindow(display, urlToLoad, command) {
 /**
  * Maneja el comando 'show_url'.
  */
-function handleShowUrl(command, currentAttempt = 0) {
+function handleShowUrl(command, _currentAttempt = 0) {
     const { screenIndex, url, credentials, contentName, refreshInterval } = command;
 
     if (!url || !url.trim()) {
@@ -194,7 +202,8 @@ function handleShowUrl(command, currentAttempt = 0) {
         return;
     }
 
-    if (context.saveCurrentState) {
+    const isPlayerWrapperUrl = url.includes('/player/');
+    if (context.saveCurrentState && !isPlayerWrapperUrl) {
         context.saveCurrentState(
             screenIndex,
             url,
@@ -240,6 +249,10 @@ function handleShowUrl(command, currentAttempt = 0) {
 
         if (url !== playerUrl) {
             log.info(`[COMMAND]: Player Mode active. Delegating content '${url}' to player page.`);
+
+            if (url.includes('/view/')) {
+                cacheContentURL(url, serverUrl).catch(() => {});
+            }
 
             let win = context.managedWindows.get(screenIndex);
             if (!win || win.isDestroyed()) {
@@ -346,11 +359,9 @@ function handleShowUrl(command, currentAttempt = 0) {
                         log.info(`[AUTOLOGIN]: Injecting into ${sourceUrl}`);
                         lastLoggedUrl = sourceUrl;
                     }
-                    win.webContents
-                        .executeJavaScript(injectionScript)
-                        .catch((err) => {
-                            if (shouldLog) log.error('[AUTOLOGIN] Execution Error:', err);
-                        });
+                    win.webContents.executeJavaScript(injectionScript).catch((err) => {
+                        if (shouldLog) log.error('[AUTOLOGIN] Execution Error:', err);
+                    });
                 }
             };
 
@@ -498,28 +509,39 @@ function handleIdentifyScreen(command) {
 }
 
 async function handleGetLogs(command) {
-    const logPath = log.transports.file.getFile().path;
-    const gzipPath = `${logPath}.gz`;
+    const { getTodayLogPaths, getLogDir } = require('../utils/logConfig');
+    const archiver = require('archiver');
+    const logFiles = getTodayLogPaths();
+    const date = new Date().toISOString().split('T')[0];
+    const zipPath = path.join(getLogDir(), `logs-${date}.zip`);
 
     try {
-        if (!fs.existsSync(logPath)) {
-            sendCommandFeedback(command, 'error', 'Archivo de logs no encontrado.');
+        const existingFiles = logFiles.filter((f) => fs.existsSync(f.path));
+        if (existingFiles.length === 0) {
+            sendCommandFeedback(command, 'error', 'No se encontraron archivos de logs.');
             return;
         }
 
-        log.info(`[COMMAND] Compriendo logs: ${logPath}`);
+        log.info(`[COMMAND] Comprimiendo ${existingFiles.length} archivos de logs en zip`);
 
-        const gzip = zlib.createGzip();
-        const source = fs.createReadStream(logPath);
-        const destination = fs.createWriteStream(gzipPath);
-        await pipe(source, gzip, destination);
+        await new Promise((resolve, reject) => {
+            const output = fs.createWriteStream(zipPath);
+            const archive = archiver('zip', { zlib: { level: 9 } });
+            output.on('close', resolve);
+            archive.on('error', reject);
+            archive.pipe(output);
+            for (const entry of existingFiles) {
+                archive.file(entry.path, { name: `${entry.name}-${date}.log` });
+            }
+            archive.finalize();
+        });
 
-        log.info(`[COMMAND] Subiendo logs: ${gzipPath}`);
+        log.info(`[COMMAND] Subiendo logs: ${zipPath}`);
 
-        const fileContent = fs.readFileSync(gzipPath);
+        const fileContent = fs.readFileSync(zipPath);
         const FormData = require('form-data');
         const form = new FormData();
-        form.append('logFile', fileContent, { filename: `agent-${context.deviceId}.log.gz` });
+        form.append('logFile', fileContent, { filename: `agent-${context.deviceId}.zip` });
 
         const constants = require('../config/constants');
         const uploadUrl = `${constants.getServerUrl()}/api/logs/upload-debug`;
@@ -541,12 +563,11 @@ async function handleGetLogs(command) {
             throw new Error('Respuesta de servidor inválida');
         }
 
-        // Limpiar archivo temporal
-        if (fs.existsSync(gzipPath)) fs.unlinkSync(gzipPath);
+        if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
     } catch (error) {
         log.error('[COMMAND] Error en GetLogs:', error);
         sendCommandFeedback(command, 'error', `Error al procesar logs: ${error.message}`);
-        if (fs.existsSync(gzipPath)) fs.unlinkSync(gzipPath);
+        if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
     }
 }
 
