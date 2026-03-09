@@ -128,6 +128,7 @@ async function bootstrap() {
             context.socket = socketService.connectToSocketServer(token, {
                 onConnect: () => {
                     context.isOnline = true;
+                    broadcastAppStatus();
                     context.registerDevice();
                     assetsService.syncLocalAssets(context.agentToken);
                 },
