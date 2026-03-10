@@ -1,5 +1,5 @@
 /**
- * Tray Service - Icono de bandeja del sistema
+ * Tray Service - System tray icon
  */
 
 const { Tray, Menu, app, BrowserWindow, ipcMain } = require('electron');
@@ -19,27 +19,27 @@ function createTray(serverUrl, version) {
 
         const contextMenu = Menu.buildFromTemplate([
             { label: `ScreensWeb Agent v${version}`, enabled: false },
-            { label: 'Servidor: ' + (serverUrl || 'No configurado'), enabled: false },
+            { label: 'Server: ' + (serverUrl || 'Not configured'), enabled: false },
             { type: 'separator' },
-            { label: 'Abrir Panel de Control', click: () => openControlWindow(serverUrl, version) },
+            { label: 'Open Control Panel', click: () => openControlWindow(serverUrl, version) },
             { type: 'separator' },
             {
-                label: 'Reiniciar Agente',
+                label: 'Restart Agent',
                 click: () => {
-                    log.info('[TRAY]: Reiniciando...');
+                    log.info('[TRAY]: Restarting...');
                     app.relaunch();
                     app.exit(0);
                 },
             },
             {
-                label: 'Buscar Actualizacion',
+                label: 'Check for Updates',
                 click: () => require('./updater').handleForceUpdate(),
             },
             { type: 'separator' },
             {
-                label: 'Salir',
+                label: 'Exit',
                 click: () => {
-                    log.info('[TRAY]: Saliendo...');
+                    log.info('[TRAY]: Exiting...');
                     app.isQuitting = true;
                     app.quit();
                 },
@@ -50,7 +50,7 @@ function createTray(serverUrl, version) {
         tray.setContextMenu(contextMenu);
         return tray;
     } catch (error) {
-        log.error('[TRAY]: Error al crear tray:', error);
+        log.error('[TRAY]: Error creating tray icon:', error);
         return null;
     }
 }
@@ -87,7 +87,7 @@ function openControlWindow(serverUrl, version, initialStatus = { isOnline: true 
 
     controlWindow.webContents.on('did-finish-load', () => {
         controlWindow.webContents.send('agent-info', {
-            serverUrl: serverUrl || 'Desconocido',
+            serverUrl: serverUrl || 'Unknown',
             version: version || '1.0.0',
             status: initialStatus.isOnline ? 'Online' : 'Offline',
             deviceName: initialStatus.deviceName || getDeviceName(),

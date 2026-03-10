@@ -161,7 +161,7 @@ async function bootstrap() {
                                         screenData.url.includes('luckia-tv'));
                                 if (isAutologinUrl && screenData.credentials) {
                                     log.info(
-                                        `[SOCKET]: Reconectado. Re-applying autologin for screen ${screenId}: ${screenData.url}`
+                                        `[SOCKET]: Reconnected. Re-applying autologin for screen ${screenId}: ${screenData.url}`
                                     );
                                     commandHandlers.handleShowUrl({
                                         action: 'show_url',
@@ -173,7 +173,7 @@ async function bootstrap() {
                                 } else {
                                     const playerUrl = `${serverUrl}/player/${onlineConfig.deviceId}/${screenId}`;
                                     log.info(
-                                        `[SOCKET]: Reconectado. Reloading player URL for screen ${screenId}`
+                                        `[SOCKET]: Reconnected. Reloading player URL for screen ${screenId}`
                                     );
                                     win.loadURL(playerUrl);
                                 }
@@ -191,7 +191,7 @@ async function bootstrap() {
                     }
                 },
                 onCommand: (command) => {
-                    log.info('[SOCKET]: Comando recibido:', command);
+                    log.info('[SOCKET]: Command received:', command);
                     const actions = {
                         show_url: commandHandlers.handleShowUrl,
                         close_screen: commandHandlers.handleCloseScreen,
@@ -233,28 +233,28 @@ async function bootstrap() {
         let fallbackApplied = false;
 
         context.onNetworkOffline = (reason = 'UNKNOWN') => {
-            log.info(`[NETWORK]: Detectado OFFLINE. Motivo: ${reason}`);
+            log.info(`[NETWORK]: OFFLINE state detected. Reason: ${reason}`);
             context.isOnline = false;
             broadcastAppStatus();
 
             if (reason === 'NO_SERVER') {
                 log.info(
-                    '[NETWORK]: Servidor inalcanzable pero hay internet. Manteniendo contenido actual.'
+                    '[NETWORK]: Server unreachable but internet is available. Maintaining current content.'
                 );
                 return;
             }
 
             if (reason !== 'NO_INTERNET') {
-                log.info('[NETWORK]: Manteniendo contenido reproduciendose (bypass fallback).');
+                log.info('[NETWORK]: Maintaining active playback (bypassing fallback).');
                 return;
             }
 
             if (fallbackApplied) {
-                log.info('[NETWORK]: Fallback ya aplicado, ignorando evento duplicado.');
+                log.info('[NETWORK]: Fallback already active, ignoring duplicate event.');
                 return;
             }
 
-            log.info('[NETWORK]: Iniciando fallback por falta de internet...');
+            log.info('[NETWORK]: Initiating network fallback sequence...');
             fallbackApplied = true;
 
             const fallbackPath = `file://${path.join(__dirname, 'fallback.html')}`;
@@ -266,12 +266,12 @@ async function bootstrap() {
                     const screenData = lastState[screenIdStr];
 
                     if (!screenData || (screenData.url && !screenData.url.startsWith('local:'))) {
-                        log.info(`[NETWORK]: Aplicando fallback en pantalla ${screenIdStr}`);
+                        log.info(`[NETWORK]: Applying fallback on display ${screenIdStr}`);
                         try {
                             win.loadURL(fallbackPath);
                         } catch (e) {
                             log.error(
-                                `[NETWORK]: Error aplicando fallback en pantalla ${screenIdStr}:`,
+                                `[NETWORK]: Error applying fallback on display ${screenIdStr}:`,
                                 e
                             );
                         }
@@ -280,7 +280,7 @@ async function bootstrap() {
             });
         };
         context.onNetworkOnline = () => {
-            log.info('[NETWORK]: Detectado ONLINE. Intentando reconectar...');
+            log.info('[NETWORK]: ONLINE state detected. Attempting to reconnect...');
             context.isOnline = true;
             fallbackApplied = false;
             broadcastAppStatus();
@@ -341,7 +341,7 @@ function showErrorWindow(error) {
     if (!app.isReady()) {
         app.whenReady()
             .then(() => showErrorWindow(error))
-            .catch(() => {});
+            .catch(() => { });
         return;
     }
     const errWin = new BrowserWindow({
@@ -355,12 +355,12 @@ function showErrorWindow(error) {
     errWin.loadURL(
         `data:text/html;charset=utf-8,${encodeURIComponent(`
         <body style="background:#1a1a1a;color:#ff6600;font-family:sans-serif;padding:30px;text-align:center">
-            <h2 style="margin-bottom:10px">Modo reparacion</h2>
-            <p style="color:#ccc;margin-bottom:20px">El agente ha encontrado un error y se esta intentando corregir descargando una nueva version.</p>
+            <h2 style="margin-bottom:10px">Recovery Mode</h2>
+            <p style="color:#ccc;margin-bottom:20px">The agent has encountered an error and is attempting to recover by downloading a new version.</p>
             <div style="background:#000;padding:15px;border-radius:8px;text-align:left;font-family:monospace;font-size:11px;color:#ef4444;height:120px;overflow:auto;border:1px solid #333">
                 ${error.stack || error.message}
             </div>
-            <p style="margin-top:20px;color:#666;font-size:12px">Buscando actualizaciones en segundo plano... No cierre esta ventana.</p>
+            <p style="margin-top:20px;color:#666;font-size:12px">Checking for updates in the background... Please do not close this window.</p>
         </body>
     `)}`
     );

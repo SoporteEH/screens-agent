@@ -1,5 +1,5 @@
 /**
- * Authentication Service - Refresco de JWT
+ * Authentication Service - JWT Token Refresh
  */
 
 const { jwtDecode } = require('jwt-decode');
@@ -11,7 +11,7 @@ const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 async function refreshAgentToken(currentAgentToken) {
-    log.info('[AUTH]: Refrescando token...');
+    log.info('[AUTH]: Refreshing agent token...');
     try {
         const response = await fetch(AGENT_REFRESH_URL, {
             method: 'POST',
@@ -22,7 +22,7 @@ async function refreshAgentToken(currentAgentToken) {
         });
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ msg: 'Error de red' }));
+            const errorData = await response.json().catch(() => ({ msg: 'Network error' }));
             throw new Error(`API error: ${response.status} - ${errorData.msg}`);
         }
 
@@ -31,16 +31,16 @@ async function refreshAgentToken(currentAgentToken) {
         config.agentToken = data.token;
         saveConfig(config);
 
-        log.info('[AUTH]: Token refrescado.');
+        log.info('[AUTH]: Token successfully refreshed.');
         return data.token;
     } catch (error) {
-        log.error('[AUTH]: Error refrescando token:', error.message);
+        log.error('[AUTH]: Error refreshing token:', error.message);
         return currentAgentToken;
     }
 }
 
 function startTokenRefreshLoop(agentToken, onTokenRefreshed) {
-    log.info('[AUTH]: Iniciando loop de verificacion (cada 4h)');
+    log.info('[AUTH]: Starting token verification loop (interval: 4h)');
     let currentToken = agentToken;
 
     return setInterval(async () => {
@@ -51,7 +51,7 @@ function startTokenRefreshLoop(agentToken, onTokenRefreshed) {
             const expTimeMs = decoded.exp * 1000;
 
             if (expTimeMs - Date.now() < THIRTY_DAYS_MS) {
-                log.info('[AUTH]: Token proximo a expirar, refrescando...');
+                log.info('[AUTH]: Token near expiration, refreshing...');
                 const newToken = await refreshAgentToken(currentToken);
                 if (newToken !== currentToken) {
                     currentToken = newToken;
@@ -59,7 +59,7 @@ function startTokenRefreshLoop(agentToken, onTokenRefreshed) {
                 }
             }
         } catch (e) {
-            log.error('[AUTH]: Error en loop de verificacion:', e);
+            log.error('[AUTH]: Error in token verification loop:', e);
         }
     }, FOUR_HOURS_MS);
 }

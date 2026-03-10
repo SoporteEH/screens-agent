@@ -1,5 +1,5 @@
 /**
- * Device Service - Identidad y comandos del sistema
+ * Device Service - System identity and commands
  */
 
 const { machineIdSync } = require('node-machine-id');
@@ -12,7 +12,7 @@ function getMachineId() {
     try {
         return machineIdSync();
     } catch (error) {
-        log.error('[DEVICE]: Error obteniendo Machine ID:', error);
+        log.error('[DEVICE]: Error retrieving Machine ID:', error);
         return 'unknown-device-' + Date.now();
     }
 }
@@ -32,7 +32,7 @@ function registerDevice(socket, deviceId, hardwareIdToDisplayMap) {
         })
     );
 
-    log.info('[DEVICE]: Registrando con screens:', screenInfo);
+    log.info('[DEVICE]: Registering with displays:', screenInfo);
     socket.emit('registerDevice', {
         deviceId,
         screens: screenInfo,
@@ -47,11 +47,11 @@ function handleRebootDevice() {
     if (platform === 'win32') command = 'shutdown /r /t 0';
     else if (platform === 'darwin' || platform === 'linux') command = 'sudo reboot';
     else {
-        log.error(`[DEVICE]: Plataforma ${platform} no soportada.`);
+        log.error(`[DEVICE]: Platform ${platform} not supported.`);
         return;
     }
 
-    log.info(`[DEVICE]: Reiniciando: ${command}`);
+    log.info(`[DEVICE]: Rebooting: ${command}`);
     exec(command, (error, stdout, stderr) => {
         if (error) log.error(`[DEVICE]: Error: ${error.message}`);
         if (stderr) log.error(`[DEVICE]: ${stderr}`);

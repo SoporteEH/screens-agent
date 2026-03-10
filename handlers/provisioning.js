@@ -1,6 +1,6 @@
 /**
  * Provisioning Handler
- * Gestiona registro inicial del dispositivo
+ * Manages initial device registration
  */
 
 const { BrowserWindow, app, ipcMain } = require('electron');
@@ -12,13 +12,13 @@ const { SERVER_URL } = require('../config/constants');
 const { saveConfig } = require('../utils/configManager');
 const { getMachineId } = require('../services/device');
 
-// Inicia proceso de vinculacion
+// Starts linking process
 function startProvisioningMode() {
     const deviceId = getMachineId();
     let pendingServerUrl = '';
     let socket = null;
 
-    log.info(`[PROVISIONING]: ID de Maquina: ${deviceId}`);
+    log.info(`[PROVISIONING]: Machine ID: ${deviceId}`);
 
     const provisionWindow = new BrowserWindow({
         width: 800,
@@ -33,7 +33,7 @@ function startProvisioningMode() {
             backgroundThrottling: true,
             devTools: false,
         },
-        title: 'Vinculacion - ScreensWeb',
+        title: 'Linking - ScreensWeb',
         backgroundColor: '#0a0a0a',
         frame: false,
         resizable: false,
@@ -41,7 +41,7 @@ function startProvisioningMode() {
 
     provisionWindow.setMenu(null);
 
-    // Escuchar URL desde la ventana
+    // Listen for URL from window
     ipcMain.on('set-server-url', (event, url) => {
         if (socket) {
             socket.disconnect();
@@ -49,7 +49,7 @@ function startProvisioningMode() {
         }
 
         pendingServerUrl = url.endsWith('/') ? url.slice(0, -1) : url;
-        log.info(`[PROVISIONING]: Intentando conectar a: ${pendingServerUrl}`);
+        log.info(`[PROVISIONING]: Attempting to connect to: ${pendingServerUrl}`);
 
         socket = io(pendingServerUrl, {
             reconnection: true,
@@ -58,24 +58,24 @@ function startProvisioningMode() {
         });
 
         socket.on('connect', () => {
-            log.info('[PROVISIONING]: Conexion exitosa. Registrando para vinculacion...');
+            log.info('[PROVISIONING]: Connection successful. Registering for linking...');
             socket.emit('register-for-provisioning', deviceId);
             provisionWindow.webContents.send('provision-status', {
                 type: 'success',
-                message: 'Conectado. Esperando vinculacion desde el panel de control...',
+                message: 'Connected. Waiting for linking from control panel...',
             });
         });
 
         socket.on('connect_error', (error) => {
-            log.error(`[PROVISIONING]: Error de conexion a ${pendingServerUrl}: ${error.message}`);
+            log.error(`[PROVISIONING]: Connection error to ${pendingServerUrl}: ${error.message}`);
             provisionWindow.webContents.send('provision-status', {
                 type: 'error',
-                message: 'No se pudo conectar al servidor. Verifica la URL e intenta de nuevo.',
+                message: 'Could not connect to the server. Check the URL and try again.',
             });
         });
 
         socket.on('provision-success', async () => {
-            log.info('[PROVISIONING]: Vinculacion exitosa detectada. Solicitando token...');
+            log.info('[PROVISIONING]: Successful linking detected. Requesting token...');
 
             try {
                 const response = await fetch(`${pendingServerUrl}/api/auth/agent-token`, {
@@ -84,11 +84,11 @@ function startProvisioningMode() {
                     body: JSON.stringify({ deviceId }),
                 });
 
-                if (!response.ok) throw new Error('Error al obtener el token del servidor');
+                if (!response.ok) throw new Error('Error obtaining token from server');
 
                 const { token } = await response.json();
 
-                // Guardamos todo, incluyendo la URL que funciono
+                // Save all configuration, including the successful URL
                 saveConfig({
                     deviceId,
                     provisioned: true,
@@ -102,16 +102,16 @@ function startProvisioningMode() {
                 app.relaunch();
                 app.exit(0);
             } catch (err) {
-                log.error('[PROVISIONING]: Fallo al finalizar la vinculacion:', err.message);
+                log.error('[PROVISIONING]: Failed to finalize linking:', err.message);
                 provisionWindow.webContents.send('provision-status', {
                     type: 'error',
-                    message: `Error al finalizar: ${err.message}`,
+                    message: `Error finalizing: ${err.message}`,
                 });
             }
         });
     });
 
-    // Manejadores basicos
+    // Basic handlers
     ipcMain.on('window-control', (event, action) => {
         if (!provisionWindow || provisionWindow.isDestroyed()) return;
         if (action === 'minimize') provisionWindow.minimize();

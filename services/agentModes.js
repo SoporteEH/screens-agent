@@ -1,5 +1,5 @@
 /**
- * Agent Modes - Normal y Provisioning
+ * Agent Modes - Normal and Provisioning
  */
 
 const { log } = require('../utils/logConfig');
@@ -154,16 +154,16 @@ const startNormalMode = async (context) => {
 
     setInterval(() => {
         if (managedWindows.size === 0) return;
-        log.info('[OPTIMIZATION]: Limpiando HTTP cache (preservando storageData).');
+        log.info('[OPTIMIZATION]: Clearing HTTP cache (preserving storageData).');
         managedWindows.forEach((win) => {
             if (win?.isDestroyed()) return;
-            win.webContents.session.clearCache().catch(() => {});
+            win.webContents.session.clearCache().catch(() => { });
         });
     }, CONSTANTS.GC_INTERVAL_MS);
 };
 
 const startProvisioningMode = (context) => {
-    log.info('[INIT]: Sin configuracion. Modo vinculacion.');
+    log.info('[INIT]: No configuration found. Entering provisioning mode.');
     return context.startProvisioningHandler({
         get socket() {
             return context.socket;

@@ -75,7 +75,7 @@ class ServerLogTransport extends winston.Transport {
                 });
                 request.setHeader('Content-Type', 'application/json');
                 request.setHeader('Authorization', `Bearer ${config.agentToken}`);
-                request.on('error', () => {});
+                request.on('error', () => { });
                 const body = JSON.stringify({
                     level: info.level,
                     message: info.message,
@@ -129,7 +129,7 @@ const heartbeatLog = {
         this._counter++;
         const now = Date.now();
         if (this._counter % 10 === 0 || now - this._lastLog > 5 * 60 * 1000) {
-            log.debug(`[HEARTBEAT]: Latidos enviados (ultimos 5 min): ${this._counter % 10 || 10}`);
+            log.debug(`[HEARTBEAT]: Heartbeats sent (last 5 min): ${this._counter % 10 || 10}`);
             this._lastLog = now;
         }
     },
@@ -141,7 +141,7 @@ const updaterLog = {
     logCheck(version) {
         const now = Date.now();
         if (now - this._lastUpdateCheck > 10 * 60 * 1000) {
-            log.info(`[UPDATER]: Verificacion periodica - Version actual: ${version}`);
+            log.info(`[UPDATER]: Periodic check - Current version: ${version}`);
             this._lastUpdateCheck = now;
         }
     },

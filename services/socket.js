@@ -1,5 +1,5 @@
 /**
- * Socket Service - Conexion WebSocket
+ * Socket Service - WebSocket Connection
  */
 
 const { io } = require('socket.io-client');
@@ -18,12 +18,12 @@ function connectToSocketServer(token, handlers) {
     });
 
     socket.on('connect', () => {
-        log.info('[SOCKET]: Conectado.');
+        log.info('[SOCKET]: Connected.');
         if (handlers.onConnect) handlers.onConnect();
     });
 
     socket.on('disconnect', (reason) => {
-        log.info(`[SOCKET]: Desconectado: ${reason}`);
+        log.info(`[SOCKET]: Disconnected: ${reason}`);
         if (handlers.onDisconnect) handlers.onDisconnect(reason);
 
         if (reason === 'io server disconnect') {
@@ -32,13 +32,13 @@ function connectToSocketServer(token, handlers) {
     });
 
     socket.on('reconnect', (attemptNumber) => {
-        log.info(`[SOCKET]: Reconectado (intento ${attemptNumber})`);
+        log.info(`[SOCKET]: Reconnected (attempt ${attemptNumber})`);
         if (handlers.onReconnect) handlers.onReconnect(attemptNumber);
     });
 
-    socket.on('reconnect_attempt', (n) => log.info(`[SOCKET]: Reconectando #${n}...`));
-    socket.on('reconnect_error', (err) => log.error(`[SOCKET]: Error reconexion: ${err.message}`));
-    socket.on('connect_error', (err) => log.error(`[SOCKET]: Error conexion: ${err.message}`));
+    socket.on('reconnect_attempt', (n) => log.info(`[SOCKET]: Reconnecting #${n}...`));
+    socket.on('reconnect_error', (err) => log.error(`[SOCKET]: Reconnection error: ${err.message}`));
+    socket.on('connect_error', (err) => log.error(`[SOCKET]: Connection error: ${err.message}`));
 
     socket.on('command', (cmd) => handlers.onCommand?.(cmd));
     socket.on('device-info', (device) => handlers.onDeviceInfo?.(device));
