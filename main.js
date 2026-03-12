@@ -44,6 +44,11 @@ async function bootstrap() {
         const { getDeviceName } = require('./services/identity');
         const commandHandlers = require('./handlers/commands');
         const stateService = require('./services/state');
+        const { cleanupOldLogs } = require('./utils/logConfig');
+
+        // Initial log cleanup
+        cleanupOldLogs();
+
         const socketService = require('./services/socket');
         const deviceService = require('./services/device');
         const assetsService = require('./services/assets');

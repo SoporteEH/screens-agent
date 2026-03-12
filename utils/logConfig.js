@@ -33,22 +33,32 @@ const consoleFormat = winston.format.combine(
     })
 );
 
-const generalTransport = new DailyRotateFile({
+const infoAndBelow = winston.format((info) => {
+    if (info.level === 'info' || info.level === 'debug') return info;
+})();
+
+const warnAndAbove = winston.format((info) => {
+    if (info.level === 'warn' || info.level === 'error') return info;
+})();
+
+const generalTransport = new winston.transports.File({
     dirname: LOG_DIR,
-    filename: 'general-%DATE%.log',
-    datePattern: 'YYYY-MM-DD',
-    maxSize: '10m',
-    maxFiles: '90d',
+    filename: path.join(LOG_DIR, 'general.log'),
+    maxsize: 10 * 1024 * 1024, // 10MB
+    maxFiles: 100,
     level: 'info',
+    tailable: true,
+    format: winston.format.combine(infoAndBelow, fileFormat),
 });
 
-const errorTransport = new DailyRotateFile({
+const errorTransport = new winston.transports.File({
     dirname: LOG_DIR,
-    filename: 'error-%DATE%.log',
-    datePattern: 'YYYY-MM-DD',
-    maxSize: '10m',
-    maxFiles: '90d',
+    filename: path.join(LOG_DIR, 'error.log'),
+    maxsize: 10 * 1024 * 1024, // 10MB
+    maxFiles: 100,
     level: 'warn',
+    tailable: true,
+    format: winston.format.combine(warnAndAbove, fileFormat),
 });
 
 // Remote transport: forwards warn/error to server API
@@ -158,16 +168,53 @@ function getLogDir() {
 }
 
 function getGeneralLogPath() {
-    const date = new Date().toISOString().split('T')[0];
-    return path.join(LOG_DIR, `general-${date}.log`);
+    return path.join(LOG_DIR, 'general.log');
 }
 
-function getTodayLogPaths() {
-    const date = new Date().toISOString().split('T')[0];
-    return [
-        { name: 'general', path: path.join(LOG_DIR, `general-${date}.log`) },
-        { name: 'error', path: path.join(LOG_DIR, `error-${date}.log`) },
-    ];
+/**
+ * Gets all log files for zipping.
+ */
+function getAllLogPaths() {
+    try {
+        const files = fs.readdirSync(LOG_DIR);
+        return files
+            .filter((f) => (f.startsWith('general') || f.startsWith('error')) && f.endsWith('.log'))
+            .map((f) => ({
+                name: f.replace('.log', ''),
+                path: path.join(LOG_DIR, f),
+            }));
+    } catch (err) {
+        return [];
+    }
+}
+
+/**
+ * Manually cleanup logs older than 90 days.
+ * Winston File transport handles maxsize but not maxAge by itself without DailyRotateFile.
+ */
+function cleanupOldLogs() {
+    try {
+        const now = Date.now();
+        const maxAge = 90 * 24 * 60 * 60 * 1000;
+        const files = fs.readdirSync(LOG_DIR);
+
+        files.forEach((file) => {
+            const filePath = path.join(LOG_DIR, file);
+            if (!file.endsWith('.log')) return;
+
+            try {
+                const stats = fs.statSync(filePath);
+                if (now - stats.mtimeMs > maxAge) {
+                    fs.unlinkSync(filePath);
+                    console.log(`[CLEANUP]: Deleted old log file: ${file}`);
+                }
+            } catch (e) {
+                // Ignore skip
+            }
+        });
+    } catch (err) {
+        // Silently fail cleanup
+    }
 }
 
 module.exports = {
@@ -176,5 +223,6 @@ module.exports = {
     updaterLog,
     getLogDir,
     getGeneralLogPath,
-    getTodayLogPaths,
+    getAllLogPaths,
+    cleanupOldLogs,
 };

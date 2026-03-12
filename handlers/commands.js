@@ -509,11 +509,11 @@ function handleIdentifyScreen(command) {
 }
 
 async function handleGetLogs(command) {
-    const { getTodayLogPaths, getLogDir } = require('../utils/logConfig');
+    const { getAllLogPaths, getLogDir } = require('../utils/logConfig');
     const archiver = require('archiver');
-    const logFiles = getTodayLogPaths();
+    const logFiles = getAllLogPaths();
     const date = new Date().toISOString().split('T')[0];
-    const zipPath = path.join(getLogDir(), `logs-${date}.zip`);
+    const zipPath = path.join(getLogDir(), `all-logs-${context.deviceId}-${date}.zip`);
 
     try {
         const existingFiles = logFiles.filter((f) => fs.existsSync(f.path));
@@ -531,17 +531,18 @@ async function handleGetLogs(command) {
             archive.on('error', reject);
             archive.pipe(output);
             for (const entry of existingFiles) {
-                archive.file(entry.path, { name: `${entry.name}-${date}.log` });
+                // Keep file names unique in zip if multiple rotations exist
+                archive.file(entry.path, { name: entry.path.slice(getLogDir().length + 1) });
             }
             archive.finalize();
         });
 
-        log.info(`[COMMAND]: Uploading logs: ${zipPath}`);
+        log.info(`[COMMAND]: Uploading all logs: ${zipPath}`);
 
         const fileContent = fs.readFileSync(zipPath);
         const FormData = require('form-data');
         const form = new FormData();
-        form.append('logFile', fileContent, { filename: `agent-${context.deviceId}.zip` });
+        form.append('logFile', fileContent, { filename: path.basename(zipPath) });
 
         const constants = require('../config/constants');
         const uploadUrl = `${constants.getServerUrl()}/api/logs/upload-debug`;
@@ -557,7 +558,7 @@ async function handleGetLogs(command) {
             sendCommandFeedback(
                 command,
                 'success',
-                `Logs listos. URL de descarga: ${response.data.downloadUrl}`
+                `Logs listos. Download URL: ${response.data.downloadUrl}`
             );
         } else {
             throw new Error('Invalid server response');
