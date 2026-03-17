@@ -8,12 +8,11 @@ const { cachePlayerHTML, cacheContentURL } = require('../services/playerCache');
 
 let context = {};
 
-// Initializes handlers with global context
+// global context
 function initializeHandlers(ctx) {
     context = ctx;
 }
 
-// Sends command feedback to the server
 function sendCommandFeedback(command, status, message) {
     if (!command || !command.commandId) return;
     if (command.silent) return;

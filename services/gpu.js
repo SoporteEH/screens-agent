@@ -25,9 +25,9 @@ function markGpuAsFailed() {
             GPU_CONFIG_FILE,
             JSON.stringify({ gpuFailed: true, failedAt: new Date().toISOString() })
         );
-        log.info('[GPU]: Marcada como fallida.');
+        log.info('[GPU]: Marked as failed.');
     } catch (e) {
-        log.error('[GPU]: Error guardando estado:', e);
+        log.error('[GPU]: Error saving state:', e);
     }
 }
 
@@ -48,9 +48,8 @@ function configureGpu() {
         return;
     }
 
-    log.info('[GPU]: Usando aceleracion por hardware (Comportamiento Conservador).');
+    log.info('[GPU]: Using hardware acceleration.');
 
-    // Optimizaciones basicas de rasterizado y decodificacion
     app.commandLine.appendSwitch('enable-gpu-rasterization');
     app.commandLine.appendSwitch('enable-accelerated-video-decode');
     app.commandLine.appendSwitch('enable-zero-copy');
@@ -75,18 +74,18 @@ function configureMemory() {
     app.commandLine.appendSwitch('disable-notifications');
     app.commandLine.appendSwitch('disable-domain-reliability');
 
-    log.info('[MEMORY]: Optimizacion aplicada.');
+    log.info('[MEMORY]: Optimization applied.');
 }
 
 function registerGpuCrashHandlers() {
     app.on('gpu-process-crashed', (_event, killed) => {
-        log.error(`[GPU]: Proceso crasheo (killed: ${killed})`);
+        log.error(`[GPU]: Process crashed (killed: ${killed})`);
         markGpuAsFailed();
     });
 
     app.on('render-process-gone', (_event, _webContents, details) => {
         if (details.reason === 'crashed' || details.reason === 'gpu-dead') {
-            log.error(`[GPU]: Renderizado fallo (${details.reason})`);
+            log.error(`[GPU]: Render failed (${details.reason})`);
             markGpuAsFailed();
         }
     });

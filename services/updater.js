@@ -30,7 +30,6 @@ function notifyAllWindows(data) {
 }
 
 async function checkForUpdates() {
-    log.info('[UPDATER]: Checking for updates...');
 
     autoUpdater.removeAllListeners('update-available');
     autoUpdater.removeAllListeners('update-not-available');
@@ -47,7 +46,6 @@ async function checkForUpdates() {
     });
 
     autoUpdater.on('update-not-available', () => {
-        log.info('[UPDATER]: You are currently on the latest version.');
         isCheckingForUpdate = false;
         notifyAllWindows({ type: 'up-to-date', message: 'Agent is up to date' });
     });
@@ -90,7 +88,6 @@ async function checkForUpdates() {
     setInterval(
         () => {
             if (!isCheckingForUpdate) {
-                log.info('[UPDATER]: Periodic update check retry...');
                 autoUpdater.checkForUpdates().catch(() => { });
             }
         },

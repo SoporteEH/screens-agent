@@ -189,7 +189,7 @@ function getAllLogPaths() {
 }
 
 /**
- * Manually cleanup logs older than 90 days.
+ * Cleanup logs older than 90 days.
  * Winston File transport handles maxsize but not maxAge by itself without DailyRotateFile.
  */
 function cleanupOldLogs() {
@@ -209,11 +209,9 @@ function cleanupOldLogs() {
                     console.log(`[CLEANUP]: Deleted old log file: ${file}`);
                 }
             } catch (e) {
-                // Ignore skip
             }
         });
     } catch (err) {
-        // Silently fail cleanup
     }
 }
 
