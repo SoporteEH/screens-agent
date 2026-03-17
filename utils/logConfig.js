@@ -41,23 +41,25 @@ const warnAndAbove = winston.format((info) => {
     if (info.level === 'warn' || info.level === 'error') return info;
 })();
 
-const generalTransport = new winston.transports.File({
+const generalTransport = new DailyRotateFile({
     dirname: LOG_DIR,
-    filename: path.join(LOG_DIR, 'general.log'),
-    maxsize: 10 * 1024 * 1024, // 10MB
-    maxFiles: 100,
+    filename: 'general-%DATE%.log',
+    datePattern: 'YYYY-MM-DD',
+    maxSize: '10m',
+    maxFiles: '30d',
+    zippedArchive: true,
     level: 'info',
-    tailable: true,
     format: winston.format.combine(infoAndBelow, fileFormat),
 });
 
-const errorTransport = new winston.transports.File({
+const errorTransport = new DailyRotateFile({
     dirname: LOG_DIR,
-    filename: path.join(LOG_DIR, 'error.log'),
-    maxsize: 10 * 1024 * 1024, // 10MB
-    maxFiles: 100,
+    filename: 'error-%DATE%.log',
+    datePattern: 'YYYY-MM-DD',
+    maxSize: '10m',
+    maxFiles: '30d',
+    zippedArchive: true,
     level: 'warn',
-    tailable: true,
     format: winston.format.combine(warnAndAbove, fileFormat),
 });
 
@@ -178,9 +180,9 @@ function getAllLogPaths() {
     try {
         const files = fs.readdirSync(LOG_DIR);
         return files
-            .filter((f) => (f.startsWith('general') || f.startsWith('error')) && f.endsWith('.log'))
+            .filter((f) => (f.startsWith('general') || f.startsWith('error')) && (f.endsWith('.log') || f.endsWith('.gz')))
             .map((f) => ({
-                name: f.replace('.log', ''),
+                name: f.replace('.log', '').replace('.gz', ''),
                 path: path.join(LOG_DIR, f),
             }));
     } catch (err) {
@@ -200,7 +202,7 @@ function cleanupOldLogs() {
 
         files.forEach((file) => {
             const filePath = path.join(LOG_DIR, file);
-            if (!file.endsWith('.log')) return;
+            if (!file.endsWith('.log') && !file.endsWith('.gz')) return;
 
             try {
                 const stats = fs.statSync(filePath);

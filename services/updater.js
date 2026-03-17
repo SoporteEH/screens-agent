@@ -7,6 +7,7 @@ const { log } = require('../utils/logConfig');
 const { app, BrowserWindow } = require('electron');
 
 let isCheckingForUpdate = false;
+let checksumRetries = 0;
 
 function configureUpdater() {
     autoUpdater.logger = log;
@@ -56,10 +57,21 @@ async function checkForUpdates() {
         notifyAllWindows({ status: 'error', message: 'Error checking for updates' });
 
         if (err.message && err.message.includes('checksum')) {
-            log.info('[UPDATER]: Checksum error. Retrying...');
-            autoUpdater.autoDownload = true;
-            autoUpdater.allowDowngrade = true;
-            autoUpdater.checkForUpdates();
+            if (checksumRetries < 3) {
+                checksumRetries++;
+                log.info(`[UPDATER]: Checksum error. Retrying... (${checksumRetries}/3)`);
+                autoUpdater.autoDownload = true;
+                autoUpdater.allowDowngrade = true;
+                setTimeout(() => autoUpdater.checkForUpdates(), 5000);
+            } else {
+                log.error('[UPDATER]: Max checksum retries reached. Suspending updates for 12 hours.');
+                checksumRetries = 0;
+                // Block the 10-minute interval check by faking isCheckingForUpdate
+                isCheckingForUpdate = true;
+                setTimeout(() => {
+                    isCheckingForUpdate = false;
+                }, 12 * 60 * 60 * 1000);
+            }
         }
     });
 
