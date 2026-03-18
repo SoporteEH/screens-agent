@@ -224,7 +224,7 @@ function restoreAllContentImmediately(
             if (!hasInternet && !isLocalContent) {
                 // No internet and remote content: create window directly with fallback
                 log.info(
-                    `[STARTUP]: No internet - creating fallback window on display ${stableId}`
+                    `[STARTUP]: No internet - attempting local carousel fallback on display ${stableId}`
                 );
 
                 setTimeout(() => {
@@ -241,7 +241,11 @@ function restoreAllContentImmediately(
                         refreshInterval: screenData.refreshInterval || 0,
                     };
 
-                    createContentWindow(targetDisplay, fallbackPath, command);
+                    const { buildLocalCarouselUrl } = require('./localCarousel');
+                    const carouselUrl = buildLocalCarouselUrl();
+                    const pathToLoad = carouselUrl || fallbackPath;
+
+                    createContentWindow(targetDisplay, pathToLoad, command);
                 }, 500 * restoredCount);
             } else {
                 log.info(`[STARTUP]: Restoring screen ${stableId}: ${screenData.url}`);

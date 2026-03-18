@@ -503,7 +503,6 @@
     <!-- Main Container -->
     <div class="container">
         <div class="content-wrapper">
-            <!-- Header -->
             <div class="header">
                 <div class="logo">
                     <span class="material-icons">grid_view</span>
@@ -514,7 +513,6 @@
 
             <!-- Card -->
             <div class="card">
-                <!-- Status -->
                 <div class="status-section">
                     <span class="status-label">Estado</span>
                     <div class="status-badge" id="status-container">
@@ -585,7 +583,6 @@
                 modalMessage.textContent = message;
                 modalConfirmBtn.textContent = confirmText;
 
-                // Aplicar estilo danger si es necesario
                 if (isDanger) {
                     modalConfirmBtn.classList.add('danger');
                 } else {
@@ -611,7 +608,6 @@
             if (modalCallback) modalCallback(false);
         });
 
-        // Cerrar modal al hacer click fuera
         modalOverlay.addEventListener('click', (e) => {
             if (e.target === modalOverlay) {
                 hideModal();
@@ -619,18 +615,15 @@
             }
         });
 
-        // Interfaz Electron
         let agentServerUrl = null;
         console.log('[INIT] Control panel script loaded');
 
         window.electron.onAgentInfo((info) => {
             document.getElementById('agent-version').textContent = 'v' + info.version;
 
-            // Guardar server URL para version check
             if (info.serverUrl && !agentServerUrl) {
                 agentServerUrl = info.serverUrl;
                 console.log('[AGENT INFO] Server URL set to:', agentServerUrl);
-                // Intentar check de versión ahora que tenemos la URL
                 setTimeout(() => checkVersionStatus(), 500);
             }
 
@@ -650,7 +643,6 @@
             }
         });
 
-        // Botón reiniciar
         document.getElementById('btn-restart').addEventListener('click', async () => {
             const confirmed = await showModal(
                 'Reiniciar',
@@ -662,7 +654,6 @@
             }
         });
 
-        // Botón cerrar
         document.getElementById('btn-quit').addEventListener('click', async () => {
             const confirmed = await showModal(
                 'Cerrar',
@@ -675,13 +666,10 @@
             }
         });
 
-        // actualizar
         const updateBtn = document.getElementById('btn-update');
         const updateBtnText = document.getElementById('update-btn-text');
         const updateSpinner = document.getElementById('update-spinner');
         let updateAvailable = false;
-
-        // Verifica versión en el servidor
         async function checkVersionStatus() {
             if (!agentServerUrl) {
                 console.log('[VERSION CHECK] Waiting for server URL...');
@@ -717,7 +705,6 @@
             }
         }
 
-        // Verificar periódicamente cada 2 minutos
         setInterval(() => {
             if (agentServerUrl) {
                 checkVersionStatus();
@@ -728,15 +715,10 @@
         updateBtn.addEventListener('click', () => {
             if (!updateAvailable) return;
 
-            // Mostrar spinner y deshabilitar botón
             updateBtnText.style.display = 'none';
             updateSpinner.style.display = 'inline-block';
             updateBtn.disabled = true;
-
-            // Enviar comando
             window.electron.sendAction('check-update');
-
-            // 10 segundos countdown
             let countdown = 10;
             const countdownInterval = setInterval(() => {
                 countdown--;
@@ -746,18 +728,16 @@
                     updateBtnText.innerHTML = `<span class="material-icons">timer</span><span>Espera ${countdown}s</span>`;
                 } else {
                     clearInterval(countdownInterval);
-                    checkVersionStatus(); // Re-verificar después del countdown
+                    checkVersionStatus();
                     updateBtnText.style.display = 'flex';
                     updateSpinner.style.display = 'none';
                 }
             }, 1000);
         });
 
-        // Escuchar eventos de actualización
         window.electron.onUpdateStatus((status) => {
             const notification = document.getElementById('notification');
 
-            // Configurar notificación según el estado
             if (status.type === 'up-to-date') {
                 notification.textContent = 'App en la última versión';
                 notification.className = 'notification success show';
@@ -772,25 +752,20 @@
                 notification.className = 'notification error show';
             }
 
-            // Re-habilitar botón inmediatamente cuando hay respuesta
             updateBtnText.style.display = 'flex';
             updateBtnText.style.alignItems = 'center';
             updateBtnText.style.gap = '8px';
             updateSpinner.style.display = 'none';
             updateBtn.disabled = false;
 
-            // Re-verificar estado de versión después de eventos importantes
             if (status.type === 'up-to-date' || status.type === 'downloaded') {
                 setTimeout(() => checkVersionStatus(), 2000);
             }
-
-            // Ocultar notificación después de 6 segundos
             setTimeout(() => {
                 notification.classList.remove('show');
             }, 6000);
         });
 
-        // Event listeners para controles de ventana personalizados
         document.getElementById('btn-minimize').addEventListener('click', () => {
             window.electron.minimizeWindow();
         });

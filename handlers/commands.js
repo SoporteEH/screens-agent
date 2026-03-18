@@ -8,7 +8,6 @@ const { cachePlayerHTML, cacheContentURL } = require('../services/playerCache');
 
 let context = {};
 
-// global context
 function initializeHandlers(ctx) {
     context = ctx;
 }
@@ -110,7 +109,7 @@ function createContentWindow(display, urlToLoad, command) {
 
     win.once('ready-to-show', () => win.show());
 
-    // Fallback timer to ensure window visibility
+    // Visibility fallback
     setTimeout(() => {
         if (!win.isDestroyed() && !win.isVisible()) win.show();
     }, 2000);
@@ -153,7 +152,14 @@ function createContentWindow(display, urlToLoad, command) {
             if (!originalUrl.startsWith('local:') && isNetworkError) {
                 scheduleRetry(command);
             }
-            win.loadURL(fallbackPath);
+
+            const { buildLocalCarouselUrl } = require('../services/localCarousel');
+            const carouselUrl = buildLocalCarouselUrl();
+            if (carouselUrl) {
+                win.loadURL(carouselUrl);
+            } else {
+                win.loadURL(fallbackPath);
+            }
         }
     );
 
@@ -226,14 +232,14 @@ function handleShowUrl(command, _currentAttempt = 0) {
 
     let finalUrl = url;
 
-    // PLAYER MODE CHECK
+    // Player mode check
     const { loadConfig } = require('../utils/configManager');
     const { getServerUrl } = require('../config/constants');
     const config = loadConfig();
     const serverUrl = config.serverUrl || getServerUrl();
     const isPlayerMode = !!serverUrl && config.deviceId;
 
-    // For autologin URLs bypass Player Mode and load directly
+    // Bypass player mode for autologin
     const checkIsAutologinUrl = (testUrl) => {
         if (!testUrl) return false;
         return (
@@ -291,7 +297,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
         win.webContents.removeAllListeners('did-navigate-in-page');
         win.webContents.removeAllListeners('did-navigate');
 
-        // Logic for Sportradar / LuckiaTV autologin
+        // Sportradar/LuckiaTV autologin logic
         const checkIsTargetUrl = (testUrl) => {
             if (!testUrl) return false;
             return (
@@ -364,17 +370,17 @@ function handleShowUrl(command, _currentAttempt = 0) {
                 }
             };
 
-            // Fires when main frame finishes loading (initial load)
+            // On initial load
             win.webContents.on('did-finish-load', () => {
                 injectIfTarget(win.webContents.getURL());
             });
 
-            // Fires on SPA hash/history navigation (e.g. redirect to /#/login)
+            // On SPA navigation
             win.webContents.on('did-navigate-in-page', (event, navUrl) => {
                 injectIfTarget(navUrl);
             });
 
-            // Fires on full cross-origin navigations
+            // On full navigation
             win.webContents.on('did-navigate', (event, navUrl) => {
                 lastLoggedUrl = null; // Reset on full navigation
                 injectIfTarget(navUrl);
@@ -405,9 +411,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
     }
 }
 
-/**
- * Handles 'close_screen' command.
- */
+// Handle 'close_screen'
 function handleCloseScreen(command) {
     const { screenIndex } = command;
     try {
@@ -441,9 +445,7 @@ function handleCloseScreen(command) {
     }
 }
 
-/**
- * Handles 'refresh_screen' command.
- */
+// Handle 'refresh_screen'
 function handleRefreshScreen(command) {
     const { screenIndex } = command;
     try {
@@ -467,9 +469,7 @@ function handleRefreshScreen(command) {
     }
 }
 
-/**
- * Handles 'identify_screen' command.
- */
+// Handle 'identify_screen'
 function handleIdentifyScreen(command) {
     const { screenIndex, identifierText } = command;
     const targetDisplay = context.hardwareIdToDisplayMap.get(screenIndex);
@@ -530,7 +530,6 @@ async function handleGetLogs(command) {
             archive.on('error', reject);
             archive.pipe(output);
             for (const entry of existingFiles) {
-                // Keep file names unique in zip if multiple rotations exist
                 archive.file(entry.path, { name: entry.path.slice(getLogDir().length + 1) });
             }
             archive.finalize();
@@ -557,7 +556,7 @@ async function handleGetLogs(command) {
             sendCommandFeedback(
                 command,
                 'success',
-                `Logs listos. Download URL: ${response.data.downloadUrl}`
+                `Logs ready. Download URL: ${response.data.downloadUrl}`
             );
         } else {
             throw new Error('Invalid server response');

@@ -1,5 +1,4 @@
 /**
- * Provisioning Handler
  * Manages initial device registration
  */
 
@@ -12,7 +11,6 @@ const { SERVER_URL } = require('../config/constants');
 const { saveConfig } = require('../utils/configManager');
 const { getMachineId } = require('../services/device');
 
-// Starts linking process
 function startProvisioningMode() {
     const deviceId = getMachineId();
     let pendingServerUrl = '';

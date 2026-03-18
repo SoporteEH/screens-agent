@@ -21,10 +21,10 @@ const initializeMonitors = (context) => {
         } = context;
 
         if (screenChangeTimeout) clearTimeout(screenChangeTimeout);
-        log.info(`[DISPLAY]: Cambio detectado (${reason})`);
+        log.info(`[DISPLAY]: Change detected (${reason})`);
 
         screenChangeTimeout = setTimeout(async () => {
-            log.info('[DISPLAY]: Actualizando mapa de pantallas.');
+            log.info('[DISPLAY]: Updating display map.');
 
             const previousIds = Array.from(hardwareIdToDisplayMap.keys());
             await buildDisplayMap(hardwareIdToDisplayMap);
@@ -35,7 +35,7 @@ const initializeMonitors = (context) => {
                 for (const id of orphanedIds) {
                     const win = managedWindows.get(id);
                     if (win && !win.isDestroyed()) {
-                        log.info(`[DISPLAY]: Cerrando ventana huerfana: ${id}`);
+                        log.info(`[DISPLAY]: Closing orphaned window: ${id}`);
                         win.close();
                     }
                     managedWindows.delete(id);
@@ -45,11 +45,11 @@ const initializeMonitors = (context) => {
             if (reason === 'added') {
                 const newIds = currentIds.filter((id) => !previousIds.includes(id));
                 if (newIds.length > 0) {
-                    log.info(`[DISPLAY]: Nuevas pantallas: ${newIds.join(', ')}`);
+                    log.info(`[DISPLAY]: New displays: ${newIds.join(', ')}`);
                     const lastState = loadLastState();
                     for (const id of newIds) {
                         if (lastState[id]) {
-                            log.info(`[DISPLAY]: Restaurando ${id}: ${lastState[id].url}`);
+                            log.info(`[DISPLAY]: Restoring ${id}: ${lastState[id].url}`);
                             setTimeout(() => {
                                 handleShowUrl({
                                     action: 'show_url',
@@ -76,7 +76,7 @@ const initializeMonitors = (context) => {
         onOnline: () => context.onNetworkOnline(),
         onCheckOnline: () => {
             if (context.socket && !context.socket.connected) {
-                log.info('[NETWORK]: Socket desconectado. Reconectando...');
+                log.info('[NETWORK]: Socket disconnected. Reconnecting...');
                 context.socket.connect();
             }
         },

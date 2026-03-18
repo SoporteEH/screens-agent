@@ -1,6 +1,6 @@
 /**
  * Network Monitoring Service
- * Deteccion activa: OS check + ping al servidor
+ * Active detection: OS check + server ping
  */
 
 const { net } = require('electron');
@@ -54,26 +54,26 @@ function pingServer() {
 
 function startNetworkMonitoring(handlers) {
     let lastState = { osOnline: net.isOnline(), serverReachable: true };
-    log.info('[NETWORK]: Iniciando monitoreo con ping activo.');
+    log.info('[NETWORK]: Starting monitoring with active ping.');
 
     return setInterval(async () => {
         const osOnline = net.isOnline();
-        // Solo intentar ping si el OS confirma que hay conexión
+        // Only attempt ping if OS confirms connection
         const serverReachable = osOnline ? await pingServer() : false;
 
         if (osOnline !== lastState.osOnline || serverReachable !== lastState.serverReachable) {
             log.info(
-                `[NETWORK]: Estado cambiado. OS Online: ${osOnline}, Server Reachable: ${serverReachable}`
+                `[NETWORK]: State changed. OS Online: ${osOnline}, Server Reachable: ${serverReachable}`
             );
 
             if (!osOnline) {
-                log.info('[NETWORK]: Sin conexion (OS).');
+                log.info('[NETWORK]: No connection (OS).');
                 handlers.onOffline?.('NO_INTERNET');
             } else if (!serverReachable) {
-                log.info('[NETWORK]: Servidor inalcanzable (ping fallido).');
+                log.info('[NETWORK]: Server unreachable (ping failed).');
                 handlers.onOffline?.('NO_SERVER');
             } else {
-                log.info('[NETWORK]: Conexion restaurada.');
+                log.info('[NETWORK]: Connection restored.');
                 handlers.onOnline?.();
             }
 

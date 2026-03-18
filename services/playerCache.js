@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const { log } = require('../utils/logConfig');
 const { CONFIG_DIR } = require('../config/constants');
+const { buildLocalCarouselUrl } = require('./localCarousel');
 
 const PLAYER_CACHE_DIR = path.join(CONFIG_DIR, 'player-cache');
 const CONTENT_CACHE_DIR = path.join(CONFIG_DIR, 'content-cache');
@@ -120,10 +121,15 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl) {
         }
     }
 
-    const statusText = usingCache ? 'Reproduciendo desde cache local' : 'Servidor no disponible';
+    if (!iframeUrl) {
+        iframeUrl = buildLocalCarouselUrl();
+        if (iframeUrl) usingCache = true;
+    }
+
+    const statusText = usingCache ? 'Playing local' : 'No valid content';
 
     return `<!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -142,30 +148,30 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl) {
     <iframe id="contentFrame" style="display:none;" allow="autoplay; fullscreen; encrypted-media"></iframe>
     <div class="offline-msg" id="offlineMsg" style="display:none;">
         <h2>${statusText}</h2>
-        <p>Pantalla ${screenIndex}</p>
+        <p>Screen ${screenIndex}</p>
     </div>
     <div class="status-dot" id="statusDot" title="Offline"></div>
     <script>
         var iframeUrl = ${JSON.stringify(iframeUrl)};
         var frame = document.getElementById('contentFrame');
         var offlineMsg = document.getElementById('offlineMsg');
-        var loaded = false;
-
-        function showMsg() {
-            if (!loaded) { frame.style.display = 'none'; offlineMsg.style.display = 'block'; }
-        }
 
         if (iframeUrl) {
-            frame.onload = function() { loaded = true; frame.style.display = 'block'; offlineMsg.style.display = 'none'; };
-            frame.onerror = function() { showMsg(); };
+            frame.onload = function() {
+                frame.style.display = 'block';
+                offlineMsg.style.display = 'none';
+            };
+            // Do not show error overlay. Iframe itself will handle retries or Chromium "site can't be reached"
+            // However, Chromium native error is suppressed at the main window level in commands.js
             frame.src = iframeUrl;
             frame.style.display = 'block';
-            setTimeout(showMsg, 10000);
         } else {
-            showMsg();
+            // No URL at all, generic message
+            frame.style.display = 'none';
+            offlineMsg.style.display = 'block';
         }
 
-        setInterval(function() { location.reload(); }, 60000);
+        setInterval(function() { location.reload(); }, 60000); // 1 minute retry
     </script>
 </body>
 </html>`;

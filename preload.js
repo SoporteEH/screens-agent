@@ -1,10 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electron', {
-    // Identificacion
+    // Identification
     onDeviceId: (callback) => ipcRenderer.on('device-id', (event, ...args) => callback(...args)),
 
-    // Panel de control
+    // Control panel
     onAgentInfo: (callback) => ipcRenderer.on('agent-info', (event, ...args) => callback(...args)),
     onUpdateStatus: (callback) =>
         ipcRenderer.on('update-status', (event, ...args) => callback(...args)),
