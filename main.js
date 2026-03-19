@@ -24,6 +24,7 @@ const context = {
     retryManager: new Map(),
     hardwareIdToDisplayMap: new Map(),
     autoRefreshTimers: new Map(),
+    fallbackTimers: new Map(),
 };
 
 async function bootstrap() {
@@ -180,10 +181,13 @@ async function bootstrap() {
                                     log.info(
                                         `[SOCKET]: Reconnected. Reloading player URL for screen ${screenId}`
                                     );
-                                    win.loadURL(playerUrl);
+                                    win.loadURL(playerUrl).catch(e => log.error(`[SOCKET]: Error reloading win ${screenId}:`, e));
                                 }
                             });
-                        }, 1000);
+                            // Clear all fallback timers on reconnect
+                            context.fallbackTimers.forEach(t => clearTimeout(t));
+                            context.fallbackTimers.clear();
+                        }, 3000);
                     } else {
                         setTimeout(
                             () =>
@@ -235,60 +239,72 @@ async function bootstrap() {
         };
 
         // NETWORK HANDLERS
-        let fallbackApplied = false;
 
         context.onNetworkOffline = (reason = 'UNKNOWN') => {
             log.info(`[NETWORK]: OFFLINE state detected. Reason: ${reason}`);
             context.isOnline = false;
             broadcastAppStatus();
 
-            if (reason === 'NO_SERVER') {
-                log.info(
-                    '[NETWORK]: Server unreachable but internet is available. Maintaining current content.'
-                );
-                return;
-            }
-
-            if (reason !== 'NO_INTERNET') {
-                log.info('[NETWORK]: Maintaining active playback (bypassing fallback).');
-                return;
-            }
-
-            if (fallbackApplied) {
-                log.info('[NETWORK]: Fallback already active, ignoring duplicate event.');
-                return;
-            }
-
-            log.info('[NETWORK]: Initiating network fallback sequence...');
-            fallbackApplied = true;
-
-            const fallbackPath = `file://${path.join(__dirname, 'fallback.html')}`;
+            const { isServerDependentUrl, getCachedPlayerFileUrl } = require('./services/playerCache');
+            const serverUrl = constants.getServerUrl();
             const lastState = stateService.loadLastState();
 
             context.managedWindows.forEach((win, screenId) => {
-                if (win && !win.isDestroyed()) {
-                    const screenIdStr = String(screenId);
-                    const screenData = lastState[screenIdStr];
+                const screenIdStr = String(screenId);
+                const screenData = lastState[screenIdStr];
+                const currentUrl = screenData?.url || '';
 
-                    if (!screenData || (screenData.url && !screenData.url.startsWith('local:'))) {
-                        log.info(`[NETWORK]: Applying fallback on display ${screenIdStr}`);
-                        try {
-                            win.loadURL(fallbackPath);
-                        } catch (e) {
-                            log.error(
-                                `[NETWORK]: Error applying fallback on display ${screenIdStr}:`,
-                                e
-                            );
-                        }
+                // Clear any existing timer for this screen
+                if (context.fallbackTimers.has(screenIdStr)) {
+                    clearTimeout(context.fallbackTimers.get(screenIdStr));
+                    context.fallbackTimers.delete(screenIdStr);
+                }
+
+                if (reason === 'NO_SERVER') {
+                    if (isServerDependentUrl(currentUrl, serverUrl)) {
+                        log.info(`[NETWORK]: Server down. Scheduling fallback for screen ${screenIdStr} (content is server-dependent)`);
+                        const timer = setTimeout(() => {
+                            if (win && !win.isDestroyed()) {
+                                log.info(`[NETWORK]: Applying fallback for screen ${screenIdStr} due to NO_SERVER`);
+                                const offlineUrl = getCachedPlayerFileUrl(screenIdStr, currentUrl, serverUrl);
+                                win.loadURL(offlineUrl).catch(e => log.error(`Fallback error:`, e));
+                            }
+                            context.fallbackTimers.delete(screenIdStr);
+                        }, constants.CONSTANTS.FALLBACK_DELAY_MS);
+                        context.fallbackTimers.set(screenIdStr, timer);
+                    } else {
+                        log.info(`[NETWORK]: Server down but external URL detected on screen ${screenIdStr}. Maintaining playback.`);
                     }
+                    return;
+                }
+
+                if (reason === 'NO_INTERNET') {
+                    log.info(`[NETWORK]: No internet. Scheduling fallback for screen ${screenIdStr} in ${constants.CONSTANTS.FALLBACK_DELAY_MS / 1000}s`);
+                    const timer = setTimeout(() => {
+                        if (win && !win.isDestroyed()) {
+                            log.info(`[NETWORK]: Applying fallback for screen ${screenIdStr} due to NO_INTERNET`);
+                            const offlineUrl = getCachedPlayerFileUrl(screenIdStr, currentUrl, serverUrl);
+                            win.loadURL(offlineUrl).catch(e => log.error(`Fallback error:`, e));
+                        }
+                        context.fallbackTimers.delete(screenIdStr);
+                    }, constants.CONSTANTS.FALLBACK_DELAY_MS);
+                    context.fallbackTimers.set(screenIdStr, timer);
                 }
             });
         };
+
         context.onNetworkOnline = () => {
             log.info('[NETWORK]: ONLINE state detected. Attempting to reconnect...');
             context.isOnline = true;
-            fallbackApplied = false;
             broadcastAppStatus();
+
+            // Clear all pending fallback timers
+            context.fallbackTimers.forEach((timer, id) => {
+                log.info(`[NETWORK]: Clearing pending fallback for screen ${id}`);
+                clearTimeout(timer);
+            });
+            context.fallbackTimers.clear();
+
             if (context.socket && !context.socket.connected) context.socket.connect();
 
             // Reload player URLs on all screens
@@ -302,10 +318,10 @@ async function bootstrap() {
                         if (win && !win.isDestroyed()) {
                             const playerUrl = `${serverUrl}/player/${onlineConfig.deviceId}/${screenId}`;
                             log.info(`[NETWORK]: Reloading player URL for screen ${screenId}`);
-                            win.loadURL(playerUrl);
+                            win.loadURL(playerUrl).catch(e => log.error(`Recovery error screen ${screenId}:`, e));
                         }
                     });
-                }, 2000);
+                }, 3000);
             } else {
                 setTimeout(
                     () =>
@@ -313,7 +329,7 @@ async function bootstrap() {
                             context.hardwareIdToDisplayMap,
                             commandHandlers.handleShowUrl
                         ),
-                    2000
+                    3000
                 );
             }
         };

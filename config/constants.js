@@ -36,6 +36,7 @@ const CONSTANTS = {
     GC_INTERVAL_MS: 4 * 60 * 60 * 1000, // Garbage collection every 4 hours
     NETWORK_CHECK_INTERVAL_MS: 10 * 1000, // Network monitoring every 10 seconds
     SOCKET_RECONNECT_DELAY_MAX_MS: 60 * 1000, // Maximum delay between reconnections
+    FALLBACK_DELAY_MS: 10 * 1000, // 10 seconds delay before fallback
 };
 
 let AGENT_VERSION = 'Unknown';
