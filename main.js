@@ -260,26 +260,33 @@ async function bootstrap() {
                     context.fallbackTimers.delete(screenIdStr);
                 }
 
+                const isDependent = isServerDependentUrl(currentUrl, serverUrl);
+                log.info(`[DEBUG]: Fallback check for screen ${screenIdStr}. StateURL: "${currentUrl}", ServerURL: "${serverUrl}", reason: ${reason}, isDependent: ${isDependent}`);
+
                 if (reason === 'NO_SERVER') {
-                    if (isServerDependentUrl(currentUrl, serverUrl)) {
-                        log.info(`[NETWORK]: Server down. Scheduling fallback for screen ${screenIdStr} (content is server-dependent)`);
+                    if (isDependent) {
+                        log.info(`[NETWORK]: Server down. Scheduling fallback for screen ${screenIdStr} in ${constants.CONSTANTS.FALLBACK_DELAY_MS}ms`);
                         const timer = setTimeout(() => {
+                            log.info(`[NETWORK]: Fallback timer FIRED for screen ${screenIdStr}`);
                             if (win && !win.isDestroyed()) {
                                 log.info(`[NETWORK]: Applying fallback for screen ${screenIdStr} due to NO_SERVER`);
                                 const offlineUrl = getCachedPlayerFileUrl(screenIdStr, currentUrl, serverUrl);
-                                win.loadURL(offlineUrl).catch(e => log.error(`Fallback error:`, e));
+                                log.info(`[NETWORK]: Loading offline URL: ${offlineUrl}`);
+                                win.loadURL(offlineUrl).catch(e => log.error(`Fallback load error:`, e));
+                            } else {
+                                log.warn(`[NETWORK]: Window for screen ${screenIdStr} is destroyed, cannot fallback.`);
                             }
                             context.fallbackTimers.delete(screenIdStr);
                         }, constants.CONSTANTS.FALLBACK_DELAY_MS);
                         context.fallbackTimers.set(screenIdStr, timer);
                     } else {
-                        log.info(`[NETWORK]: Server down but external URL detected on screen ${screenIdStr}. Maintaining playback.`);
+                        log.info(`[NETWORK]: Server down but content on screen ${screenIdStr} ("${currentUrl}") is NOT server-dependent. Maintaining playback.`);
                     }
                     return;
                 }
 
                 if (reason === 'NO_INTERNET') {
-                    log.info(`[NETWORK]: No internet. Scheduling fallback for screen ${screenIdStr} in ${constants.CONSTANTS.FALLBACK_DELAY_MS / 1000}s`);
+                    log.info(`[NETWORK]: No internet. Scheduling fallback for screen ${screenIdStr} for ALL content types in ${constants.CONSTANTS.FALLBACK_DELAY_MS / 1000}s`);
                     const timer = setTimeout(() => {
                         if (win && !win.isDestroyed()) {
                             log.info(`[NETWORK]: Applying fallback for screen ${screenIdStr} due to NO_INTERNET`);
@@ -321,7 +328,7 @@ async function bootstrap() {
                             win.loadURL(playerUrl).catch(e => log.error(`Recovery error screen ${screenId}:`, e));
                         }
                     });
-                }, 3000);
+                }, 2000);
             } else {
                 setTimeout(
                     () =>
@@ -329,7 +336,7 @@ async function bootstrap() {
                             context.hardwareIdToDisplayMap,
                             commandHandlers.handleShowUrl
                         ),
-                    3000
+                    2000
                 );
             }
         };

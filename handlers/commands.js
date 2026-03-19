@@ -153,13 +153,6 @@ function createContentWindow(display, urlToLoad, command) {
                 scheduleRetry(command);
             }
 
-            const { buildLocalCarouselUrl } = require('../services/localCarousel');
-            const carouselUrl = buildLocalCarouselUrl();
-            if (carouselUrl) {
-                win.loadURL(carouselUrl);
-            } else {
-                win.loadURL(fallbackPath);
-            }
         }
     );
 
@@ -382,7 +375,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
 
             // On full navigation
             win.webContents.on('did-navigate', (event, navUrl) => {
-                lastLoggedUrl = null; // Reset on full navigation
+                lastLoggedUrl = null;
                 injectIfTarget(navUrl);
             });
         }

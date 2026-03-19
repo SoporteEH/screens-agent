@@ -98,9 +98,13 @@ function getOfflineContentFilePath(url, serverUrl) {
 
 function isServerDependentUrl(url, serverUrl) {
     if (!url) return false;
+    // Views (playlists) ARE server dependent to render correctly
     if (url.includes('/view/')) return true;
-    if (url.includes('/player/')) return true;
+    // Player wrappers are NOT server dependent because they are cached locally
+    if (url.includes('/player/')) return false;
+    // Other URLs starting with serverUrl are likely server dependent
     if (serverUrl && url.startsWith(serverUrl)) return true;
+    // Localhost/127.0.0.1 are considered server dependent (usually dev server)
     if (/https?:\/\/(localhost|127\.0\.0\.1):\d+/.test(url)) return true;
     return false;
 }
@@ -111,11 +115,8 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl) {
 
     if (currentUrl) {
         if (isServerDependentUrl(currentUrl, serverUrl)) {
-            const offlinePath = getOfflineContentFilePath(currentUrl, serverUrl);
-            if (offlinePath) {
-                iframeUrl = 'file://' + offlinePath.replace(/\\/g, '/');
-                usingCache = true;
-            }
+            iframeUrl = buildLocalCarouselUrl();
+            if (iframeUrl) usingCache = true;
         } else if (currentUrl.startsWith('http://') || currentUrl.startsWith('https://')) {
             iframeUrl = currentUrl;
         }
