@@ -26,17 +26,17 @@ const AGENT_REFRESH_URL = SERVER_URL ? `${SERVER_URL}/api/auth/agent-refresh` : 
 const SYNC_API_URL = SERVER_URL ? `${SERVER_URL}/api/users/me/local-assets` : '';
 
 const CONSTANTS = {
-    HEARTBEAT_INTERVAL_MS: 30 * 1000, // Heartbeat every 30 seconds
+    HEARTBEAT_INTERVAL_MS: 30 * 1000,            // Heartbeat every 30 seconds
     TOKEN_CHECK_INTERVAL_MS: 4 * 60 * 60 * 1000, // Verify token every 4 hours
-    UPDATE_CHECK_MIN_DELAY_MS: 15000, // Minimum delay before checking for updates
-    UPDATE_CHECK_MAX_DELAY_MS: 60000, // Maximum delay before checking for updates
-    SCREEN_DEBOUNCE_MS: 500, // Debounce for screen changes
-    RETRY_BACKOFF_BASE_MS: 30 * 1000, // Exponential backoff base
-    MAX_RETRIES: 5, // Maximum retries
-    GC_INTERVAL_MS: 4 * 60 * 60 * 1000, // Garbage collection every 4 hours
-    NETWORK_CHECK_INTERVAL_MS: 3000, // Network monitoring every 3 seconds
-    SOCKET_RECONNECT_DELAY_MAX_MS: 60 * 1000, // Maximum delay between reconnections
-    FALLBACK_DELAY_MS: 4000, // 4 seconds delay before fallback
+    UPDATE_CHECK_MIN_DELAY_MS: 15000,            // Minimum delay before checking for updates
+    UPDATE_CHECK_MAX_DELAY_MS: 60000,            // Maximum delay before checking for updates
+    SCREEN_DEBOUNCE_MS: 500,                     // Debounce for screen changes
+    RETRY_BACKOFF_BASE_MS: 30 * 1000,            // Exponential backoff base
+    MAX_RETRIES: 5,                              // Maximum retries
+    GC_INTERVAL_MS: 4 * 60 * 60 * 1000,          // Garbage collection every 4 hours
+    NETWORK_CHECK_INTERVAL_MS: 3000,             // Network monitoring every 3 seconds
+    SOCKET_RECONNECT_DELAY_MAX_MS: 60 * 1000,    // Maximum delay between reconnections
+    FALLBACK_DELAY_MS: 4000,                     // 4 seconds delay before fallback
 };
 
 let AGENT_VERSION = 'Unknown';

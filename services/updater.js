@@ -10,7 +10,14 @@ let isCheckingForUpdate = false;
 let checksumRetries = 0;
 
 function configureUpdater() {
-    autoUpdater.logger = log;
+    autoUpdater.logger = {
+        info: (msg) => {
+            if (msg && !msg.includes('Checking for update')) log.info(msg);
+        },
+        warn: (msg) => log.warn(msg),
+        error: (msg) => log.error(msg),
+        debug: (msg) => log.debug(msg)
+    };
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowDowngrade = true;
