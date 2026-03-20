@@ -290,7 +290,7 @@ async function bootstrap() {
                     const timer = setTimeout(() => {
                         if (win && !win.isDestroyed()) {
                             log.info(`[NETWORK]: Applying fallback for screen ${screenIdStr} due to NO_INTERNET`);
-                            const offlineUrl = getCachedPlayerFileUrl(screenIdStr, currentUrl, serverUrl);
+                            const offlineUrl = getCachedPlayerFileUrl(screenIdStr, null, serverUrl);
                             win.loadURL(offlineUrl).catch(e => log.error(`Fallback error:`, e));
                         }
                         context.fallbackTimers.delete(screenIdStr);
