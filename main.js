@@ -25,6 +25,10 @@ const context = {
     hardwareIdToDisplayMap: new Map(),
     autoRefreshTimers: new Map(),
     fallbackTimers: new Map(),
+    // Tracks actual display mode per screen: 'live' | 'offline'
+    // Used to detect state mismatches (e.g. screen in carousel after NO_INTERNET,
+    // then internet returns but server is still down — screen must be restored).
+    screenModes: new Map(),
 };
 
 async function bootstrap() {
@@ -157,9 +161,14 @@ async function bootstrap() {
                     if (serverUrl && onlineConfig.deviceId) {
                         const savedState = stateService.loadLastState();
                         setTimeout(() => {
+                            // Clear all fallback timers before restoring
+                            context.fallbackTimers.forEach(t => clearTimeout(t));
+                            context.fallbackTimers.clear();
+
                             context.managedWindows.forEach((win, screenId) => {
                                 if (!win || win.isDestroyed()) return;
-                                const screenData = savedState[String(screenId)];
+                                const screenIdStr = String(screenId);
+                                const screenData = savedState[screenIdStr];
                                 const isAutologinUrl =
                                     screenData?.url &&
                                     (screenData.url.startsWith('https://lcr.sportradar.com') ||
@@ -183,10 +192,8 @@ async function bootstrap() {
                                     );
                                     win.loadURL(playerUrl).catch(e => log.error(`[SOCKET]: Error reloading win ${screenId}:`, e));
                                 }
+                                context.screenModes.set(screenIdStr, 'live');
                             });
-                            // Clear all fallback timers on reconnect
-                            context.fallbackTimers.forEach(t => clearTimeout(t));
-                            context.fallbackTimers.clear();
                         }, 3000);
                     } else {
                         setTimeout(
@@ -245,6 +252,11 @@ async function bootstrap() {
             context.isOnline = false;
             broadcastAppStatus();
 
+            // SOCKET_DISCONNECT is a transient signal — the network monitor will
+            // independently determine if server/internet is truly unreachable.
+            // No fallback action needed here; the next network check will handle it.
+            if (reason === 'SOCKET_DISCONNECT') return;
+
             const { isServerDependentUrl, getCachedPlayerFileUrl } = require('./services/playerCache');
             const serverUrl = constants.getServerUrl();
             const lastState = stateService.loadLastState();
@@ -254,54 +266,98 @@ async function bootstrap() {
                 const screenData = lastState[screenIdStr];
                 const currentUrl = screenData?.url || '';
 
-                // Clear any existing timer for this screen
+                // Clear any pending fallback timer for this screen
                 if (context.fallbackTimers.has(screenIdStr)) {
                     clearTimeout(context.fallbackTimers.get(screenIdStr));
                     context.fallbackTimers.delete(screenIdStr);
                 }
 
                 const isDependent = isServerDependentUrl(currentUrl, serverUrl);
-                log.info(`[DEBUG]: Fallback check for screen ${screenIdStr}. StateURL: "${currentUrl}", ServerURL: "${serverUrl}", reason: ${reason}, isDependent: ${isDependent}`);
+                const currentMode = context.screenModes.get(screenIdStr) || 'live';
 
+                log.info(
+                    `[NETWORK]: Screen ${screenIdStr} — URL: "${currentUrl}", mode: ${currentMode}, dependent: ${isDependent}, reason: ${reason}`
+                );
+
+                // ─── CASO 1B / CASO 1→: Servidor caído ───────────────────────────────
                 if (reason === 'NO_SERVER') {
                     if (isDependent) {
-                        log.info(`[NETWORK]: Server down. Scheduling fallback for screen ${screenIdStr} in ${constants.CONSTANTS.FALLBACK_DELAY_MS}ms`);
+                        // URL interna (playlist/player) + servidor caído
+                        // Solo actuar si la pantalla está actualmente en modo live
+                        // (evitar recargar el carrusel si ya está en carrusel)
+                        if (currentMode !== 'offline') {
+                            log.info(`[NETWORK]: Server down. Scheduling carousel fallback for screen ${screenIdStr} in ${constants.CONSTANTS.FALLBACK_DELAY_MS}ms`);
+                            const timer = setTimeout(() => {
+                                if (win && !win.isDestroyed()) {
+                                    const offlineUrl = getCachedPlayerFileUrl(screenIdStr, currentUrl, serverUrl);
+                                    win.loadURL(offlineUrl).catch(e => log.error(`[NETWORK]: Fallback load error on screen ${screenIdStr}:`, e));
+                                    context.screenModes.set(screenIdStr, 'offline');
+                                    log.info(`[NETWORK]: Carousel active on screen ${screenIdStr} (NO_SERVER)`);
+                                }
+                                context.fallbackTimers.delete(screenIdStr);
+                            }, constants.CONSTANTS.FALLBACK_DELAY_MS);
+                            context.fallbackTimers.set(screenIdStr, timer);
+                        } else {
+                            log.info(`[NETWORK]: Screen ${screenIdStr} already in offline mode, no action needed.`);
+                        }
+                    } else {
+                        // URL externa — el servidor no es necesario para reproducirla
+                        if (currentMode === 'offline') {
+                            // ── FIX CASO 2→3 ─────────────────────────────────────────────
+                            // La pantalla estaba en carrusel por una caída de internet previa.
+                            // Ahora internet está disponible (de lo contrario el reason sería
+                            // NO_INTERNET, no NO_SERVER). Restaurar la URL externa.
+                            if (currentUrl) {
+                                log.info(
+                                    `[NETWORK]: Internet restored (server still down). Restoring external URL on screen ${screenIdStr}: "${currentUrl}"`
+                                );
+                                const timer = setTimeout(() => {
+                                    if (win && !win.isDestroyed()) {
+                                        win.loadURL(currentUrl).catch(e =>
+                                            log.error(`[NETWORK]: Error restoring external URL on screen ${screenIdStr}:`, e)
+                                        );
+                                        context.screenModes.set(screenIdStr, 'live');
+                                    }
+                                    context.fallbackTimers.delete(screenIdStr);
+                                }, 1000);
+                                context.fallbackTimers.set(screenIdStr, timer);
+                            }
+                        } else {
+                            log.info(
+                                `[NETWORK]: Server down. External URL on screen ${screenIdStr} ("${currentUrl}") maintaining playback.`
+                            );
+                        }
+                    }
+                    return;
+                }
+
+                // ─── CASO 2: Sin internet ──────────────────────────────────────────────
+                if (reason === 'NO_INTERNET') {
+                    // Toda URL (externa o interna) requiere internet
+                    // Solo actuar si la pantalla no está ya en carrusel
+                    if (currentMode !== 'offline') {
+                        log.info(
+                            `[NETWORK]: No internet. Scheduling carousel fallback for screen ${screenIdStr} in ${constants.CONSTANTS.FALLBACK_DELAY_MS / 1000}s`
+                        );
                         const timer = setTimeout(() => {
-                            log.info(`[NETWORK]: Fallback timer FIRED for screen ${screenIdStr}`);
                             if (win && !win.isDestroyed()) {
-                                log.info(`[NETWORK]: Applying fallback for screen ${screenIdStr} due to NO_SERVER`);
-                                const offlineUrl = getCachedPlayerFileUrl(screenIdStr, currentUrl, serverUrl);
-                                log.info(`[NETWORK]: Loading offline URL: ${offlineUrl}`);
-                                win.loadURL(offlineUrl).catch(e => log.error(`Fallback load error:`, e));
-                            } else {
-                                log.warn(`[NETWORK]: Window for screen ${screenIdStr} is destroyed, cannot fallback.`);
+                                const offlineUrl = getCachedPlayerFileUrl(screenIdStr, null, serverUrl);
+                                win.loadURL(offlineUrl).catch(e => log.error(`[NETWORK]: Fallback error on screen ${screenIdStr}:`, e));
+                                context.screenModes.set(screenIdStr, 'offline');
+                                log.info(`[NETWORK]: Carousel active on screen ${screenIdStr} (NO_INTERNET)`);
                             }
                             context.fallbackTimers.delete(screenIdStr);
                         }, constants.CONSTANTS.FALLBACK_DELAY_MS);
                         context.fallbackTimers.set(screenIdStr, timer);
                     } else {
-                        log.info(`[NETWORK]: Server down but content on screen ${screenIdStr} ("${currentUrl}") is NOT server-dependent. Maintaining playback.`);
+                        log.info(`[NETWORK]: Screen ${screenIdStr} already in offline mode, no action needed.`);
                     }
-                    return;
-                }
-
-                if (reason === 'NO_INTERNET') {
-                    log.info(`[NETWORK]: No internet. Scheduling fallback for screen ${screenIdStr} for ALL content types in ${constants.CONSTANTS.FALLBACK_DELAY_MS / 1000}s`);
-                    const timer = setTimeout(() => {
-                        if (win && !win.isDestroyed()) {
-                            log.info(`[NETWORK]: Applying fallback for screen ${screenIdStr} due to NO_INTERNET`);
-                            const offlineUrl = getCachedPlayerFileUrl(screenIdStr, null, serverUrl);
-                            win.loadURL(offlineUrl).catch(e => log.error(`Fallback error:`, e));
-                        }
-                        context.fallbackTimers.delete(screenIdStr);
-                    }, constants.CONSTANTS.FALLBACK_DELAY_MS);
-                    context.fallbackTimers.set(screenIdStr, timer);
                 }
             });
         };
 
         context.onNetworkOnline = () => {
-            log.info('[NETWORK]: ONLINE state detected. Attempting to reconnect...');
+            log.info('[NETWORK]: ONLINE state detected (internet + server reachable). Recovering...');
             context.isOnline = true;
             broadcastAppStatus();
 
@@ -314,7 +370,7 @@ async function bootstrap() {
 
             if (context.socket && !context.socket.connected) context.socket.connect();
 
-            // Reload player URLs on all screens
+            // Reload player URLs on all screens (safety net if socket reconnect is slow)
             const { loadConfig } = require('./utils/configManager');
             const onlineConfig = loadConfig();
             const serverUrl = onlineConfig.serverUrl || constants.getServerUrl();
@@ -326,6 +382,7 @@ async function bootstrap() {
                             const playerUrl = `${serverUrl}/player/${onlineConfig.deviceId}/${screenId}`;
                             log.info(`[NETWORK]: Reloading player URL for screen ${screenId}`);
                             win.loadURL(playerUrl).catch(e => log.error(`Recovery error screen ${screenId}:`, e));
+                            context.screenModes.set(String(screenId), 'live');
                         }
                     });
                 }, 2000);

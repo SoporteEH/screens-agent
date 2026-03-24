@@ -52,7 +52,7 @@ function handleRebootDevice() {
     }
 
     log.info(`[DEVICE]: Rebooting: ${command}`);
-    exec(command, (error, stdout, stderr) => {
+    exec(command, { timeout: 30000 }, (error, stdout, stderr) => {
         if (error) log.error(`[DEVICE]: Error: ${error.message}`);
         if (stderr) log.error(`[DEVICE]: ${stderr}`);
         if (stdout) log.info(`[DEVICE]: ${stdout}`);

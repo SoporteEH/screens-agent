@@ -7,6 +7,7 @@ const { screen } = require('electron');
 const fs = require('fs');
 const { log } = require('../utils/logConfig');
 const { STATE_FILE_PATH } = require('../config/constants');
+const { encryptCredentials, decryptCredentials } = require('../utils/configManager');
 
 // Builds display map ordered by position
 async function buildDisplayMap(hardwareIdToDisplayMap) {
@@ -28,6 +29,8 @@ async function buildDisplayMap(hardwareIdToDisplayMap) {
 }
 
 // Loads last state from JSON file
+// Credentials are stored encrypted; plain-object credentials (legacy) are decrypted in-memory
+// and will be re-encrypted on the next saveCurrentState call.
 function loadLastState() {
     try {
         if (fs.existsSync(STATE_FILE_PATH)) {
@@ -35,13 +38,20 @@ function loadLastState() {
             const migratedState = {};
             for (const [key, value] of Object.entries(state)) {
                 if (typeof value === 'string') {
+                    // Legacy format: bare URL string
                     migratedState[key] = {
                         url: value,
                         credentials: null,
                         timestamp: new Date().toISOString(),
                     };
                 } else {
-                    migratedState[key] = value;
+                    const entry = { ...value };
+                    if (typeof entry.credentials === 'string') {
+                        // Encrypted format — decrypt in memory
+                        entry.credentials = decryptCredentials(entry.credentials);
+                    }
+                    // Plain object credentials are kept as-is (legacy, re-encrypted on next save)
+                    migratedState[key] = entry;
                 }
             }
             if (JSON.stringify(state) !== JSON.stringify(migratedState)) {
@@ -56,17 +66,33 @@ function loadLastState() {
 }
 
 /**
+ * Reads state.json as-is without decrypting credentials.
+ * Use when you only need to filter/write entries and don't need the credential values.
+ */
+function loadRawState() {
+    try {
+        if (fs.existsSync(STATE_FILE_PATH)) {
+            return JSON.parse(fs.readFileSync(STATE_FILE_PATH, 'utf8')) || {};
+        }
+    } catch (error) {
+        log.error('[STATE]: Error reading raw state file:', error);
+    }
+    return {};
+}
+
+/**
  * Clears state for displays that no longer exist.
+ * Operates on raw (encrypted) state to avoid writing credentials in plaintext.
  * @param {Map} hardwareIdToDisplayMap
  */
 function cleanOrphanedState(hardwareIdToDisplayMap) {
-    const state = loadLastState();
+    const state = loadRawState();
     const validIds = Array.from(hardwareIdToDisplayMap.keys());
     const cleanedState = {};
 
-    for (const [id, url] of Object.entries(state)) {
+    for (const [id, entry] of Object.entries(state)) {
         if (validIds.includes(id)) {
-            cleanedState[id] = url;
+            cleanedState[id] = entry;
         } else {
             log.info(`[STATE]: Clearing orphaned entry for non-existent display: ${id}`);
         }
@@ -78,7 +104,8 @@ function cleanOrphanedState(hardwareIdToDisplayMap) {
         log.error('[STATE]: Error cleaning orphaned state:', error);
     }
 
-    return cleanedState;
+    // Return decrypted state for callers that need credential values
+    return loadLastState();
 }
 
 /**
@@ -108,10 +135,31 @@ function setupAutoRefresh(screenIndex, intervalMinutes, managedWindows, autoRefr
     autoRefreshTimers.set(screenIndex, timerId);
 }
 
+// Write lock: prevents concurrent writes from corrupting state.json
+// when multiple handleShowUrl calls arrive simultaneously
+let writeLock = Promise.resolve();
+
 /**
  * Saves the current state of a screen.
+ * Serialized through writeLock to prevent race conditions.
  */
 function saveCurrentState(
+    screenIndex,
+    url,
+    credentials,
+    refreshInterval,
+    autoRefreshTimers,
+    managedWindows
+) {
+    writeLock = writeLock
+        .then(() =>
+            _saveCurrentState(screenIndex, url, credentials, refreshInterval, autoRefreshTimers, managedWindows)
+        )
+        .catch(() => {});
+    return writeLock;
+}
+
+function _saveCurrentState(
     screenIndex,
     url,
     credentials,
@@ -128,9 +176,10 @@ function saveCurrentState(
     }
 
     if (url) {
+        const encryptedCredentials = credentials ? encryptCredentials(credentials) : null;
         state[screenIndex] = {
             url: url,
-            credentials: credentials || null,
+            credentials: encryptedCredentials ?? credentials ?? null,
             refreshInterval: refreshInterval || 0,
             timestamp: new Date().toISOString(),
         };

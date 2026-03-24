@@ -2,7 +2,7 @@
   "name": "local-agent",
   "version": "1.1.32",
   "private": true,
-  "description": "ScreensWeb Local Agent",
+  "description": "ScreensWeb Agent",
   "main": "main.js",
   "scripts": {
     "start": "electron . --js-flags=\"--expose-gc\"",
@@ -45,7 +45,7 @@
   "build": {
     "appId": "com.screens.web.agent",
     "productName": "ScreensWeb Agent",
-    "copyright": "Copyright © 2025 SoporteEH",
+    "copyright": "Copyright © 2026 SoporteEH",
     "asar": true,
     "compression": "maximum",
     "files": [
@@ -107,6 +107,6 @@
     }
   },
   "config": {
-    "serverUrl": "http://192.168.1.134:3000"
+    "serverUrl": ""
   }
 }

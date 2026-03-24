@@ -59,7 +59,7 @@ function configureGpu() {
 
 function configureMemory() {
     app.commandLine.appendSwitch('js-flags', '--max-old-space-size=384 --max-semi-space-size=2');
-    app.commandLine.appendSwitch('renderer-process-limit', '6');
+    app.commandLine.appendSwitch('renderer-process-limit', '10');
     app.commandLine.appendSwitch('disk-cache-size', '5242880');
     app.commandLine.appendSwitch('media-cache-size', '5242880');
     app.commandLine.appendSwitch('disable-http-cache');

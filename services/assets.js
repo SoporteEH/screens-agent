@@ -4,6 +4,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { Readable } = require('stream');
 const { log } = require('../utils/logConfig');
 const {
@@ -12,6 +13,40 @@ const {
     PLAYLIST_ASSETS_DIR,
     SERVER_URL,
 } = require('../config/constants');
+const { loadConfig } = require('../utils/configManager');
+
+const DEFAULT_MAX_STORAGE_MB = 750;
+
+function getMaxStorageBytes() {
+    const config = loadConfig();
+    const mb = config.maxStorageMB ?? DEFAULT_MAX_STORAGE_MB;
+    return mb * 1024 * 1024;
+}
+
+const ALLOWED_EXTENSIONS = new Set([
+    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp',
+    '.mp4', '.webm', '.mov', '.avi', '.mkv',
+    '.mp3', '.wav', '.ogg', '.aac',
+    '.pdf',
+    '.html', '.htm',
+]);
+
+function getDirSizeBytes(dir) {
+    if (!fs.existsSync(dir)) return 0;
+    return fs.readdirSync(dir).reduce((total, file) => {
+        try {
+            return total + fs.statSync(path.join(dir, file)).size;
+        } catch (_) {
+            return total;
+        }
+    }, 0);
+}
+
+function md5OfFile(filePath) {
+    const hash = crypto.createHash('md5');
+    hash.update(fs.readFileSync(filePath));
+    return hash.digest('hex');
+}
 
 async function syncDir(assets, targetDir, remotePath) {
     if (!fs.existsSync(targetDir)) {
@@ -33,6 +68,21 @@ async function syncDir(assets, targetDir, remotePath) {
 
     const filesToDownload = assets.filter((a) => !localFiles.includes(a.serverFilename));
     for (const asset of filesToDownload) {
+        // Validate file extension
+        const ext = path.extname(asset.serverFilename).toLowerCase();
+        if (!ALLOWED_EXTENSIONS.has(ext)) {
+            log.warn(`[SYNC]: Skipping asset with disallowed extension: ${asset.originalFilename} (${ext})`);
+            continue;
+        }
+
+        // Check total storage limit before each download
+        const maxBytes = getMaxStorageBytes();
+        const currentSize = getDirSizeBytes(CONTENT_DIR) + getDirSizeBytes(PLAYLIST_ASSETS_DIR);
+        if (currentSize >= maxBytes) {
+            log.warn(`[SYNC]: Storage limit reached (${(currentSize / 1024 / 1024).toFixed(0)}MB / ${maxBytes / 1024 / 1024}MB). Skipping remaining downloads.`);
+            break;
+        }
+
         log.info(`[SYNC]: Downloading: ${asset.originalFilename}`);
         const url = `${SERVER_URL}${remotePath}${asset.serverFilename}`;
         const destPath = path.join(targetDir, asset.serverFilename);
@@ -47,6 +97,17 @@ async function syncDir(assets, targetDir, remotePath) {
                 fileStream.on('finish', resolve);
                 fileStream.on('error', reject);
             });
+
+            // MD5 verification if the server provided a checksum
+            if (asset.md5) {
+                const actualMd5 = md5OfFile(destPath);
+                if (actualMd5 !== asset.md5) {
+                    log.error(`[SYNC]: MD5 mismatch for ${asset.originalFilename}. Expected: ${asset.md5}, got: ${actualMd5}. Discarding.`);
+                    fs.unlinkSync(destPath);
+                    continue;
+                }
+            }
+
             log.info(`[SYNC]: Completed: ${asset.originalFilename}`);
         } catch (err) {
             log.error(`[SYNC]: Error downloading ${asset.originalFilename}:`, err);

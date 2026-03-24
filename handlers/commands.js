@@ -185,6 +185,22 @@ function handleShowUrl(command, _currentAttempt = 0) {
         sendCommandFeedback(command, 'error', `Empty URL, cannot load`);
         return;
     }
+
+    const trimmedUrl = url.trim();
+    const allowedSchemes = ['http:', 'https:', 'local:'];
+    let parsedUrl;
+    try {
+        parsedUrl = new URL(trimmedUrl);
+    } catch {
+        log.error(`[COMMAND]: Malformed URL for screen ${screenIndex}: ${trimmedUrl}`);
+        sendCommandFeedback(command, 'error', `Malformed URL, cannot load`);
+        return;
+    }
+    if (!allowedSchemes.includes(parsedUrl.protocol)) {
+        log.error(`[COMMAND]: Blocked disallowed URL scheme '${parsedUrl.protocol}' for screen ${screenIndex}`);
+        sendCommandFeedback(command, 'error', `URL scheme not allowed`);
+        return;
+    }
     if (context.retryManager.has(screenIndex)) {
         clearTimeout(context.retryManager.get(screenIndex).timerId);
         context.retryManager.delete(screenIndex);

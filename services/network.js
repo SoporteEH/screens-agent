@@ -85,23 +85,40 @@ function pingInternet() {
     });
 }
 
+/**
+ * Adaptive polling network monitor.
+ *
+ * Intervals:
+ *   STABLE   (everything OK)  → 15 seconds — minimizes load on 350 devices
+ *   DEGRADED (something down) → 5 seconds  — detects recovery quickly
+ *
+ * Uses recursive setTimeout instead of setInterval to prevent check accumulation
+ * when ping timeouts (up to 9s total) exceed the poll interval.
+ * Never backs off to 0 attempts — recovery is always possible.
+ */
+
+const STABLE_INTERVAL_MS = 15_000;
+const DEGRADED_INTERVAL_MS = 5_000;
+
 function startNetworkMonitoring(handlers) {
-    let lastState = { osOnline: net.isOnline(), internetReachable: true, serverReachable: true };
-    log.info('[NETWORK]: Starting monitoring with active internet and server pings.');
+    let lastState = { internetReachable: true, serverReachable: true };
+    let isDegraded = false;
+    let stopped = false;
 
-    return setInterval(async () => {
+    log.info('[NETWORK]: Starting adaptive monitoring (stable: 15s, degraded: 5s).');
+
+    async function runCheck() {
+        if (stopped) return;
+
         const osOnline = net.isOnline();
-
-        // Verify real internet if OS says online
         const internetReachable = osOnline ? await pingInternet() : false;
-
-        // Verify server only if internet is available
         const serverReachable = internetReachable ? await pingServer() : false;
 
         const hasStateChanged =
-            osOnline !== lastState.osOnline ||
             internetReachable !== lastState.internetReachable ||
             serverReachable !== lastState.serverReachable;
+
+        const allGood = internetReachable && serverReachable;
 
         if (hasStateChanged) {
             log.info(
@@ -119,11 +136,25 @@ function startNetworkMonitoring(handlers) {
                 handlers.onOnline?.();
             }
 
-            lastState = { osOnline, internetReachable, serverReachable };
-        } else if (serverReachable) {
+            lastState = { internetReachable, serverReachable };
+        } else if (allGood) {
             handlers.onCheckOnline?.();
         }
-    }, CONSTANTS.NETWORK_CHECK_INTERVAL_MS);
+
+        // Switch interval based on current connectivity state
+        isDegraded = !allGood;
+
+        if (!stopped) {
+            const nextInterval = isDegraded ? DEGRADED_INTERVAL_MS : STABLE_INTERVAL_MS;
+            setTimeout(runCheck, nextInterval);
+        }
+    }
+
+    // Small initial delay to let the app finish bootstrapping
+    setTimeout(runCheck, 1000);
+
+    // Return cleanup function (called on app quit)
+    return () => { stopped = true; };
 }
 
 module.exports = { startNetworkMonitoring, pingServer };
