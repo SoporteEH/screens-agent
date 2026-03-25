@@ -25,9 +25,6 @@ const context = {
     hardwareIdToDisplayMap: new Map(),
     autoRefreshTimers: new Map(),
     fallbackTimers: new Map(),
-    // Tracks actual display mode per screen: 'live' | 'offline'
-    // Used to detect state mismatches (e.g. screen in carousel after NO_INTERNET,
-    // then internet returns but server is still down — screen must be restored).
     screenModes: new Map(),
 };
 
@@ -51,7 +48,6 @@ async function bootstrap() {
         const stateService = require('./services/state');
         const { cleanupOldLogs } = require('./utils/logConfig');
 
-        // Initial log cleanup
         cleanupOldLogs();
 
         const socketService = require('./services/socket');
@@ -70,16 +66,21 @@ async function bootstrap() {
         configureMemory();
         registerGpuCrashHandlers();
 
-        // AUTO-START CONFIG
-        if (app.isPackaged) {
-            app.setLoginItemSettings({
-                openAtLogin: true,
-                path: app.getPath('exe'),
-                args: ['--hidden'],
-            });
+        log.info(`[INIT]: ScreensWeb Agent starting on platform: ${process.platform} (Version: ${constants.AGENT_VERSION})`);
+
+        // AUTO-START CONFIG (Windows/macOS only)
+        if (app.isPackaged && (process.platform === 'win32' || process.platform === 'darwin')) {
+            try {
+                app.setLoginItemSettings({
+                    openAtLogin: true,
+                    path: app.getPath('exe'),
+                    args: ['--hidden'],
+                });
+            } catch (autoStartError) {
+                log.error('[INIT]: Failed to set auto-start settings:', autoStartError);
+            }
         }
 
-        // HELPER: Broadcast status to control window
         const broadcastAppStatus = () => {
             const statusInfo = {
                 serverUrl: constants.getServerUrl(),
@@ -90,7 +91,6 @@ async function bootstrap() {
             updateControlWindow(statusInfo);
         };
 
-        // IPC HANDLERS
         registerIpcHandlers(constants.getServerUrl, constants.AGENT_VERSION, () => ({
             isOnline: context.isOnline,
             deviceName: getDeviceName(),
@@ -246,15 +246,11 @@ async function bootstrap() {
         };
 
         // NETWORK HANDLERS
-
         context.onNetworkOffline = (reason = 'UNKNOWN') => {
             log.info(`[NETWORK]: OFFLINE state detected. Reason: ${reason}`);
             context.isOnline = false;
             broadcastAppStatus();
 
-            // SOCKET_DISCONNECT is a transient signal — the network monitor will
-            // independently determine if server/internet is truly unreachable.
-            // No fallback action needed here; the next network check will handle it.
             if (reason === 'SOCKET_DISCONNECT') return;
 
             const { isServerDependentUrl, getCachedPlayerFileUrl } = require('./services/playerCache');
@@ -266,7 +262,6 @@ async function bootstrap() {
                 const screenData = lastState[screenIdStr];
                 const currentUrl = screenData?.url || '';
 
-                // Clear any pending fallback timer for this screen
                 if (context.fallbackTimers.has(screenIdStr)) {
                     clearTimeout(context.fallbackTimers.get(screenIdStr));
                     context.fallbackTimers.delete(screenIdStr);
@@ -279,12 +274,12 @@ async function bootstrap() {
                     `[NETWORK]: Screen ${screenIdStr} — URL: "${currentUrl}", mode: ${currentMode}, dependent: ${isDependent}, reason: ${reason}`
                 );
 
-                // ─── CASO 1B / CASO 1→: Servidor caído ───────────────────────────────
+                // Case 1: Server down
                 if (reason === 'NO_SERVER') {
                     if (isDependent) {
-                        // URL interna (playlist/player) + servidor caído
-                        // Solo actuar si la pantalla está actualmente en modo live
-                        // (evitar recargar el carrusel si ya está en carrusel)
+                        // Internal URL (playlist/player) + server down
+                        // Only act if the screen is currently in live mode
+                        // (avoid reloading the carousel if it's already in carousel)
                         if (currentMode !== 'offline') {
                             log.info(`[NETWORK]: Server down. Scheduling carousel fallback for screen ${screenIdStr} in ${constants.CONSTANTS.FALLBACK_DELAY_MS}ms`);
                             const timer = setTimeout(() => {
@@ -301,12 +296,10 @@ async function bootstrap() {
                             log.info(`[NETWORK]: Screen ${screenIdStr} already in offline mode, no action needed.`);
                         }
                     } else {
-                        // URL externa — el servidor no es necesario para reproducirla
+                        // External URL
+                        // The screen was in carousel due to a previous internet outage.
+                        // Iternet is available but server is down. 
                         if (currentMode === 'offline') {
-                            // ── FIX CASO 2→3 ─────────────────────────────────────────────
-                            // La pantalla estaba en carrusel por una caída de internet previa.
-                            // Ahora internet está disponible (de lo contrario el reason sería
-                            // NO_INTERNET, no NO_SERVER). Restaurar la URL externa.
                             if (currentUrl) {
                                 log.info(
                                     `[NETWORK]: Internet restored (server still down). Restoring external URL on screen ${screenIdStr}: "${currentUrl}"`
@@ -331,10 +324,10 @@ async function bootstrap() {
                     return;
                 }
 
-                // ─── CASO 2: Sin internet ──────────────────────────────────────────────
+                // Case 2: No internet
                 if (reason === 'NO_INTERNET') {
-                    // Toda URL (externa o interna) requiere internet
-                    // Solo actuar si la pantalla no está ya en carrusel
+                    // Any URL (external or internal) requires internet
+                    // Only act if the screen is not already in carousel
                     if (currentMode !== 'offline') {
                         log.info(
                             `[NETWORK]: No internet. Scheduling carousel fallback for screen ${screenIdStr} in ${constants.CONSTANTS.FALLBACK_DELAY_MS / 1000}s`
@@ -361,7 +354,6 @@ async function bootstrap() {
             context.isOnline = true;
             broadcastAppStatus();
 
-            // Clear all pending fallback timers
             context.fallbackTimers.forEach((timer, id) => {
                 log.info(`[NETWORK]: Clearing pending fallback for screen ${id}`);
                 clearTimeout(timer);
@@ -370,7 +362,6 @@ async function bootstrap() {
 
             if (context.socket && !context.socket.connected) context.socket.connect();
 
-            // Reload player URLs on all screens (safety net if socket reconnect is slow)
             const { loadConfig } = require('./utils/configManager');
             const onlineConfig = loadConfig();
             const serverUrl = onlineConfig.serverUrl || constants.getServerUrl();
