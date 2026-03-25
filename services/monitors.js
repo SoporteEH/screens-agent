@@ -63,6 +63,33 @@ const initializeMonitors = (context) => {
                 }
             }
 
+            // Ensure existing windows are correctly positioned
+            for (const id of currentIds) {
+                const win = managedWindows.get(id);
+                if (win && !win.isDestroyed()) {
+                    const display = hardwareIdToDisplayMap.get(id);
+                    if (display) {
+                        const currentBounds = win.getBounds();
+                        const targetBounds = display.bounds;
+                        
+                        // Check if bounds mismatch
+                        if (currentBounds.x !== targetBounds.x || 
+                            currentBounds.y !== targetBounds.y || 
+                            currentBounds.width !== targetBounds.width || 
+                            currentBounds.height !== targetBounds.height) {
+                            
+                            log.info(`[DISPLAY]: Restoring bounds for screen ${id} to x:${targetBounds.x} y:${targetBounds.y}`);
+                            win.setBounds(targetBounds);
+                        }
+                        
+                        // Force window to show and focus
+                        if (!win.isVisible()) win.show();
+                        win.setAlwaysOnTop(true, 'screen-saver');
+                        win.setAlwaysOnTop(false);
+                    }
+                }
+            }
+
             if (socket?.connected) registerDevice();
         }, CONSTANTS.SCREEN_DEBOUNCE_MS);
     };
