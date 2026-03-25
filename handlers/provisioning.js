@@ -50,6 +50,9 @@ function startProvisioningMode() {
         log.info(`[PROVISIONING]: Attempting to connect to: ${pendingServerUrl}`);
 
         socket = io(pendingServerUrl, {
+            auth: {
+                provisioning: true
+            },
             reconnection: true,
             reconnectionAttempts: 3,
             timeout: 10000,
