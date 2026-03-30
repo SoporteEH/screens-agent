@@ -380,19 +380,43 @@ async function bootstrap() {
         };
 
         // START APP
-        app.whenReady().then(() => {
+        app.whenReady().then(async () => {
             createTray(constants.getServerUrl(), constants.AGENT_VERSION);
 
             const serverArg = process.argv.find(arg => arg.startsWith('--server='));
             const tokenArg = process.argv.find(arg => arg.startsWith('--token='));
 
-            if (serverArg && tokenArg) {
+            if (serverArg) {
                 const serverUrl = serverArg.split('=')[1];
-                const agentToken = tokenArg.split('=')[1];
+                let agentToken = tokenArg ? tokenArg.split('=')[1] : null;
                 const { machineIdSync } = require('node-machine-id');
                 const deviceId = machineIdSync({ original: true });
 
                 log.info(`[INIT]: CLI Provisioning detected. Server: ${serverUrl}. Device ID: ${deviceId}`);
+
+                // If token is missing or not a JWT (doesn't have 2 dots), attempt to fetch real JWT from server
+                if (!agentToken || agentToken.split('.').length !== 3) {
+                    log.info('[INIT]: Provided token is missing or invalid. Attempting to fetch real JWT from server...');
+                    try {
+                        const { net } = require('electron');
+                        const response = await net.fetch(`${serverUrl}/api/auth/agent-token`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ deviceId }),
+                        });
+
+                        if (response.ok) {
+                            const data = await response.json();
+                            agentToken = data.token;
+                            log.info('[INIT]: Successfully retrieved JWT from server via CLI.');
+                        } else {
+                            log.error(`[INIT]: Failed to fetch token (Status: ${response.status}). Ensure device is linked in dashboard.`);
+                        }
+                    } catch (e) {
+                        log.error('[INIT]: Error fetching agent-token:', e.message);
+                    }
+                }
+
                 saveConfig({
                     serverUrl,
                     agentToken,
@@ -401,7 +425,7 @@ async function bootstrap() {
             }
 
             const initialConfig = loadConfig();
-            if (!initialConfig.deviceId) {
+            if (!initialConfig.deviceId || !initialConfig.agentToken) {
                 startProvisioningMode(context);
             } else {
                 startNormalMode(context);
