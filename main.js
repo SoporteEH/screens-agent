@@ -389,8 +389,8 @@ async function bootstrap() {
             if (serverArg) {
                 const serverUrl = serverArg.split('=')[1];
                 let agentToken = tokenArg ? tokenArg.split('=')[1] : null;
-                const { machineIdSync } = require('node-machine-id');
-                const deviceId = machineIdSync({ original: true });
+                const { getMachineId } = require('./services/device');
+                const deviceId = getMachineId();
 
                 log.info(`[INIT]: CLI Provisioning detected. Server: ${serverUrl}. Device ID: ${deviceId}`);
 
