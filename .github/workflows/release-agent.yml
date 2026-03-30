@@ -1,6 +1,6 @@
 name: Release Local Agent
 
-# Se activa cuando tag con el formato
+# tag con formato
 on:
   push:
     tags:
@@ -8,38 +8,39 @@ on:
 
 jobs:
   build-and-release:
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
 
     permissions:
       contents: write
 
     steps:
-      # Código del repositorio al tag
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Entorno de Node
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # Cachea dependencias
-      - name: Cache npm dependencies
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
-      # Instala dependencias
       - name: Install dependencies
         run: npm install
 
-      # Compila
-      - name: Build application
-        run: npm run build:prod
+      - name: Inject Configuration
+        run: node scripts/inject-config.js
+        env:
+          SERVER_URL: ${{ secrets.SERVER_URL }}
+
+      - name: Build and Release (Windows)
+        if: matrix.os == 'windows-latest'
+        run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SERVER_URL: ${{ secrets.SERVER_URL }}
+
+      - name: Build and Release (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: npx electron-builder --linux deb AppImage --arm64 --armv7l --x64 --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -15,7 +15,7 @@ function hasGpuFailed() {
             const config = JSON.parse(fs.readFileSync(GPU_CONFIG_FILE, 'utf8'));
             return config.gpuFailed === true;
         }
-    } catch (_e) {}
+    } catch (_e) { }
     return false;
 }
 
@@ -36,7 +36,7 @@ function resetGpuState() {
         if (fs.existsSync(GPU_CONFIG_FILE)) {
             fs.unlinkSync(GPU_CONFIG_FILE);
         }
-    } catch (_e) {}
+    } catch (_e) { }
 }
 
 function configureGpu() {
@@ -58,7 +58,18 @@ function configureGpu() {
 }
 
 function configureMemory() {
-    app.commandLine.appendSwitch('js-flags', '--max-old-space-size=384 --max-semi-space-size=2');
+    const os = require('os');
+    const totalMemMb = os.totalmem() / (1024 * 1024);
+
+    // Dynamic memory allocation based on system resources
+    let maxOldSpace = 384; // Default for low-end devices (e.g. Raspberry Pi 3)
+    if (totalMemMb > 3500) {
+        maxOldSpace = 1024; // High-end devices (4GB+ RAM)
+    } else if (totalMemMb > 1500) {
+        maxOldSpace = 512; // Mid-range (2GB RAM)
+    }
+
+    app.commandLine.appendSwitch('js-flags', `--max-old-space-size=${maxOldSpace} --max-semi-space-size=2`);
     app.commandLine.appendSwitch('renderer-process-limit', '10');
     app.commandLine.appendSwitch('disk-cache-size', '5242880');
     app.commandLine.appendSwitch('media-cache-size', '5242880');
@@ -74,7 +85,7 @@ function configureMemory() {
     app.commandLine.appendSwitch('disable-notifications');
     app.commandLine.appendSwitch('disable-domain-reliability');
 
-    log.info('[MEMORY]: Optimization applied.');
+    log.info(`[MEMORY]: Optimization applied (Max Old Space: ${maxOldSpace}MB). Total RAM: ${Math.round(totalMemMb)}MB`);
 }
 
 function registerGpuCrashHandlers() {

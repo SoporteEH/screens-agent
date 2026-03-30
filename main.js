@@ -68,18 +68,8 @@ async function bootstrap() {
 
         log.info(`[INIT]: ScreensWeb Agent starting on platform: ${process.platform} (Version: ${constants.AGENT_VERSION})`);
 
-        // AUTO-START CONFIG (Windows/macOS only)
-        if (app.isPackaged && (process.platform === 'win32' || process.platform === 'darwin')) {
-            try {
-                app.setLoginItemSettings({
-                    openAtLogin: true,
-                    path: app.getPath('exe'),
-                    args: ['--hidden'],
-                });
-            } catch (autoStartError) {
-                log.error('[INIT]: Failed to set auto-start settings:', autoStartError);
-            }
-        }
+        // AUTO-START CONFIG
+        deviceService.setupAutostart();
 
         const broadcastAppStatus = () => {
             const statusInfo = {
