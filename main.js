@@ -383,6 +383,23 @@ async function bootstrap() {
         app.whenReady().then(() => {
             createTray(constants.getServerUrl(), constants.AGENT_VERSION);
 
+            const serverArg = process.argv.find(arg => arg.startsWith('--server='));
+            const tokenArg = process.argv.find(arg => arg.startsWith('--token='));
+
+            if (serverArg && tokenArg) {
+                const serverUrl = serverArg.split('=')[1];
+                const agentToken = tokenArg.split('=')[1];
+                const { machineIdSync } = require('node-machine-id');
+                const deviceId = machineIdSync({ original: true });
+
+                log.info(`[INIT]: CLI Provisioning detected. Server: ${serverUrl}. Device ID: ${deviceId}`);
+                saveConfig({
+                    serverUrl,
+                    agentToken,
+                    deviceId,
+                });
+            }
+
             const initialConfig = loadConfig();
             if (!initialConfig.deviceId) {
                 startProvisioningMode(context);
