@@ -7,6 +7,7 @@ const { CONTENT_DIR } = require('../config/constants');
 const { cachePlayerHTML, cacheContentURL } = require('../services/playerCache');
 
 let context = {};
+const isLinux = process.platform === 'linux';
 
 function initializeHandlers(ctx) {
     context = ctx;
@@ -67,7 +68,7 @@ function createContentWindow(display, urlToLoad, command) {
         fullscreen: true,
         kiosk: true,
         frame: false,
-        show: false,
+        show: isLinux,
         backgroundColor: '#000000',
         paintWhenInitiallyHidden: false,
         webPreferences: {
@@ -107,17 +108,26 @@ function createContentWindow(display, urlToLoad, command) {
         callback({ cancel: false, responseHeaders });
     });
 
-    win.once('ready-to-show', () => win.show());
+    win.once('ready-to-show', () => {
+        win.show();
+        if (isLinux) {
+            win.setFullScreen(true);
+            win.focus();
+            win.moveTop();
+        }
+    });
 
     // Visibility fallback
     setTimeout(() => {
         if (!win.isDestroyed()) {
             win.show();
-            win.setFullScreen(true);
-            win.focus();
-            win.moveTop();
+            if (isLinux) {
+                win.setFullScreen(true);
+                win.focus();
+                win.moveTop();
+            }
         }
-    }, 2000);
+    }, 1000);
 
     win.webContents.on('did-finish-load', () => {
         const loadedUrl = win.webContents.getURL();
