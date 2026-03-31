@@ -111,7 +111,12 @@ function createContentWindow(display, urlToLoad, command) {
 
     // Visibility fallback
     setTimeout(() => {
-        if (!win.isDestroyed() && !win.isVisible()) win.show();
+        if (!win.isDestroyed()) {
+            win.show();
+            win.setFullScreen(true);
+            win.focus();
+            win.moveTop();
+        }
     }, 2000);
 
     win.webContents.on('did-finish-load', () => {
