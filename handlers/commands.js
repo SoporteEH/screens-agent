@@ -173,7 +173,9 @@ function createContentWindow(display, urlToLoad, command) {
 
     const windowSession = win.webContents.session;
     win.on('closed', () => {
-        context.managedWindows.delete(screenIndex);
+        if (context.managedWindows.get(screenIndex) === win) {
+            context.managedWindows.delete(screenIndex);
+        }
         if (context.retryManager.has(screenIndex)) {
             clearTimeout(context.retryManager.get(screenIndex).timerId);
             context.retryManager.delete(screenIndex);
@@ -276,27 +278,31 @@ function handleShowUrl(command, _currentAttempt = 0) {
     if (isPlayerMode && !checkIsAutologinUrl(url)) {
         const playerUrl = `${serverUrl}/player/${config.deviceId}/${screenIndex}`;
 
-        if (url !== playerUrl) {
-            log.info(`[COMMAND]: Player Mode active. Delegating content '${url}' to player page.`);
+        log.info(`[COMMAND]: Player Mode active. Forcing window reset for transition to '${url}'.`);
 
-            if (url.includes('/view/')) {
-                cacheContentURL(url, serverUrl).catch(() => { });
-            }
+        let oldWin = context.managedWindows.get(screenIndex);
 
-            let win = context.managedWindows.get(screenIndex);
-            if (!win || win.isDestroyed()) {
-                log.info(`[COMMAND]: Window missing in Player Mode. Recreating with player URL.`);
-                win = createContentWindow(targetDisplay, playerUrl, { ...command, url: playerUrl });
-            }
-
-            const currentWinUrl = win.webContents.getURL();
-            if (!currentWinUrl.includes('/player/')) {
-                log.info(`[COMMAND]: Restoring player URL on screen ${screenIndex}.`);
-                win.loadURL(playerUrl);
-            }
-
-            return;
+        if (url.includes('/view/')) {
+            cacheContentURL(url, serverUrl).catch(() => { });
         }
+
+        const win = createContentWindow(targetDisplay, playerUrl, { ...command, url: playerUrl });
+
+        if (oldWin && !oldWin.isDestroyed() && oldWin !== win) {
+            win.once('ready-to-show', () => {
+                setTimeout(() => {
+                    if (oldWin && !oldWin.isDestroyed()) {
+                        log.info(`[COMMAND]: Closing old window for screen ${screenIndex} after new one is ready.`);
+                        oldWin.close();
+                    }
+                }, 300);
+            });
+            // Safety timeout
+            setTimeout(() => {
+                if (oldWin && !oldWin.isDestroyed()) oldWin.close();
+            }, 5000);
+        }
+        return;
     }
 
     if (url.startsWith('local:')) {
@@ -312,9 +318,23 @@ function handleShowUrl(command, _currentAttempt = 0) {
     }
 
     try {
-        let win = context.managedWindows.get(screenIndex);
-        if (!win || win.isDestroyed()) {
-            win = createContentWindow(targetDisplay, 'about:blank', command);
+        let oldWin = context.managedWindows.get(screenIndex);
+
+        const win = createContentWindow(targetDisplay, 'about:blank', command);
+
+        if (oldWin && !oldWin.isDestroyed() && oldWin !== win) {
+            win.once('ready-to-show', () => {
+                setTimeout(() => {
+                    if (oldWin && !oldWin.isDestroyed()) {
+                        log.info(`[COMMAND]: Closing old window for screen ${screenIndex} after new one is ready.`);
+                        oldWin.close();
+                    }
+                }, 300);
+            });
+            // Safety timeout
+            setTimeout(() => {
+                if (oldWin && !oldWin.isDestroyed()) oldWin.close();
+            }, 5000);
         }
 
         win.webContents.removeAllListeners('did-finish-load');
