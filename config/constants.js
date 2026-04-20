@@ -35,7 +35,9 @@ const CONSTANTS = {
     MAX_RETRIES: 5,                              // Maximum retries
     GC_INTERVAL_MS: 4 * 60 * 60 * 1000,          // Garbage collection every 4 hours
     NETWORK_CHECK_INTERVAL_MS: 3000,             // Network monitoring every 3 seconds
-    SOCKET_RECONNECT_DELAY_MAX_MS: 60 * 1000,    // Maximum delay between reconnections
+    SOCKET_RECONNECT_DELAY_MS: 3 * 1000,         // Base delay between reconnection attempts
+    SOCKET_RECONNECT_DELAY_MAX_MS: 5 * 60 * 1000, // Max delay in circuit-breaker OPEN state (5 min)
+    CIRCUIT_BREAKER_THRESHOLD: 10,               // Consecutive failures before circuit opens
     FALLBACK_DELAY_MS: 4000,                     // 4 seconds delay before fallback
 };
 

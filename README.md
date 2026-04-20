@@ -53,7 +53,20 @@ The agent handles 4 critical network failure cases, always keeping screens showi
 Network is monitored adaptively:
 - **Stable** (all OK): check every 15 seconds
 - **Degraded** (something down): check every 5 seconds
-- Monitoring never stops — no exponential backoff that could prevent recovery
+
+**Socket Circuit Breaker**
+
+The WebSocket connection uses exponential backoff with a circuit breaker to avoid hammering the server during extended outages (thundering herd problem):
+
+| Consecutive failures | Retry interval |
+|---|---|
+| 1–5 | 3s → 9s → 27s... |
+| 8 | ~2 min |
+| 10+ (circuit OPEN) | ~5 min + jitter |
+
+- The agent **never stops retrying** — there is no user to restart it
+- Jitter (±50%) spreads retries across all agents so they don't hit the server simultaneously
+- On successful reconnect the counter resets and the circuit closes (`[CIRCUIT BREAKER]: CLOSED` in logs)
 
 **Security**
 - Configuration encrypted using a key derived from the device's hardware ID (via `node-machine-id`)
@@ -186,6 +199,14 @@ The agent stores its configuration encrypted in `electron-store`:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `maxStorageMB` | `750` | Maximum total size of local asset storage in MB |
+
+Socket reconnection constants (in `config/constants.js`):
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `SOCKET_RECONNECT_DELAY_MS` | `3000` | Base reconnection delay |
+| `SOCKET_RECONNECT_DELAY_MAX_MS` | `300000` | Max delay when circuit is open (5 min) |
+| `CIRCUIT_BREAKER_THRESHOLD` | `10` | Consecutive failures before circuit opens |
 
 ---
 
