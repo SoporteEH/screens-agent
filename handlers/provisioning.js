@@ -87,14 +87,17 @@ function startProvisioningMode() {
 
                 if (!response.ok) throw new Error('Error obtaining token from server');
 
-                const { token } = await response.json();
+                const data = await response.json();
+                const { token, certPem, keyPem } = data;
 
-                // Save all configuration, including the successful URL
+                // Save all configuration, including the successful URL and mTLS cert
                 saveConfig({
                     deviceId,
                     provisioned: true,
                     agentToken: token,
                     serverUrl: pendingServerUrl,
+                    certPem: certPem || null,
+                    keyPem: keyPem || null,
                 });
 
                 log.info('[PROVISIONING]: Configuracion guardada. Reiniciando...');

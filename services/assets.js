@@ -5,7 +5,6 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { Readable } = require('stream');
 const { log } = require('../utils/logConfig');
 const {
     SYNC_API_URL,
@@ -14,6 +13,7 @@ const {
     SERVER_URL,
 } = require('../config/constants');
 const { loadConfig } = require('../utils/configManager');
+const { getHttpClient } = require('../utils/httpClient');
 
 const DEFAULT_MAX_STORAGE_MB = 750;
 
@@ -88,12 +88,12 @@ async function syncDir(assets, targetDir, remotePath) {
         const destPath = path.join(targetDir, asset.serverFilename);
 
         try {
-            const res = await fetch(url);
-            if (!res.ok) throw new Error(`Download failed: ${res.statusText}`);
+            const client = getHttpClient();
+            const res = await client.get(url, { responseType: 'stream' });
 
             const fileStream = fs.createWriteStream(destPath);
             await new Promise((resolve, reject) => {
-                Readable.fromWeb(res.body).pipe(fileStream);
+                res.data.pipe(fileStream);
                 fileStream.on('finish', resolve);
                 fileStream.on('error', reject);
             });
@@ -120,12 +120,11 @@ async function syncLocalAssets(agentToken) {
     log.info('[SYNC]: Initiating asset synchronization...');
 
     try {
-        const res = await fetch(SYNC_API_URL, {
+        const client = getHttpClient();
+        const res = await client.get(SYNC_API_URL, {
             headers: { Authorization: `Bearer ${agentToken}` },
         });
-        if (!res.ok) throw new Error(`Server error: ${res.status}`);
-
-        const assets = await res.json();
+        const assets = res.data;
         const generalAssets = assets.filter((a) => a.assetType !== 'playlist');
         const playlistAssets = assets.filter((a) => a.assetType === 'playlist');
 

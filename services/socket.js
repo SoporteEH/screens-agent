@@ -38,6 +38,7 @@
 const { io } = require('socket.io-client');
 const { log, heartbeatLog } = require('../utils/logConfig');
 const { SERVER_URL, CONSTANTS } = require('../config/constants');
+const { getHttpsAgent } = require('../utils/httpClient');
 
 /**
  * Opens a WebSocket connection to the server and attaches all event handlers.
@@ -63,6 +64,8 @@ function connectToSocketServer(token, handlers) {
         randomizationFactor: 0.5,
         timeout: 20000,
         auth: { token },
+        // mTLS: present client certificate in the TLS handshake (production)
+        agent: getHttpsAgent(),
     });
 
     // ── CIRCUIT BREAKER: CLOSED ──────────────────────────────────────────────

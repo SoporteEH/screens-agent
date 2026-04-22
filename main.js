@@ -398,20 +398,19 @@ async function bootstrap() {
                 if (!agentToken || agentToken.split('.').length !== 3) {
                     log.info('[INIT]: Provided token is missing or invalid. Attempting to fetch real JWT from server...');
                     try {
-                        const { net } = require('electron');
-                        const response = await net.fetch(`${serverUrl}/api/auth/agent-token`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ deviceId }),
-                        });
-
-                        if (response.ok) {
-                            const data = await response.json();
-                            agentToken = data.token;
-                            log.info('[INIT]: Successfully retrieved JWT from server via CLI.');
-                        } else {
-                            log.error(`[INIT]: Failed to fetch token (Status: ${response.status}). Ensure device is linked in dashboard.`);
+                        const axios = require('axios');
+                        const response = await axios.post(
+                            `${serverUrl}/api/auth/agent-token`,
+                            { deviceId },
+                            { httpsAgent: require('./utils/httpClient').getHttpsAgent() }
+                        );
+                        const data = response.data;
+                        agentToken = data.token;
+                        // Also persist cert if returned
+                        if (data.certPem && data.keyPem) {
+                            saveConfig({ certPem: data.certPem, keyPem: data.keyPem });
                         }
+                        log.info('[INIT]: Successfully retrieved JWT from server via CLI.');
                     } catch (e) {
                         log.error('[INIT]: Error fetching agent-token:', e.message);
                     }

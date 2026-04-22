@@ -74,29 +74,22 @@ class ServerLogTransport extends winston.Transport {
             try {
                 const { SERVER_URL, AGENT_VERSION } = require('../config/constants');
                 const { loadConfig } = require('./configManager');
-                const { net } = require('electron');
+                const { getHttpClient } = require('./httpClient');
 
                 if (!SERVER_URL) return callback();
                 const config = loadConfig();
                 if (!config.deviceId || !config.agentToken) return callback();
 
-                const request = net.request({
-                    method: 'POST',
-                    url: `${SERVER_URL}/api/logs`,
-                    useSessionCookies: false,
-                });
-                request.setHeader('Content-Type', 'application/json');
-                request.setHeader('Authorization', `Bearer ${config.agentToken}`);
-                request.on('error', () => { });
-                const body = JSON.stringify({
+                const client = getHttpClient();
+                client.post('/api/logs', {
                     level: info.level,
                     message: info.message,
                     deviceId: config.deviceId,
                     agentVersion: AGENT_VERSION,
                     timestamp: new Date().toISOString(),
-                });
-                request.write(body);
-                request.end();
+                }, {
+                    headers: { Authorization: `Bearer ${config.agentToken}` },
+                }).catch(() => { }); // fire-and-forget
             } catch (e) {
                 void e;
             }
