@@ -5,6 +5,7 @@
 const { BrowserWindow, app, ipcMain } = require('electron');
 const path = require('path');
 
+const https = require('https');
 const { io } = require('socket.io-client');
 const { log } = require('../utils/logConfig');
 const { SERVER_URL } = require('../config/constants');
@@ -49,13 +50,14 @@ function startProvisioningMode() {
         pendingServerUrl = url.endsWith('/') ? url.slice(0, -1) : url;
         log.info(`[PROVISIONING]: Attempting to connect to: ${pendingServerUrl}`);
 
+        const isHttps = pendingServerUrl.startsWith('https://');
+
         socket = io(pendingServerUrl, {
-            auth: {
-                provisioning: true
-            },
+            auth: { provisioning: true },
             reconnection: true,
             reconnectionAttempts: 3,
             timeout: 10000,
+            ...(isHttps ? { agent: new https.Agent({ rejectUnauthorized: false }) } : {}),
         });
 
         socket.on('connect', () => {
@@ -88,9 +90,8 @@ function startProvisioningMode() {
                 if (!response.ok) throw new Error('Error obtaining token from server');
 
                 const data = await response.json();
-                const { token, certPem, keyPem } = data;
+                const { token, certPem, keyPem, serverCaCert } = data;
 
-                // Save all configuration, including the successful URL and mTLS cert
                 saveConfig({
                     deviceId,
                     provisioned: true,
@@ -98,6 +99,7 @@ function startProvisioningMode() {
                     serverUrl: pendingServerUrl,
                     certPem: certPem || null,
                     keyPem: keyPem || null,
+                    serverCaCert: serverCaCert || null,
                 });
 
                 log.info('[PROVISIONING]: Configuracion guardada. Reiniciando...');

@@ -13,14 +13,19 @@ function getHttpsAgent() {
     if (_httpsAgent) return _httpsAgent;
 
     const config = loadConfig();
-    const isProduction = config.serverUrl && config.serverUrl.startsWith('https://');
+    const isHttps = config.serverUrl && config.serverUrl.startsWith('https://');
 
-    if (config.certPem && config.keyPem && isProduction) {
-        _httpsAgent = new https.Agent({
+    if (config.certPem && config.keyPem && isHttps) {
+        const agentOptions = {
             cert: config.certPem,
             key: config.keyPem,
             rejectUnauthorized: true,
-        });
+        };
+        
+        if (config.serverCaCert) {
+            agentOptions.ca = config.serverCaCert;
+        }
+        _httpsAgent = new https.Agent(agentOptions);
     } else {
         _httpsAgent = new https.Agent({ rejectUnauthorized: false });
     }
