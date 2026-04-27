@@ -52,28 +52,14 @@ function buildLocalCarouselUrl() {
         .active { display: block; }
         .offline-indicator {
             position: fixed; bottom: 10px; right: 10px;
-            background: rgba(0,0,0,0.6); color: #fff;
-            padding: 5px 10px; border-radius: 4px; z-index: 100;
-            font-family: sans-serif; font-size: 12px;
-            display: flex; align-items: center; gap: 8px;
-        }
-        .dot {
-            width: 5px; height: 5px; border-radius: 50%; background: #af3333ff;
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.4; }
-            100% { opacity: 1; }
+            color: rgba(255,255,255,0.4);
+            z-index: 100; font-family: sans-serif; font-size: 11px;
         }
     </style>
 </head>
 <body>
     <div id="container" class="media-container"></div>
-    <div class="offline-indicator">
-        <div class="dot"></div>
-        Modo Offline
-    </div>
+    <div class="offline-indicator">Modo Offline</div>
 
     <script>
         const mediaUrls = ${JSON.stringify(mediaUrls)};
