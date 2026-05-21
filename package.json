@@ -21,7 +21,7 @@
   "author": "SoporteEH",
   "license": "ISC",
   "dependencies": {
-    "archiver": "^7.0.1",
+    "archiver": "^8.0.0",
     "axios": "^1.6.0",
     "dotenv": "^17.2.3",
     "electron-log": "^5.1.5",
