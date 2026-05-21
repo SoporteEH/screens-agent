@@ -33,22 +33,34 @@ const consoleFormat = winston.format.combine(
     })
 );
 
+const infoAndBelow = winston.format((info) => {
+    if (info.level === 'info' || info.level === 'debug') return info;
+})();
+
+const warnAndAbove = winston.format((info) => {
+    if (info.level === 'warn' || info.level === 'error') return info;
+})();
+
 const generalTransport = new DailyRotateFile({
     dirname: LOG_DIR,
     filename: 'general-%DATE%.log',
     datePattern: 'YYYY-MM-DD',
-    maxSize: '10m',
-    maxFiles: '90d',
+    maxSize: '7m',
+    maxFiles: '30d',
+    zippedArchive: true,
     level: 'info',
+    format: winston.format.combine(infoAndBelow, fileFormat),
 });
 
 const errorTransport = new DailyRotateFile({
     dirname: LOG_DIR,
     filename: 'error-%DATE%.log',
     datePattern: 'YYYY-MM-DD',
-    maxSize: '10m',
-    maxFiles: '90d',
+    maxSize: '7m',
+    maxFiles: '30d',
+    zippedArchive: true,
     level: 'warn',
+    format: winston.format.combine(warnAndAbove, fileFormat),
 });
 
 // Remote transport: forwards warn/error to server API
@@ -62,29 +74,22 @@ class ServerLogTransport extends winston.Transport {
             try {
                 const { SERVER_URL, AGENT_VERSION } = require('../config/constants');
                 const { loadConfig } = require('./configManager');
-                const { net } = require('electron');
+                const { getHttpClient } = require('./httpClient');
 
                 if (!SERVER_URL) return callback();
                 const config = loadConfig();
                 if (!config.deviceId || !config.agentToken) return callback();
 
-                const request = net.request({
-                    method: 'POST',
-                    url: `${SERVER_URL}/api/logs`,
-                    useSessionCookies: false,
-                });
-                request.setHeader('Content-Type', 'application/json');
-                request.setHeader('Authorization', `Bearer ${config.agentToken}`);
-                request.on('error', () => {});
-                const body = JSON.stringify({
+                const client = getHttpClient();
+                client.post('/api/logs', {
                     level: info.level,
                     message: info.message,
                     deviceId: config.deviceId,
                     agentVersion: AGENT_VERSION,
                     timestamp: new Date().toISOString(),
-                });
-                request.write(body);
-                request.end();
+                }, {
+                    headers: { Authorization: `Bearer ${config.agentToken}` },
+                }).catch(() => { }); // fire-and-forget
             } catch (e) {
                 void e;
             }
@@ -129,7 +134,7 @@ const heartbeatLog = {
         this._counter++;
         const now = Date.now();
         if (this._counter % 10 === 0 || now - this._lastLog > 5 * 60 * 1000) {
-            log.debug(`[HEARTBEAT]: Latidos enviados (ultimos 5 min): ${this._counter % 10 || 10}`);
+            log.debug(`[HEARTBEAT]: Heartbeats sent (last 5 min): ${this._counter % 10 || 10}`);
             this._lastLog = now;
         }
     },
@@ -141,7 +146,7 @@ const updaterLog = {
     logCheck(version) {
         const now = Date.now();
         if (now - this._lastUpdateCheck > 10 * 60 * 1000) {
-            log.info(`[UPDATER]: Verificacion periodica - Version actual: ${version}`);
+            log.info(`[UPDATER]: Periodic check - Current version: ${version}`);
             this._lastUpdateCheck = now;
         }
     },
@@ -158,16 +163,51 @@ function getLogDir() {
 }
 
 function getGeneralLogPath() {
-    const date = new Date().toISOString().split('T')[0];
-    return path.join(LOG_DIR, `general-${date}.log`);
+    return path.join(LOG_DIR, 'general.log');
 }
 
-function getTodayLogPaths() {
-    const date = new Date().toISOString().split('T')[0];
-    return [
-        { name: 'general', path: path.join(LOG_DIR, `general-${date}.log`) },
-        { name: 'error', path: path.join(LOG_DIR, `error-${date}.log`) },
-    ];
+/**
+ * Gets all log files for zipping.
+ */
+function getAllLogPaths() {
+    try {
+        const files = fs.readdirSync(LOG_DIR);
+        return files
+            .filter((f) => (f.startsWith('general') || f.startsWith('error')) && (f.endsWith('.log') || f.endsWith('.gz')))
+            .map((f) => ({
+                name: f.replace('.log', '').replace('.gz', ''),
+                path: path.join(LOG_DIR, f),
+            }));
+    } catch (err) {
+        return [];
+    }
+}
+
+/**
+ * Cleanup logs older than 90 days.
+ * Winston File transport handles maxsize but not maxAge by itself without DailyRotateFile.
+ */
+function cleanupOldLogs() {
+    try {
+        const now = Date.now();
+        const maxAge = 90 * 24 * 60 * 60 * 1000;
+        const files = fs.readdirSync(LOG_DIR);
+
+        files.forEach((file) => {
+            const filePath = path.join(LOG_DIR, file);
+            if (!file.endsWith('.log') && !file.endsWith('.gz')) return;
+
+            try {
+                const stats = fs.statSync(filePath);
+                if (now - stats.mtimeMs > maxAge) {
+                    fs.unlinkSync(filePath);
+                    console.log(`[CLEANUP]: Deleted old log file: ${file}`);
+                }
+            } catch (e) {
+            }
+        });
+    } catch (err) {
+    }
 }
 
 module.exports = {
@@ -176,5 +216,6 @@ module.exports = {
     updaterLog,
     getLogDir,
     getGeneralLogPath,
-    getTodayLogPaths,
+    getAllLogPaths,
+    cleanupOldLogs,
 };

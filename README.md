@@ -1,6 +1,6 @@
 # ScreensWeb Agent
 
-Desktop application for Windows-based digital signage systems. Connects to the ScreensWeb central platform via WebSockets and manages content display across multiple physical screens.
+Desktop application for Windows-based digital signage systems. Connects to the ScreensWeb backend via WebSockets and manages content display across multiple physical screens.
 
 ## Table of Contents
 
@@ -24,41 +24,70 @@ The ScreensWeb Agent is installed on venue PCs to display dynamic content on one
 **Core Responsibilities:**
 - Establish and maintain WebSocket connection to ScreensWeb backend
 - Receive and execute commands (display URL, show local assets, close content, identify screens)
-- Detect and manage multiple physical displays
+- Detect and manage multiple physical displays (up to 4 per device)
 - Display content in full-screen kiosk mode
-- Handle connection failures with automatic reconnection
+- Handle connection and network failures with automatic recovery — screens must never show black
+- Sync local asset files for offline playback
 - Auto-update from GitHub Releases using electron-updater
 
 ## Features
 
 **Multi-Monitor Support**
 - Automatic detection of physical displays
-- Predictable screen IDs (1, 2, 3) ordered left-to-right
+- Predictable screen IDs (1, 2, 3, 4) ordered left-to-right by position
 - Independent content management per screen
-- Position-based state persistence
+- Position-based state persistence across restarts
 
-**Connectivity**
-- WebSocket connection with automatic reconnection
-- Offline operation with fallback content
-- Network monitoring and recovery
-- Centralized error logging to backend
+**Offline/Recovery Logic**
 
-**Auto-Update**
-- CI/CD integration with GitHub Actions
-- Silent installation of updates
-- Version rollback support
-- Zero-downtime updates
+The agent handles 4 critical network failure cases, always keeping screens showing something:
+
+| Case | Situation | Behavior |
+|------|-----------|----------|
+| 1A | Server down, screen shows external URL | Keep playing (no change) |
+| 1B | Server down, screen shows internal URL | Switch to local carousel after 4s |
+| 2 | Internet lost entirely | All screens switch to local carousel |
+| 3 | Internet restored, server still down | Restore external URLs; keep carousel for internal URLs |
+| 4 | Server restored | Socket reconnects, reload player URLs |
+
+Network is monitored adaptively:
+- **Stable** (all OK): check every 15 seconds
+- **Degraded** (something down): check every 5 seconds
+
+**Socket Circuit Breaker**
+
+The WebSocket connection uses exponential backoff with a circuit breaker to avoid hammering the server during extended outages (thundering herd problem):
+
+| Consecutive failures | Retry interval |
+|---|---|
+| 1–5 | 3s → 9s → 27s... |
+| 8 | ~2 min |
+| 10+ (circuit OPEN) | ~5 min + jitter |
+
+- The agent **never stops retrying** — there is no user to restart it
+- Jitter (±50%) spreads retries across all agents so they don't hit the server simultaneously
+- On successful reconnect the counter resets and the circuit closes (`[CIRCUIT BREAKER]: CLOSED` in logs)
 
 **Security**
-- Encrypted configuration storage using electron-store
-- JWT-based authentication
+- Configuration encrypted using a key derived from the device's hardware ID (via `node-machine-id`)
+- Third-party credentials (e.g. Sportradar, Luckia) stored encrypted in `state.json` using AES-256-GCM
+- JWT-based authentication (RS256)
 - Command validation with Zod schemas
-- Secure token refresh mechanism
+- Chromium hardening: `nodeIntegration: false`, `contextIsolation: true`, `webSecurity: true`
+- Renderer process limit: 10 (supports up to 4 screens + control window + identify overlays)
 
 **Asset Management**
 - Local asset synchronization from central platform
-- Offline content playback capability
+- Validation on download: file extension allowlist + MD5 checksum verification
+- Storage cap: 750MB by default (configurable via `maxStorageMB` in agent config)
 - Automatic cleanup of obsolete files
+
+**Stability (24/7 Operation)**
+- HTTP cache cleared every 4 hours
+- DOM storage (localStorage/sessionStorage) cleared every 4 hours
+- Memory monitored hourly per renderer: auto-reload if a renderer exceeds 800MB
+- `state.json` writes serialized through a mutex to prevent corruption under concurrent commands
+- Single-instance lock prevents multiple agent processes
 
 ## Architecture
 
@@ -75,6 +104,7 @@ The ScreensWeb Agent is installed on venue PCs to display dynamic content on one
 │  Main Process               │
 │  - Connection Management    │
 │  - Command Handling         │
+│  - Network Monitoring       │
 │  - State Persistence        │
 ├─────────────────────────────┤
 │  Renderer Processes         │
@@ -92,17 +122,18 @@ The ScreensWeb Agent is installed on venue PCs to display dynamic content on one
 
 **Core:**
 - Electron 38.x
-- Node.js 18+
+- Node.js 22+
 - Socket.IO Client 4.x
 
 **Build & Distribution:**
-- electron-builder 24.x
+- electron-builder
 - electron-updater 6.x
 - GitHub Actions
 
 **Storage & Security:**
 - electron-store 8.1.0 (CommonJS compatible)
-- JWT authentication
+- node-machine-id (hardware-derived encryption key)
+- JWT authentication (RS256)
 - Zod schema validation
 
 **Development:**
@@ -117,7 +148,7 @@ The ScreensWeb Agent is installed on venue PCs to display dynamic content on one
 
 **Development:**
 - Windows 10/11
-- Node.js 18+
+- Node.js 22+
 - npm 9+
 - Git
 
@@ -127,14 +158,14 @@ The ScreensWeb Agent is installed on venue PCs to display dynamic content on one
 
 ```bash
 git clone <repository-url>
-cd ScreensWeb-agent
+cd screens-agent
 npm install
 ```
 
 ### Production Installation
 
 Download the latest `.exe` installer from GitHub Releases and run it. The agent will:
-1. Install to `Program Files/ScreensWeb Agent`
+1. Install to `C:\Program Files\ScreensWeb Agent\`
 2. Create desktop shortcut
 3. Configure auto-start with Windows
 4. Launch provisioning mode on first run
@@ -157,10 +188,27 @@ For production builds, the `SERVER_URL` is injected during the build process via
 
 ### Configuration Storage
 
-The agent stores its configuration in `electron-store`:
-- **Location:** `%APPDATA%\local-agent\ScreensWeb\config.json`
-- **Content:** `deviceId`, `agentToken` (encrypted)
+The agent stores its configuration encrypted in `electron-store`:
+- **Location:** `%APPDATA%\ScreensWeb\config.json`
+- **Encryption:** AES-256-GCM key derived from device hardware ID
+- **Content:** `deviceId`, `agentToken`, `serverUrl`, `maxStorageMB` (optional)
 - **Reset:** Delete this file to return to provisioning mode
+
+### Configurable Parameters
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `maxStorageMB` | `750` | Maximum total size of local asset storage in MB |
+
+Socket reconnection constants (in `config/constants.js`):
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `SOCKET_RECONNECT_DELAY_MS` | `3000` | Base reconnection delay |
+| `SOCKET_RECONNECT_DELAY_MAX_MS` | `300000` | Max delay when circuit is open (5 min) |
+| `CIRCUIT_BREAKER_THRESHOLD` | `10` | Consecutive failures before circuit opens |
+
+---
 
 ## Development
 
@@ -177,14 +225,14 @@ npm start
 **Development Tools:**
 - DevTools enabled in development mode
 - Hot reload not supported (requires app restart)
-- Logs written to console and file (`%APPDATA%\local-agent\ScreensWeb\logs\`)
+- Logs written to console and file (`%APPDATA%\ScreensWeb\logs\`)
 
 ## Build and Distribution
 
 Generate the Windows installer:
 
 ```bash
-npm run build
+npm run build:prod
 ```
 
 **Output:**
@@ -201,15 +249,15 @@ The agent uses `electron-updater` for seamless updates.
 1. Update version in `package.json`:
    ```json
    {
-     "version": "1.0.2"
+     "version": "1.1.33"
    }
    ```
 
 2. Commit and create a git tag:
    ```bash
    git add package.json
-   git commit -m "Bump version to 1.0.2"
-   git tag v1.0.2
+   git commit -m "Bump version to 1.1.33"
+   git tag v1.1.33
    git push origin main --tags
    ```
 
@@ -220,21 +268,15 @@ The agent uses `electron-updater` for seamless updates.
 
 ### Update Process (Agent)
 
-1. Agent checks for updates periodically (configurable interval)
+1. Agent checks for updates at startup (random delay 15–60s to avoid thundering herd with 350 devices)
 2. Detects new version from `latest.yml`
 3. Downloads installer in background
-4. Prompts user or auto-installs (configurable)
-5. Restarts with new version
-
-**Configuration:**
-- Check interval: 4 hours (default)
-- Silent mode: enabled for production
-- Rollback: manual via GitHub Release
+4. Installs silently and restarts
 
 ## Project Structure
 
 ```
-ScreensWeb-agent/
+screens-agent/
 ├── config/
 │   └── constants.js           # Centralized configuration (URLs, timeouts, paths)
 ├── handlers/
@@ -242,22 +284,26 @@ ScreensWeb-agent/
 │   ├── ipc.js                 # IPC message handlers between main and renderer
 │   └── provisioning.js        # Device provisioning flow
 ├── services/
-│   ├── assets.js              # Local asset synchronization
-│   ├── auth.js                # JWT token refresh
+│   ├── agentModes.js          # Normal mode vs provisioning mode startup logic
+│   ├── assets.js              # Local asset synchronization with validation
+│   ├── auth.js                # JWT token refresh loop
 │   ├── device.js              # Device registration and system commands
 │   ├── gpu.js                 # GPU configuration and crash handling
-│   ├── network.js             # Network connectivity monitoring
+│   ├── localCarousel.js       # Offline carousel builder from local assets
+│   ├── monitors.js            # Screen and network monitor initialization
+│   ├── network.js             # Adaptive network connectivity monitoring
+│   ├── playerCache.js         # Offline cache of player HTML
 │   ├── socket.js              # WebSocket connection management
-│   ├── state.js               # Screen state persistence
+│   ├── state.js               # Screen state persistence (state.json, mutex)
 │   ├── tray.js                # System tray icon and menu
 │   └── updater.js             # Auto-update orchestration
 ├── utils/
-│   ├── configManager.js       # Configuration file management
+│   ├── configManager.js       # electron-store wrapper with per-device encryption
 │   └── logConfig.js           # Logging configuration
 ├── icons/                     # Application icons
-├── main.js                    # Main process orchestrator
+├── main.js                    # Main process orchestrator and context
 ├── preload.js                 # Preload script for renderer security
-├── identify-preload.js        # Preload for screen identification
+├── identify-preload.js        # Preload for screen identification overlay
 ├── control.html               # Control panel UI
 ├── fallback.html              # Offline fallback page
 ├── identify.html              # Screen identification overlay
@@ -270,37 +316,43 @@ ScreensWeb-agent/
 
 | Layer | Responsibility |
 |-------|----------------|
-| **main.js** | Application orchestration, event coordination |
+| **main.js** | Application orchestration, global context, network event handlers |
 | **services/** | Independent modules with single responsibility |
 | **handlers/** | Command execution and user flows |
 | **config/** | Centralized constants and configuration |
-| **utils/** | Reusable utilities |
+| **utils/** | Reusable utilities (config storage, logging) |
 
 ## Troubleshooting
 
-**Check logs:** `%APPDATA%/local-agent/ScreensWeb/logs/main.log`
+**Check logs:** `%APPDATA%\ScreensWeb\logs\main.log`
 
 **Common causes:**
 - Another instance already running (single-instance lock)
-- Corrupted config file → Delete `%APPDATA%/local-agent/ScreensWeb/config.json`
+- Corrupted config file → Delete `%APPDATA%\ScreensWeb\config.json`
 - Missing dependencies → Reinstall agent
 
 **Wrong screen count:**
 - Restart agent after connecting monitors
-- Ensure "Extend these displays" mode in Windows
+- Ensure "Extend these displays" mode in Windows display settings
 
 ### Reset Agent
 
 **Full reset (returns to provisioning mode):**
 ```cmd
-rmdir /s "%APPDATA%\\local-agent\\ScreensWeb"
+rmdir /s "%APPDATA%\ScreensWeb"
 ```
 
-**Clear only state (keeps config):**
+**Clear only state (keeps config and credentials):**
 ```cmd
-del "%APPDATA%\\local-agent\\ScreensWeb\\state.json"
+del "%APPDATA%\ScreensWeb\state.json"
+```
+
+**Clear only local assets (forces re-download on next sync):**
+```cmd
+rmdir /s "%APPDATA%\ScreensWeb\content"
+rmdir /s "%APPDATA%\ScreensWeb\playlist-assets"
 ```
 
 ## License
 
-##### Proprietary - ****
+Proprietary

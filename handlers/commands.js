@@ -7,13 +7,12 @@ const { CONTENT_DIR } = require('../config/constants');
 const { cachePlayerHTML, cacheContentURL } = require('../services/playerCache');
 
 let context = {};
+const isLinux = process.platform === 'linux';
 
-// Inicializa handlers con contexto global
 function initializeHandlers(ctx) {
     context = ctx;
 }
 
-// Envia feedback del comando al servidor
 function sendCommandFeedback(command, status, message) {
     if (!command || !command.commandId) return;
     if (command.silent) return;
@@ -26,11 +25,11 @@ function sendCommandFeedback(command, status, message) {
             status,
             message,
         });
-        log.info(`[FEEDBACK]: Enviando feedback para commandId ${command.commandId}: ${status}`);
+        log.info(`[FEEDBACK]: Sending feedback for commandId ${command.commandId}: ${status}`);
     }
 }
 
-// Programa reintento con backoff exponencial
+// Schedules retry with exponential backoff
 const MAX_RETRY_DELAY_MS = 2 * 60 * 1000;
 
 function scheduleRetry(command) {
@@ -39,11 +38,11 @@ function scheduleRetry(command) {
 
     const delayMs = Math.min(Math.pow(2, attempt - 1) * 30 * 1000, MAX_RETRY_DELAY_MS);
     log.info(
-        `[RETRY]: Programando reintento #${attempt} para la pantalla ${screenIndex} en ${delayMs / 1000} segundos.`
+        `[RETRY]: Scheduling retry #${attempt} for screen ${screenIndex} in ${delayMs / 1000} seconds.`
     );
 
     const timerId = setTimeout(() => {
-        log.info(`[RETRY]: Ejecutando reintento #${attempt} para la pantalla ${screenIndex}...`);
+        log.info(`[RETRY]: Executing retry #${attempt} for screen ${screenIndex}...`);
         handleShowUrl(command, attempt);
     }, delayMs);
 
@@ -51,14 +50,14 @@ function scheduleRetry(command) {
 }
 
 /**
- * Crea una ventana de contenido perfectamente configurada para senalizacion.
+ * Creates a content window optimized for digital signage.
  */
 function createContentWindow(display, urlToLoad, command) {
     const { screenIndex, url: originalUrl, contentName } = command;
     const fallbackPath = `file://${path.join(__dirname, '../fallback.html')}`;
 
     log.info(
-        `[COMMAND]: Creando ventana en pantalla ${screenIndex} (${display.bounds.width}x${display.bounds.height})`
+        `[COMMAND]: Creating window on screen ${screenIndex} (${display.bounds.width}x${display.bounds.height})`
     );
 
     const win = new BrowserWindow({
@@ -69,7 +68,7 @@ function createContentWindow(display, urlToLoad, command) {
         fullscreen: true,
         kiosk: true,
         frame: false,
-        show: false,
+        show: isLinux,
         backgroundColor: '#000000',
         paintWhenInitiallyHidden: false,
         webPreferences: {
@@ -109,12 +108,26 @@ function createContentWindow(display, urlToLoad, command) {
         callback({ cancel: false, responseHeaders });
     });
 
-    win.once('ready-to-show', () => win.show());
+    win.once('ready-to-show', () => {
+        win.show();
+        if (isLinux) {
+            win.setFullScreen(true);
+            win.focus();
+            win.moveTop();
+        }
+    });
 
-    // Fallback timer para mostrar ventana
+    // Visibility fallback
     setTimeout(() => {
-        if (!win.isDestroyed() && !win.isVisible()) win.show();
-    }, 2000);
+        if (!win.isDestroyed()) {
+            win.show();
+            if (isLinux) {
+                win.setFullScreen(true);
+                win.focus();
+                win.moveTop();
+            }
+        }
+    }, 1000);
 
     win.webContents.on('did-finish-load', () => {
         const loadedUrl = win.webContents.getURL();
@@ -122,7 +135,7 @@ function createContentWindow(display, urlToLoad, command) {
             win.webContents
                 .executeJavaScript('document.documentElement.outerHTML')
                 .then((html) => cachePlayerHTML(screenIndex, html))
-                .catch(() => {});
+                .catch(() => { });
             if (context.retryManager.has(screenIndex)) {
                 clearTimeout(context.retryManager.get(screenIndex).timerId);
                 context.retryManager.delete(screenIndex);
@@ -136,17 +149,17 @@ function createContentWindow(display, urlToLoad, command) {
             if (!isMainFrame) return;
 
             log.error(
-                `[RESILIENCE]: Fallo al cargar URL '${validatedURL}'. Razon: ${errorDescription}`
+                `[RESILIENCE]: Failed to load URL '${validatedURL}'. Reason: ${errorDescription}`
             );
 
             if (validatedURL === fallbackPath) return;
 
             if (command.commandId) {
-                const displayName = contentName ? `'${contentName}'` : `la URL '${originalUrl}'`;
+                const displayName = contentName ? `'${contentName}'` : `URL '${originalUrl}'`;
                 sendCommandFeedback(
                     command,
                     'error',
-                    `Fallo al cargar ${displayName}. Razon: ${errorDescription}`
+                    `Failed to load ${displayName}. Reason: ${errorDescription}`
                 );
             }
 
@@ -154,20 +167,22 @@ function createContentWindow(display, urlToLoad, command) {
             if (!originalUrl.startsWith('local:') && isNetworkError) {
                 scheduleRetry(command);
             }
-            win.loadURL(fallbackPath);
+
         }
     );
 
     const windowSession = win.webContents.session;
     win.on('closed', () => {
-        context.managedWindows.delete(screenIndex);
+        if (context.managedWindows.get(screenIndex) === win) {
+            context.managedWindows.delete(screenIndex);
+        }
         if (context.retryManager.has(screenIndex)) {
             clearTimeout(context.retryManager.get(screenIndex).timerId);
             context.retryManager.delete(screenIndex);
         }
         if (windowSession) {
-            windowSession.clearCache().catch(() => {});
-            windowSession.clearStorageData().catch(() => {});
+            windowSession.clearCache().catch(() => { });
+            windowSession.clearStorageData().catch(() => { });
         }
     });
 
@@ -177,14 +192,30 @@ function createContentWindow(display, urlToLoad, command) {
 }
 
 /**
- * Maneja el comando 'show_url'.
+ * Handles 'show_url' command.
  */
 function handleShowUrl(command, _currentAttempt = 0) {
     const { screenIndex, url, credentials, contentName, refreshInterval } = command;
 
     if (!url || !url.trim()) {
-        log.error(`[COMMAND] URL vacía recibida para pantalla ${screenIndex}. Ignorando.`);
-        sendCommandFeedback(command, 'error', `URL vacía, no se puede cargar`);
+        log.error(`[COMMAND]: Empty URL received for screen ${screenIndex}. Ignoring.`);
+        sendCommandFeedback(command, 'error', `Empty URL, cannot load`);
+        return;
+    }
+
+    const trimmedUrl = url.trim();
+    const allowedSchemes = ['http:', 'https:', 'local:'];
+    let parsedUrl;
+    try {
+        parsedUrl = new URL(trimmedUrl);
+    } catch {
+        log.error(`[COMMAND]: Malformed URL for screen ${screenIndex}: ${trimmedUrl}`);
+        sendCommandFeedback(command, 'error', `Malformed URL, cannot load`);
+        return;
+    }
+    if (!allowedSchemes.includes(parsedUrl.protocol)) {
+        log.error(`[COMMAND]: Blocked disallowed URL scheme '${parsedUrl.protocol}' for screen ${screenIndex}`);
+        sendCommandFeedback(command, 'error', `URL scheme not allowed`);
         return;
     }
     if (context.retryManager.has(screenIndex)) {
@@ -197,7 +228,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
         sendCommandFeedback(
             command,
             'error',
-            `Pantalla con ID de hardware '${screenIndex}' no encontrada.`
+            `Display with hardware ID '${screenIndex}' not found.`
         );
         return;
     }
@@ -218,7 +249,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
     const hasInternet = net.isOnline();
 
     if (!hasInternet && !url.startsWith('local:')) {
-        const errorMsg = `Error: Sin conexion. No se puede cargar la URL '${url}'. Se reintentara cuando vuelva la conexion.`;
+        const errorMsg = `Error: No connection. Cannot load URL '${url}'. Will retry when connection is restored.`;
         log.error(`[RESILIENCE]: ${errorMsg}`);
         sendCommandFeedback(command, 'error', errorMsg);
         scheduleRetry(command);
@@ -227,14 +258,14 @@ function handleShowUrl(command, _currentAttempt = 0) {
 
     let finalUrl = url;
 
-    // PLAYER MODE CHECK
+    // Player mode check
     const { loadConfig } = require('../utils/configManager');
     const { getServerUrl } = require('../config/constants');
     const config = loadConfig();
     const serverUrl = config.serverUrl || getServerUrl();
     const isPlayerMode = !!serverUrl && config.deviceId;
 
-    // For autologin URLs bypass Player Mode and load directly
+    // Bypass player mode for autologin
     const checkIsAutologinUrl = (testUrl) => {
         if (!testUrl) return false;
         return (
@@ -247,34 +278,38 @@ function handleShowUrl(command, _currentAttempt = 0) {
     if (isPlayerMode && !checkIsAutologinUrl(url)) {
         const playerUrl = `${serverUrl}/player/${config.deviceId}/${screenIndex}`;
 
-        if (url !== playerUrl) {
-            log.info(`[COMMAND]: Player Mode active. Delegating content '${url}' to player page.`);
+        log.info(`[COMMAND]: Player Mode active. Forcing window reset for transition to '${url}'.`);
 
-            if (url.includes('/view/')) {
-                cacheContentURL(url, serverUrl).catch(() => {});
-            }
+        let oldWin = context.managedWindows.get(screenIndex);
 
-            let win = context.managedWindows.get(screenIndex);
-            if (!win || win.isDestroyed()) {
-                log.info(`[COMMAND]: Window missing in Player Mode. Recreating with player URL.`);
-                win = createContentWindow(targetDisplay, playerUrl, { ...command, url: playerUrl });
-            }
-
-            const currentWinUrl = win.webContents.getURL();
-            if (!currentWinUrl.includes('/player/')) {
-                log.info(`[COMMAND]: Restoring player URL on screen ${screenIndex}.`);
-                win.loadURL(playerUrl);
-            }
-
-            return;
+        if (url.includes('/view/')) {
+            cacheContentURL(url, serverUrl).catch(() => { });
         }
+
+        const win = createContentWindow(targetDisplay, playerUrl, { ...command, url: playerUrl });
+
+        if (oldWin && !oldWin.isDestroyed() && oldWin !== win) {
+            win.once('ready-to-show', () => {
+                setTimeout(() => {
+                    if (oldWin && !oldWin.isDestroyed()) {
+                        log.info(`[COMMAND]: Closing old window for screen ${screenIndex} after new one is ready.`);
+                        oldWin.close();
+                    }
+                }, 300);
+            });
+            // Safety timeout
+            setTimeout(() => {
+                if (oldWin && !oldWin.isDestroyed()) oldWin.close();
+            }, 5000);
+        }
+        return;
     }
 
     if (url.startsWith('local:')) {
         const filename = path.basename(url.substring(6));
         const filePath = path.join(CONTENT_DIR, filename);
         if (!fs.existsSync(filePath)) {
-            const errorMsg = `Error: Activo local no encontrado: ${filename}.`;
+            const errorMsg = `Error: Local asset not found: ${filename}.`;
             log.error(`[COMMAND]: ${errorMsg}`);
             sendCommandFeedback(command, 'error', errorMsg);
             return;
@@ -283,16 +318,30 @@ function handleShowUrl(command, _currentAttempt = 0) {
     }
 
     try {
-        let win = context.managedWindows.get(screenIndex);
-        if (!win || win.isDestroyed()) {
-            win = createContentWindow(targetDisplay, 'about:blank', command);
+        let oldWin = context.managedWindows.get(screenIndex);
+
+        const win = createContentWindow(targetDisplay, 'about:blank', command);
+
+        if (oldWin && !oldWin.isDestroyed() && oldWin !== win) {
+            win.once('ready-to-show', () => {
+                setTimeout(() => {
+                    if (oldWin && !oldWin.isDestroyed()) {
+                        log.info(`[COMMAND]: Closing old window for screen ${screenIndex} after new one is ready.`);
+                        oldWin.close();
+                    }
+                }, 300);
+            });
+            // Safety timeout
+            setTimeout(() => {
+                if (oldWin && !oldWin.isDestroyed()) oldWin.close();
+            }, 5000);
         }
 
         win.webContents.removeAllListeners('did-finish-load');
         win.webContents.removeAllListeners('did-navigate-in-page');
         win.webContents.removeAllListeners('did-navigate');
 
-        // Logic for Sportradar / LuckiaTV autologin
+        // Sportradar/LuckiaTV autologin logic
         const checkIsTargetUrl = (testUrl) => {
             if (!testUrl) return false;
             return (
@@ -365,19 +414,19 @@ function handleShowUrl(command, _currentAttempt = 0) {
                 }
             };
 
-            // Fires when main frame finishes loading (initial load)
+            // On initial load
             win.webContents.on('did-finish-load', () => {
                 injectIfTarget(win.webContents.getURL());
             });
 
-            // Fires on SPA hash/history navigation (e.g. redirect to /#/login)
+            // On SPA navigation
             win.webContents.on('did-navigate-in-page', (event, navUrl) => {
                 injectIfTarget(navUrl);
             });
 
-            // Fires on full cross-origin navigations
+            // On full navigation
             win.webContents.on('did-navigate', (event, navUrl) => {
-                lastLoggedUrl = null; // Reset on full navigation
+                lastLoggedUrl = null;
                 injectIfTarget(navUrl);
             });
         }
@@ -397,18 +446,16 @@ function handleShowUrl(command, _currentAttempt = 0) {
         sendCommandFeedback(
             command,
             'success',
-            `Enviando '${displayName}' a la pantalla ${screenIndex}`
+            `Sending '${displayName}' to screen ${screenIndex}`
         );
     } catch (error) {
-        const errorMsg = `Error inesperado al ejecutar show_url: ${error.message}`;
+        const errorMsg = `Unexpected error executing show_url: ${error.message}`;
         log.error(`[COMMAND]: ${errorMsg}`);
         sendCommandFeedback(command, 'error', errorMsg);
     }
 }
 
-/**
- * Maneja el comando 'close_screen'.
- */
+// Handle 'close_screen'
 function handleCloseScreen(command) {
     const { screenIndex } = command;
     try {
@@ -432,19 +479,17 @@ function handleCloseScreen(command) {
                 url: '',
             });
         }
-        sendCommandFeedback(command, 'success', `Pantalla ${screenIndex} cerrada`);
+        sendCommandFeedback(command, 'success', `Screen ${screenIndex} closed`);
     } catch (error) {
         sendCommandFeedback(
             command,
             'error',
-            `Error al cerrar pantalla ${screenIndex}: ${error.message}`
+            `Error closing screen ${screenIndex}: ${error.message}`
         );
     }
 }
 
-/**
- * Maneja el comando 'refresh_screen'.
- */
+// Handle 'refresh_screen'
 function handleRefreshScreen(command) {
     const { screenIndex } = command;
     try {
@@ -453,24 +498,22 @@ function handleRefreshScreen(command) {
             sendCommandFeedback(
                 command,
                 'error',
-                `Pantalla ${screenIndex} no tiene contenido activo`
+                `Screen ${screenIndex} has no active content`
             );
             return;
         }
         win.webContents.reload();
-        sendCommandFeedback(command, 'success', `Pantalla ${screenIndex} recargada`);
+        sendCommandFeedback(command, 'success', `Screen ${screenIndex} reloaded`);
     } catch (error) {
         sendCommandFeedback(
             command,
             'error',
-            `Error al recargar pantalla ${screenIndex}: ${error.message}`
+            `Error reloading screen ${screenIndex}: ${error.message}`
         );
     }
 }
 
-/**
- * Maneja el comando 'identify_screen'.
- */
+// Handle 'identify_screen'
 function handleIdentifyScreen(command) {
     const { screenIndex, identifierText } = command;
     const targetDisplay = context.hardwareIdToDisplayMap.get(screenIndex);
@@ -509,20 +552,20 @@ function handleIdentifyScreen(command) {
 }
 
 async function handleGetLogs(command) {
-    const { getTodayLogPaths, getLogDir } = require('../utils/logConfig');
+    const { getAllLogPaths, getLogDir } = require('../utils/logConfig');
     const archiver = require('archiver');
-    const logFiles = getTodayLogPaths();
+    const logFiles = getAllLogPaths();
     const date = new Date().toISOString().split('T')[0];
-    const zipPath = path.join(getLogDir(), `logs-${date}.zip`);
+    const zipPath = path.join(getLogDir(), `all-logs-${context.deviceId}-${date}.zip`);
 
     try {
         const existingFiles = logFiles.filter((f) => fs.existsSync(f.path));
         if (existingFiles.length === 0) {
-            sendCommandFeedback(command, 'error', 'No se encontraron archivos de logs.');
+            sendCommandFeedback(command, 'error', 'No log files found.');
             return;
         }
 
-        log.info(`[COMMAND] Comprimiendo ${existingFiles.length} archivos de logs en zip`);
+        log.info(`[COMMAND]: Compressing ${existingFiles.length} log files into zip archive`);
 
         await new Promise((resolve, reject) => {
             const output = fs.createWriteStream(zipPath);
@@ -531,17 +574,17 @@ async function handleGetLogs(command) {
             archive.on('error', reject);
             archive.pipe(output);
             for (const entry of existingFiles) {
-                archive.file(entry.path, { name: `${entry.name}-${date}.log` });
+                archive.file(entry.path, { name: entry.path.slice(getLogDir().length + 1) });
             }
             archive.finalize();
         });
 
-        log.info(`[COMMAND] Subiendo logs: ${zipPath}`);
+        log.info(`[COMMAND]: Uploading all logs: ${zipPath}`);
 
         const fileContent = fs.readFileSync(zipPath);
         const FormData = require('form-data');
         const form = new FormData();
-        form.append('logFile', fileContent, { filename: `agent-${context.deviceId}.zip` });
+        form.append('logFile', fileContent, { filename: path.basename(zipPath) });
 
         const constants = require('../config/constants');
         const uploadUrl = `${constants.getServerUrl()}/api/logs/upload-debug`;
@@ -557,16 +600,16 @@ async function handleGetLogs(command) {
             sendCommandFeedback(
                 command,
                 'success',
-                `Logs listos. URL de descarga: ${response.data.downloadUrl}`
+                `Logs ready. Download URL: ${response.data.downloadUrl}`
             );
         } else {
-            throw new Error('Respuesta de servidor inválida');
+            throw new Error('Invalid server response');
         }
 
         if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
     } catch (error) {
-        log.error('[COMMAND] Error en GetLogs:', error);
-        sendCommandFeedback(command, 'error', `Error al procesar logs: ${error.message}`);
+        log.error('[COMMAND]: Error in GetLogs:', error);
+        sendCommandFeedback(command, 'error', `Error processing logs: ${error.message}`);
         if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
     }
 }

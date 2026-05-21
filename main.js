@@ -24,6 +24,8 @@ const context = {
     retryManager: new Map(),
     hardwareIdToDisplayMap: new Map(),
     autoRefreshTimers: new Map(),
+    fallbackTimers: new Map(),
+    screenModes: new Map(),
 };
 
 async function bootstrap() {
@@ -44,6 +46,10 @@ async function bootstrap() {
         const { getDeviceName } = require('./services/identity');
         const commandHandlers = require('./handlers/commands');
         const stateService = require('./services/state');
+        const { cleanupOldLogs } = require('./utils/logConfig');
+
+        cleanupOldLogs();
+
         const socketService = require('./services/socket');
         const deviceService = require('./services/device');
         const assetsService = require('./services/assets');
@@ -60,16 +66,11 @@ async function bootstrap() {
         configureMemory();
         registerGpuCrashHandlers();
 
-        // AUTO-START CONFIG
-        if (app.isPackaged) {
-            app.setLoginItemSettings({
-                openAtLogin: true,
-                path: app.getPath('exe'),
-                args: ['--hidden'],
-            });
-        }
+        log.info(`[INIT]: ScreensWeb Agent starting on platform: ${process.platform} (Version: ${constants.AGENT_VERSION})`);
 
-        // HELPER: Broadcast status to control window
+        // AUTO-START CONFIG
+        deviceService.setupAutostart();
+
         const broadcastAppStatus = () => {
             const statusInfo = {
                 serverUrl: constants.getServerUrl(),
@@ -80,14 +81,16 @@ async function bootstrap() {
             updateControlWindow(statusInfo);
         };
 
-        // IPC HANDLERS
         registerIpcHandlers(constants.getServerUrl, constants.AGENT_VERSION, () => ({
-            isOnline: context.isOnline,
+            isOnline: context.getIsOnline?.() ?? context.isOnline,
             deviceName: getDeviceName(),
         }));
 
         // COMMAND HANDLER INITIALIZATION
-        context.isOnline = () => context.isOnline;
+        // isOnline is a boolean flag (kept in sync via socket connect/disconnect handlers).
+        // Expose a getter for consumers that need a function reference without
+        // overwriting the boolean state.
+        context.getIsOnline = () => context.isOnline;
         context.saveCurrentState = stateService.saveCurrentState;
         context.handleShowUrl = (cmd, att) => commandHandlers.handleShowUrl(cmd, att);
         commandHandlers.initializeHandlers(context);
@@ -128,6 +131,7 @@ async function bootstrap() {
             context.socket = socketService.connectToSocketServer(token, {
                 onConnect: () => {
                     context.isOnline = true;
+                    broadcastAppStatus();
                     context.registerDevice();
                     assetsService.syncLocalAssets(context.agentToken);
                 },
@@ -150,9 +154,14 @@ async function bootstrap() {
                     if (serverUrl && onlineConfig.deviceId) {
                         const savedState = stateService.loadLastState();
                         setTimeout(() => {
+                            // Clear all fallback timers before restoring
+                            context.fallbackTimers.forEach(t => clearTimeout(t));
+                            context.fallbackTimers.clear();
+
                             context.managedWindows.forEach((win, screenId) => {
                                 if (!win || win.isDestroyed()) return;
-                                const screenData = savedState[String(screenId)];
+                                const screenIdStr = String(screenId);
+                                const screenData = savedState[screenIdStr];
                                 const isAutologinUrl =
                                     screenData?.url &&
                                     (screenData.url.startsWith('https://lcr.sportradar.com') ||
@@ -160,7 +169,7 @@ async function bootstrap() {
                                         screenData.url.includes('luckia-tv'));
                                 if (isAutologinUrl && screenData.credentials) {
                                     log.info(
-                                        `[SOCKET]: Reconectado. Re-applying autologin for screen ${screenId}: ${screenData.url}`
+                                        `[SOCKET]: Reconnected. Re-applying autologin for screen ${screenId}: ${screenData.url}`
                                     );
                                     commandHandlers.handleShowUrl({
                                         action: 'show_url',
@@ -172,12 +181,13 @@ async function bootstrap() {
                                 } else {
                                     const playerUrl = `${serverUrl}/player/${onlineConfig.deviceId}/${screenId}`;
                                     log.info(
-                                        `[SOCKET]: Reconectado. Reloading player URL for screen ${screenId}`
+                                        `[SOCKET]: Reconnected. Reloading player URL for screen ${screenId}`
                                     );
-                                    win.loadURL(playerUrl);
+                                    win.loadURL(playerUrl).catch(e => log.error(`[SOCKET]: Error reloading win ${screenId}:`, e));
                                 }
+                                context.screenModes.set(screenIdStr, 'live');
                             });
-                        }, 1000);
+                        }, 3000);
                     } else {
                         setTimeout(
                             () =>
@@ -190,7 +200,7 @@ async function bootstrap() {
                     }
                 },
                 onCommand: (command) => {
-                    log.info('[SOCKET]: Comando recibido:', command);
+                    log.info('[SOCKET]: Command received:', command);
                     const actions = {
                         show_url: commandHandlers.handleShowUrl,
                         close_screen: commandHandlers.handleCloseScreen,
@@ -229,63 +239,122 @@ async function bootstrap() {
         };
 
         // NETWORK HANDLERS
-        let fallbackApplied = false;
-
         context.onNetworkOffline = (reason = 'UNKNOWN') => {
-            log.info(`[NETWORK]: Detectado OFFLINE. Motivo: ${reason}`);
+            log.info(`[NETWORK]: OFFLINE state detected. Reason: ${reason}`);
             context.isOnline = false;
             broadcastAppStatus();
 
-            if (reason === 'NO_SERVER') {
-                log.info(
-                    '[NETWORK]: Servidor inalcanzable pero hay internet. Manteniendo contenido actual.'
-                );
-                return;
-            }
+            if (reason === 'SOCKET_DISCONNECT') return;
 
-            if (reason !== 'NO_INTERNET') {
-                log.info('[NETWORK]: Manteniendo contenido reproduciendose (bypass fallback).');
-                return;
-            }
-
-            if (fallbackApplied) {
-                log.info('[NETWORK]: Fallback ya aplicado, ignorando evento duplicado.');
-                return;
-            }
-
-            log.info('[NETWORK]: Iniciando fallback por falta de internet...');
-            fallbackApplied = true;
-
-            const fallbackPath = `file://${path.join(__dirname, 'fallback.html')}`;
+            const { isServerDependentUrl, getCachedPlayerFileUrl } = require('./services/playerCache');
+            const serverUrl = constants.getServerUrl();
             const lastState = stateService.loadLastState();
 
             context.managedWindows.forEach((win, screenId) => {
-                if (win && !win.isDestroyed()) {
-                    const screenIdStr = String(screenId);
-                    const screenData = lastState[screenIdStr];
+                const screenIdStr = String(screenId);
+                const screenData = lastState[screenIdStr];
+                const currentUrl = screenData?.url || '';
 
-                    if (!screenData || (screenData.url && !screenData.url.startsWith('local:'))) {
-                        log.info(`[NETWORK]: Aplicando fallback en pantalla ${screenIdStr}`);
-                        try {
-                            win.loadURL(fallbackPath);
-                        } catch (e) {
-                            log.error(
-                                `[NETWORK]: Error aplicando fallback en pantalla ${screenIdStr}:`,
-                                e
+                if (context.fallbackTimers.has(screenIdStr)) {
+                    clearTimeout(context.fallbackTimers.get(screenIdStr));
+                    context.fallbackTimers.delete(screenIdStr);
+                }
+
+                const isDependent = isServerDependentUrl(currentUrl, serverUrl);
+                const currentMode = context.screenModes.get(screenIdStr) || 'live';
+
+                log.info(
+                    `[NETWORK]: Screen ${screenIdStr} — URL: "${currentUrl}", mode: ${currentMode}, dependent: ${isDependent}, reason: ${reason}`
+                );
+
+                // Case 1: Server down
+                if (reason === 'NO_SERVER') {
+                    if (isDependent) {
+                        // Internal URL (playlist/player) + server down
+                        // Only act if the screen is currently in live mode
+                        // (avoid reloading the carousel if it's already in carousel)
+                        if (currentMode !== 'offline') {
+                            log.info(`[NETWORK]: Server down. Scheduling carousel fallback for screen ${screenIdStr} in ${constants.CONSTANTS.FALLBACK_DELAY_MS}ms`);
+                            const timer = setTimeout(() => {
+                                if (win && !win.isDestroyed()) {
+                                    const offlineUrl = getCachedPlayerFileUrl(screenIdStr, currentUrl, serverUrl);
+                                    win.loadURL(offlineUrl).catch(e => log.error(`[NETWORK]: Fallback load error on screen ${screenIdStr}:`, e));
+                                    context.screenModes.set(screenIdStr, 'offline');
+                                    log.info(`[NETWORK]: Carousel active on screen ${screenIdStr} (NO_SERVER)`);
+                                }
+                                context.fallbackTimers.delete(screenIdStr);
+                            }, constants.CONSTANTS.FALLBACK_DELAY_MS);
+                            context.fallbackTimers.set(screenIdStr, timer);
+                        } else {
+                            log.info(`[NETWORK]: Screen ${screenIdStr} already in offline mode, no action needed.`);
+                        }
+                    } else {
+                        // External URL
+                        // The screen was in carousel due to a previous internet outage.
+                        // Iternet is available but server is down. 
+                        if (currentMode === 'offline') {
+                            if (currentUrl) {
+                                log.info(
+                                    `[NETWORK]: Internet restored (server still down). Restoring external URL on screen ${screenIdStr}: "${currentUrl}"`
+                                );
+                                const timer = setTimeout(() => {
+                                    if (win && !win.isDestroyed()) {
+                                        win.loadURL(currentUrl).catch(e =>
+                                            log.error(`[NETWORK]: Error restoring external URL on screen ${screenIdStr}:`, e)
+                                        );
+                                        context.screenModes.set(screenIdStr, 'live');
+                                    }
+                                    context.fallbackTimers.delete(screenIdStr);
+                                }, 1000);
+                                context.fallbackTimers.set(screenIdStr, timer);
+                            }
+                        } else {
+                            log.info(
+                                `[NETWORK]: Server down. External URL on screen ${screenIdStr} ("${currentUrl}") maintaining playback.`
                             );
                         }
+                    }
+                    return;
+                }
+
+                // Case 2: No internet
+                if (reason === 'NO_INTERNET') {
+                    // Any URL (external or internal) requires internet
+                    // Only act if the screen is not already in carousel
+                    if (currentMode !== 'offline') {
+                        log.info(
+                            `[NETWORK]: No internet. Scheduling carousel fallback for screen ${screenIdStr} in ${constants.CONSTANTS.FALLBACK_DELAY_MS / 1000}s`
+                        );
+                        const timer = setTimeout(() => {
+                            if (win && !win.isDestroyed()) {
+                                const offlineUrl = getCachedPlayerFileUrl(screenIdStr, null, serverUrl);
+                                win.loadURL(offlineUrl).catch(e => log.error(`[NETWORK]: Fallback error on screen ${screenIdStr}:`, e));
+                                context.screenModes.set(screenIdStr, 'offline');
+                                log.info(`[NETWORK]: Carousel active on screen ${screenIdStr} (NO_INTERNET)`);
+                            }
+                            context.fallbackTimers.delete(screenIdStr);
+                        }, constants.CONSTANTS.FALLBACK_DELAY_MS);
+                        context.fallbackTimers.set(screenIdStr, timer);
+                    } else {
+                        log.info(`[NETWORK]: Screen ${screenIdStr} already in offline mode, no action needed.`);
                     }
                 }
             });
         };
+
         context.onNetworkOnline = () => {
-            log.info('[NETWORK]: Detectado ONLINE. Intentando reconectar...');
+            log.info('[NETWORK]: ONLINE state detected (internet + server reachable). Recovering...');
             context.isOnline = true;
-            fallbackApplied = false;
             broadcastAppStatus();
+
+            context.fallbackTimers.forEach((timer, id) => {
+                log.info(`[NETWORK]: Clearing pending fallback for screen ${id}`);
+                clearTimeout(timer);
+            });
+            context.fallbackTimers.clear();
+
             if (context.socket && !context.socket.connected) context.socket.connect();
 
-            // Reload player URLs on all screens
             const { loadConfig } = require('./utils/configManager');
             const onlineConfig = loadConfig();
             const serverUrl = onlineConfig.serverUrl || constants.getServerUrl();
@@ -296,7 +365,8 @@ async function bootstrap() {
                         if (win && !win.isDestroyed()) {
                             const playerUrl = `${serverUrl}/player/${onlineConfig.deviceId}/${screenId}`;
                             log.info(`[NETWORK]: Reloading player URL for screen ${screenId}`);
-                            win.loadURL(playerUrl);
+                            win.loadURL(playerUrl).catch(e => log.error(`Recovery error screen ${screenId}:`, e));
+                            context.screenModes.set(String(screenId), 'live');
                         }
                     });
                 }, 2000);
@@ -313,11 +383,51 @@ async function bootstrap() {
         };
 
         // START APP
-        app.whenReady().then(() => {
+        app.whenReady().then(async () => {
             createTray(constants.getServerUrl(), constants.AGENT_VERSION);
 
+            const serverArg = process.argv.find(arg => arg.startsWith('--server='));
+            const tokenArg = process.argv.find(arg => arg.startsWith('--token='));
+
+            if (serverArg) {
+                const serverUrl = serverArg.split('=')[1];
+                let agentToken = tokenArg ? tokenArg.split('=')[1] : null;
+                const { getMachineId } = require('./services/device');
+                const deviceId = getMachineId();
+
+                log.info(`[INIT]: CLI Provisioning detected. Server: ${serverUrl}. Device ID: ${deviceId}`);
+
+                // If token is missing or not a JWT (doesn't have 2 dots), attempt to fetch real JWT from server
+                if (!agentToken || agentToken.split('.').length !== 3) {
+                    log.info('[INIT]: Provided token is missing or invalid. Attempting to fetch real JWT from server...');
+                    try {
+                        const axios = require('axios');
+                        const response = await axios.post(
+                            `${serverUrl}/api/auth/agent-token`,
+                            { deviceId },
+                            { httpsAgent: require('./utils/httpClient').getHttpsAgent() }
+                        );
+                        const data = response.data;
+                        agentToken = data.token;
+                        // Also persist cert if returned
+                        if (data.certPem && data.keyPem) {
+                            saveConfig({ certPem: data.certPem, keyPem: data.keyPem });
+                        }
+                        log.info('[INIT]: Successfully retrieved JWT from server via CLI.');
+                    } catch (e) {
+                        log.error('[INIT]: Error fetching agent-token:', e.message);
+                    }
+                }
+
+                saveConfig({
+                    serverUrl,
+                    agentToken,
+                    deviceId,
+                });
+            }
+
             const initialConfig = loadConfig();
-            if (!initialConfig.deviceId) {
+            if (!initialConfig.deviceId || !initialConfig.agentToken) {
                 startProvisioningMode(context);
             } else {
                 startNormalMode(context);
@@ -340,7 +450,7 @@ function showErrorWindow(error) {
     if (!app.isReady()) {
         app.whenReady()
             .then(() => showErrorWindow(error))
-            .catch(() => {});
+            .catch(() => { });
         return;
     }
     const errWin = new BrowserWindow({
@@ -354,12 +464,12 @@ function showErrorWindow(error) {
     errWin.loadURL(
         `data:text/html;charset=utf-8,${encodeURIComponent(`
         <body style="background:#1a1a1a;color:#ff6600;font-family:sans-serif;padding:30px;text-align:center">
-            <h2 style="margin-bottom:10px">Modo reparacion</h2>
-            <p style="color:#ccc;margin-bottom:20px">El agente ha encontrado un error y se esta intentando corregir descargando una nueva version.</p>
+            <h2 style="margin-bottom:10px">Recovery Mode</h2>
+            <p style="color:#ccc;margin-bottom:20px">The agent has encountered an error and is attempting to recover by downloading a new version.</p>
             <div style="background:#000;padding:15px;border-radius:8px;text-align:left;font-family:monospace;font-size:11px;color:#ef4444;height:120px;overflow:auto;border:1px solid #333">
                 ${error.stack || error.message}
             </div>
-            <p style="margin-top:20px;color:#666;font-size:12px">Buscando actualizaciones en segundo plano... No cierre esta ventana.</p>
+            <p style="margin-top:20px;color:#666;font-size:12px">Checking for updates in the background... Please do not close this window.</p>
         </body>
     `)}`
     );

@@ -1,8 +1,8 @@
 {
   "name": "local-agent",
-  "version": "1.1.26",
+  "version": "1.1.45",
   "private": true,
-  "description": "ScreensWeb Local Agent",
+  "description": "ScreensWeb Agent",
   "main": "main.js",
   "scripts": {
     "start": "electron . --js-flags=\"--expose-gc\"",
@@ -35,7 +35,7 @@
     "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
-    "electron": "^38.2.1",
+    "electron": "^41.2.2",
     "electron-builder": "^26.8.1",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
@@ -45,7 +45,7 @@
   "build": {
     "appId": "com.screens.web.agent",
     "productName": "ScreensWeb Agent",
-    "copyright": "Copyright © 2025 SoporteEH",
+    "copyright": "Copyright © 2026 SoporteEH",
     "asar": true,
     "compression": "maximum",
     "files": [
@@ -62,6 +62,7 @@
       "package.json",
       "!mainOld.js"
     ],
+    "executableName": "screens-web-agent",
     "win": {
       "target": [
         {
@@ -100,6 +101,31 @@
       "appPackageUrl": "https://github.com/SoporteEH/ScreensWeb-agent/releases/latest/download/",
       "menuCategory": false
     },
+    "linux": {
+      "executableName": "screens-web-agent",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "armv7l",
+            "arm64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64",
+            "armv7l",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "Utility",
+      "maintainer": "SoporteEH <soporte@screensweb.com>",
+      "synopsis": "ScreensWeb Agent for Digital Signage",
+      "description": "Cross-platform agent for ScreensWeb digital signage platform, optimized for Raspberry Pi and Windows."
+    },
     "publish": {
       "provider": "github",
       "owner": "SoporteEH",
@@ -107,6 +133,6 @@
     }
   },
   "config": {
-    "serverUrl": "http://192.168.1.134:3000"
+    "serverUrl": ""
   }
 }

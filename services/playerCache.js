@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const { log } = require('../utils/logConfig');
 const { CONFIG_DIR } = require('../config/constants');
+const { buildLocalCarouselUrl } = require('./localCarousel');
 
 const PLAYER_CACHE_DIR = path.join(CONFIG_DIR, 'player-cache');
 const CONTENT_CACHE_DIR = path.join(CONFIG_DIR, 'content-cache');
@@ -97,9 +98,13 @@ function getOfflineContentFilePath(url, serverUrl) {
 
 function isServerDependentUrl(url, serverUrl) {
     if (!url) return false;
+    // Views (playlists) ARE server dependent to render correctly
     if (url.includes('/view/')) return true;
-    if (url.includes('/player/')) return true;
+    // Player wrappers are NOT server dependent because they are cached locally
+    if (url.includes('/player/')) return false;
+    // Other URLs starting with serverUrl are likely server dependent
     if (serverUrl && url.startsWith(serverUrl)) return true;
+    // Localhost/127.0.0.1 are considered server dependent (usually dev server)
     if (/https?:\/\/(localhost|127\.0\.0\.1):\d+/.test(url)) return true;
     return false;
 }
@@ -110,20 +115,22 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl) {
 
     if (currentUrl) {
         if (isServerDependentUrl(currentUrl, serverUrl)) {
-            const offlinePath = getOfflineContentFilePath(currentUrl, serverUrl);
-            if (offlinePath) {
-                iframeUrl = 'file://' + offlinePath.replace(/\\/g, '/');
-                usingCache = true;
-            }
+            iframeUrl = buildLocalCarouselUrl();
+            if (iframeUrl) usingCache = true;
         } else if (currentUrl.startsWith('http://') || currentUrl.startsWith('https://')) {
             iframeUrl = currentUrl;
         }
     }
 
-    const statusText = usingCache ? 'Reproduciendo desde cache local' : 'Servidor no disponible';
+    if (!iframeUrl) {
+        iframeUrl = buildLocalCarouselUrl();
+        if (iframeUrl) usingCache = true;
+    }
+
+    const statusText = usingCache ? 'Playing local' : 'No valid content';
 
     return `<!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -135,37 +142,38 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl) {
         .offline-msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #888; text-align: center; z-index: 5; }
         .offline-msg h2 { font-size: 1.8rem; margin-bottom: 0.5rem; }
         .offline-msg p { font-size: 1rem; color: #666; margin-top: 0.3rem; }
-        .status-dot { position: fixed; bottom: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: ${usingCache ? '#f59e0b' : '#ef4444'}; z-index: 9999; }
+        .status-dot { position: fixed; bottom: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: #ee3232ff; z-index: 9999; display: none; }
     </style>
 </head>
 <body>
     <iframe id="contentFrame" style="display:none;" allow="autoplay; fullscreen; encrypted-media"></iframe>
     <div class="offline-msg" id="offlineMsg" style="display:none;">
         <h2>${statusText}</h2>
-        <p>Pantalla ${screenIndex}</p>
+        <p>Screen ${screenIndex}</p>
     </div>
     <div class="status-dot" id="statusDot" title="Offline"></div>
     <script>
         var iframeUrl = ${JSON.stringify(iframeUrl)};
         var frame = document.getElementById('contentFrame');
         var offlineMsg = document.getElementById('offlineMsg');
-        var loaded = false;
-
-        function showMsg() {
-            if (!loaded) { frame.style.display = 'none'; offlineMsg.style.display = 'block'; }
-        }
+        var statusDot = document.getElementById('statusDot');
 
         if (iframeUrl) {
-            frame.onload = function() { loaded = true; frame.style.display = 'block'; offlineMsg.style.display = 'none'; };
-            frame.onerror = function() { showMsg(); };
+            frame.onload = function() {
+                frame.style.display = 'block';
+                offlineMsg.style.display = 'none';
+            };
             frame.src = iframeUrl;
             frame.style.display = 'block';
-            setTimeout(showMsg, 10000);
+            // Carousel inside iframe shows its own red dot — hide wrapper dot to avoid duplicates
         } else {
-            showMsg();
+            // No content at all: show message and red dot from wrapper
+            frame.style.display = 'none';
+            offlineMsg.style.display = 'block';
+            statusDot.style.display = 'block';
         }
 
-        setInterval(function() { location.reload(); }, 60000);
+        setInterval(function() { location.reload(); }, 60000); // 1 minute retry
     </script>
 </body>
 </html>`;

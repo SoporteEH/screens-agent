@@ -1,6 +1,3 @@
-/**
- * Configuration Constants
- */
 
 const { app } = require('electron');
 const path = require('path');
@@ -16,7 +13,6 @@ if (!SERVER_URL) {
         const packageJson = require('../package.json');
         SERVER_URL = packageJson.config?.serverUrl;
     } catch (e) {
-        // Ignorar error de carga
     }
 }
 
@@ -30,16 +26,19 @@ const AGENT_REFRESH_URL = SERVER_URL ? `${SERVER_URL}/api/auth/agent-refresh` : 
 const SYNC_API_URL = SERVER_URL ? `${SERVER_URL}/api/users/me/local-assets` : '';
 
 const CONSTANTS = {
-    HEARTBEAT_INTERVAL_MS: 30 * 1000, // Heartbeat cada 30 segundos
-    TOKEN_CHECK_INTERVAL_MS: 4 * 60 * 60 * 1000, // Verifica token cada 4 horas
-    UPDATE_CHECK_MIN_DELAY_MS: 15000, // Delay minimo antes de buscar updates
-    UPDATE_CHECK_MAX_DELAY_MS: 60000, // Delay maximo antes de buscar updates
-    SCREEN_DEBOUNCE_MS: 500, // Debounce para cambios de pantalla
-    RETRY_BACKOFF_BASE_MS: 30 * 1000, // Base para backoff exponencial
-    MAX_RETRIES: 5, // Maximo de reintentos
-    GC_INTERVAL_MS: 4 * 60 * 60 * 1000, // Garbage collection cada 4 horas
-    NETWORK_CHECK_INTERVAL_MS: 10 * 1000, // Monitoreo de red cada 10 segundos
-    SOCKET_RECONNECT_DELAY_MAX_MS: 60 * 1000, // Maximo delay entre reconexiones
+    HEARTBEAT_INTERVAL_MS: 30 * 1000,            // Heartbeat every 30 seconds
+    TOKEN_CHECK_INTERVAL_MS: 4 * 60 * 60 * 1000, // Verify token every 4 hours
+    UPDATE_CHECK_MIN_DELAY_MS: 15000,            // Minimum delay before checking for updates
+    UPDATE_CHECK_MAX_DELAY_MS: 60000,            // Maximum delay before checking for updates
+    SCREEN_DEBOUNCE_MS: 500,                     // Debounce for screen changes
+    RETRY_BACKOFF_BASE_MS: 30 * 1000,            // Exponential backoff base
+    MAX_RETRIES: 5,                              // Maximum retries
+    GC_INTERVAL_MS: 4 * 60 * 60 * 1000,          // Garbage collection every 4 hours
+    NETWORK_CHECK_INTERVAL_MS: 3000,             // Network monitoring every 3 seconds
+    SOCKET_RECONNECT_DELAY_MS: 3 * 1000,         // Base delay between reconnection attempts
+    SOCKET_RECONNECT_DELAY_MAX_MS: 5 * 60 * 1000, // Max delay in circuit-breaker OPEN state (5 min)
+    CIRCUIT_BREAKER_THRESHOLD: 10,               // Consecutive failures before circuit opens
+    FALLBACK_DELAY_MS: 4000,                     // 4 seconds delay before fallback
 };
 
 let AGENT_VERSION = 'Unknown';
@@ -47,10 +46,10 @@ try {
     const packageJson = require('../package.json');
     AGENT_VERSION = packageJson.version;
 } catch (e) {
-    console.error('[CONFIG]: No se pudo leer la version del package.json');
+    console.error('[CONFIG]: Failed to read version from package.json');
 }
 
-// Helper para obtener la URL del servidor actualizada
+// Helper to get updated server URL
 function getServerUrl() {
     const freshConfig = loadConfig();
     return freshConfig.serverUrl || SERVER_URL;

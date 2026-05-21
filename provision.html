@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Vinculación de CUOTAS</title>
+    <title>Vinculación</title>
     <style>
         .titlebar {
             position: fixed;
@@ -161,7 +161,7 @@
                     <rect width="10" height="1" />
                 </svg>
             </button>
-            <button class="titlebar-button close" title="Cerrar">
+            <button class="titlebar-button close" title="Close">
                 <svg viewBox="0 0 10 10">
                     <path d="M0,0 L10,10 M10,0 L0,10" stroke="currentColor" stroke-width="1" />
                 </svg>
@@ -194,15 +194,15 @@
                 font-weight: 600;
                 cursor: pointer;
                 transition: opacity 0.2s;
-            ">Conectar</button>
+            ">Connect</button>
         </div>
 
         <div id="statusMessage" style="color: var(--color-text-secondary); font-size: 13px; min-height: 20px;"></div>
 
         <div id="id-section"
             style="display: none; margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 20px;">
-            <p style="font-size: 13px; margin-bottom: 8px;">ID de Máquina:</p>
-            <div id="deviceId">Cargando ID...</div>
+            <p style="font-size: 13px; margin-bottom: 8px;">Machine ID:</p>
+            <div id="deviceId">Loading ID...</div>
         </div>
     </div>
     <script>
@@ -212,12 +212,12 @@
         const statusMessage = document.getElementById('statusMessage');
         const idSection = document.getElementById('id-section');
 
-        // Escuchar ID del dispositivo
+        // Listen for Device ID
         window.electron.onDeviceId((deviceId) => {
             deviceIdElement.innerText = deviceId;
         });
 
-        // Escuchar estado de vinculación
+        // Listen for pairing status
         window.electron.on('provision-status', ({ type, message }) => {
             statusMessage.innerText = message;
             statusMessage.style.color = type === 'error' ? '#ef4444' : (type === 'success' ? '#10b981' : 'var(--color-text-secondary)');
@@ -235,20 +235,20 @@
         connectBtn.addEventListener('click', () => {
             const url = serverUrlInput.value.trim();
             if (!url) {
-                statusMessage.innerText = 'Por favor, introduce una URL válida';
+                statusMessage.innerText = 'Please enter a valid URL';
                 statusMessage.style.color = '#ef4444';
                 return;
             }
 
             try {
-                new URL(url); // Validación básica
+                new URL(url); // Basic validation
             } catch (e) {
-                statusMessage.innerText = 'URL mal formateada (ej: https://servidor.com)';
+                statusMessage.innerText = 'Malformed URL (https://server.com)';
                 statusMessage.style.color = '#ef4444';
                 return;
             }
 
-            statusMessage.innerText = 'Conectando con el servidor...';
+            statusMessage.innerText = 'Connecting to server...';
             statusMessage.style.color = 'var(--color-text-secondary)';
             connectBtn.disabled = true;
             serverUrlInput.disabled = true;

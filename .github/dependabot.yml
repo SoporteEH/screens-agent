@@ -1,0 +1,43 @@
+version: 2
+updates:
+  # JS dependencies (npm via package-lock.json — pnpm migration pending)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "agent"
+    groups:
+      production-minor-patch:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+      development-minor-patch:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Electron majors require manual validation: ABI changes, build matrix tests,
+      # and renderer compatibility (we run a kiosk with iframe-heavy workloads).
+      - dependency-name: "electron"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "electron-builder"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "electron-updater"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "electron-store"
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions workflows (release-agent.yml)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "dependencies"
+      - "ci"

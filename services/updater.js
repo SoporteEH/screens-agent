@@ -1,5 +1,5 @@
 /**
- * Gestiona busqueda, descarga e instalacion de actualizaciones.
+ * Manages update checking, downloading, and installation.
  */
 
 const { autoUpdater } = require('electron-updater');
@@ -7,9 +7,17 @@ const { log } = require('../utils/logConfig');
 const { app, BrowserWindow } = require('electron');
 
 let isCheckingForUpdate = false;
+let checksumRetries = 0;
 
 function configureUpdater() {
-    autoUpdater.logger = log;
+    autoUpdater.logger = {
+        info: (msg) => {
+            if (msg && !msg.includes('Checking for update')) log.info(msg);
+        },
+        warn: (msg) => log.warn(msg),
+        error: (msg) => log.error(msg),
+        debug: (msg) => log.debug(msg)
+    };
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowDowngrade = true;
@@ -30,7 +38,6 @@ function notifyAllWindows(data) {
 }
 
 async function checkForUpdates() {
-    log.info('[UPDATER]: Buscando actualizaciones...');
 
     autoUpdater.removeAllListeners('update-available');
     autoUpdater.removeAllListeners('update-not-available');
@@ -39,41 +46,51 @@ async function checkForUpdates() {
     autoUpdater.removeAllListeners('update-downloaded');
 
     autoUpdater.on('update-available', (info) => {
-        log.info('[UPDATER]: Actualizacion disponible:', info.version);
+        log.info('[UPDATER]: Update available:', info.version);
         notifyAllWindows({
             type: 'downloading',
-            message: `Descargando version ${info.version}...`,
+            message: `Downloading version ${info.version}...`,
         });
     });
 
     autoUpdater.on('update-not-available', () => {
-        log.info('[UPDATER]: Ya estas en la ultima version.');
         isCheckingForUpdate = false;
-        notifyAllWindows({ type: 'up-to-date', message: 'Agente en la ultima version' });
+        notifyAllWindows({ type: 'up-to-date', message: 'Agent is up to date' });
     });
 
     autoUpdater.on('error', (err) => {
-        log.error('[UPDATER]: Error en la actualizacion:', err);
+        log.error('[UPDATER]: Update error:', err);
         isCheckingForUpdate = false;
-        notifyAllWindows({ status: 'error', message: 'Error al buscar actualizacion' });
+        notifyAllWindows({ status: 'error', message: 'Error checking for updates' });
 
         if (err.message && err.message.includes('checksum')) {
-            log.info('[UPDATER]: Error de checksum. Reintentando...');
-            autoUpdater.autoDownload = true;
-            autoUpdater.allowDowngrade = true;
-            autoUpdater.checkForUpdates();
+            if (checksumRetries < 3) {
+                checksumRetries++;
+                log.info(`[UPDATER]: Checksum error. Retrying... (${checksumRetries}/3)`);
+                autoUpdater.autoDownload = true;
+                autoUpdater.allowDowngrade = true;
+                setTimeout(() => autoUpdater.checkForUpdates(), 5000);
+            } else {
+                log.error('[UPDATER]: Max checksum retries reached. Suspending updates for 12 hours.');
+                checksumRetries = 0;
+                // Block the 10-minute interval check by faking isCheckingForUpdate
+                isCheckingForUpdate = true;
+                setTimeout(() => {
+                    isCheckingForUpdate = false;
+                }, 12 * 60 * 60 * 1000);
+            }
         }
     });
 
     autoUpdater.on('download-progress', (progressObj) => {
-        log.info(`[UPDATER]: Descargando: ${Math.round(progressObj.percent)}%`);
+        log.info(`[UPDATER]: Downloading: ${Math.round(progressObj.percent)}%`);
     });
 
     autoUpdater.on('update-downloaded', (info) => {
-        log.info('[UPDATER]: Actualizacion descargada:', info.version);
+        log.info('[UPDATER]: Update downloaded:', info.version);
         notifyAllWindows({
             type: 'downloaded',
-            message: 'Actualizacion descargada. Reiniciando...',
+            message: 'Update downloaded. Restarting...',
         });
 
         setTimeout(() => autoUpdater.quitAndInstall(true, true), 5000);
@@ -83,15 +100,14 @@ async function checkForUpdates() {
     autoUpdater.allowDowngrade = true;
 
     autoUpdater.checkForUpdates().catch((error) => {
-        log.error('[UPDATER]: Error al buscar actualizaciones:', error);
+        log.error('[UPDATER]: Error checking for updates:', error);
         isCheckingForUpdate = false;
     });
 
     setInterval(
         () => {
             if (!isCheckingForUpdate) {
-                log.info('[UPDATER]: Reintento periodico...');
-                autoUpdater.checkForUpdates().catch(() => {});
+                autoUpdater.checkForUpdates().catch(() => { });
             }
         },
         10 * 60 * 1000
@@ -108,10 +124,10 @@ function setUpdating(value) {
 
 async function handleForceUpdate() {
     if (isCheckingForUpdate) {
-        log.info('[UPDATER]: Ya hay una busqueda en curso.');
+        log.info('[UPDATER]: An update check is already in progress.');
         return;
     }
-    log.info('[UPDATER]: Forzando busqueda de actualizaciones...');
+    log.info('[UPDATER]: Forcing update check...');
 
     isCheckingForUpdate = true;
     await checkForUpdates();

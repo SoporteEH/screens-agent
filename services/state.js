@@ -1,19 +1,20 @@
 /**
  * State Service
- * Gestiona mapeo de pantallas y persistencia de estado
+ * Manages display mapping and state persistence
  */
 
 const { screen } = require('electron');
 const fs = require('fs');
 const { log } = require('../utils/logConfig');
 const { STATE_FILE_PATH } = require('../config/constants');
+const { encryptCredentials, decryptCredentials } = require('../utils/configManager');
 
-// Construye mapa de pantallas ordenado por posicion
+// Builds display map ordered by position
 async function buildDisplayMap(hardwareIdToDisplayMap) {
     hardwareIdToDisplayMap.clear();
     const displays = screen.getAllDisplays();
 
-    // Ordena pantallas por posicion X (izquierda a derecha)
+    // Orders displays by X position (left to right)
     displays.sort((a, b) => a.bounds.x - b.bounds.x);
 
     displays.forEach((display, index) => {
@@ -22,12 +23,14 @@ async function buildDisplayMap(hardwareIdToDisplayMap) {
     });
 
     log.info(
-        '[DISPLAY_MAP]: Mapa de pantallas actualizado:',
+        '[DISPLAY_MAP]: Display map updated:',
         Array.from(hardwareIdToDisplayMap.keys())
     );
 }
 
-// Carga ultimo estado desde archivo JSON
+// Loads last state from JSON file
+// Credentials are stored encrypted; plain-object credentials (legacy) are decrypted in-memory
+// and will be re-encrypted on the next saveCurrentState call.
 function loadLastState() {
     try {
         if (fs.existsSync(STATE_FILE_PATH)) {
@@ -35,13 +38,20 @@ function loadLastState() {
             const migratedState = {};
             for (const [key, value] of Object.entries(state)) {
                 if (typeof value === 'string') {
+                    // Legacy format: bare URL string
                     migratedState[key] = {
                         url: value,
                         credentials: null,
                         timestamp: new Date().toISOString(),
                     };
                 } else {
-                    migratedState[key] = value;
+                    const entry = { ...value };
+                    if (typeof entry.credentials === 'string') {
+                        // Encrypted format — decrypt in memory
+                        entry.credentials = decryptCredentials(entry.credentials);
+                    }
+                    // Plain object credentials are kept as-is (legacy, re-encrypted on next save)
+                    migratedState[key] = entry;
                 }
             }
             if (JSON.stringify(state) !== JSON.stringify(migratedState)) {
@@ -50,56 +60,73 @@ function loadLastState() {
             return migratedState;
         }
     } catch (error) {
-        log.error('[STATE]: Error al leer o parsear el archivo de estado:', error);
+        log.error('[STATE]: Error reading or parsing state file:', error);
     }
     return {};
 }
 
 /**
- * Limpia el estado de pantallas que ya no existen.
+ * Reads state.json as-is without decrypting credentials.
+ * Use when you only need to filter/write entries and don't need the credential values.
+ */
+function loadRawState() {
+    try {
+        if (fs.existsSync(STATE_FILE_PATH)) {
+            return JSON.parse(fs.readFileSync(STATE_FILE_PATH, 'utf8')) || {};
+        }
+    } catch (error) {
+        log.error('[STATE]: Error reading raw state file:', error);
+    }
+    return {};
+}
+
+/**
+ * Clears state for displays that no longer exist.
+ * Operates on raw (encrypted) state to avoid writing credentials in plaintext.
  * @param {Map} hardwareIdToDisplayMap
  */
 function cleanOrphanedState(hardwareIdToDisplayMap) {
-    const state = loadLastState();
+    const state = loadRawState();
     const validIds = Array.from(hardwareIdToDisplayMap.keys());
     const cleanedState = {};
 
-    for (const [id, url] of Object.entries(state)) {
+    for (const [id, entry] of Object.entries(state)) {
         if (validIds.includes(id)) {
-            cleanedState[id] = url;
+            cleanedState[id] = entry;
         } else {
-            log.info(`[STATE]: Limpiando entrada huerfana para pantalla inexistente: ${id}`);
+            log.info(`[STATE]: Clearing orphaned entry for non-existent display: ${id}`);
         }
     }
 
     try {
         fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(cleanedState, null, 2));
     } catch (error) {
-        log.error('[STATE]: Error al limpiar estado huerfano:', error);
+        log.error('[STATE]: Error cleaning orphaned state:', error);
     }
 
-    return cleanedState;
+    // Return decrypted state for callers that need credential values
+    return loadLastState();
 }
 
 /**
- * Configura un timer de auto-refresh para una pantalla especifica.
+ * Configures an auto-refresh timer for a specific screen.
  */
 function setupAutoRefresh(screenIndex, intervalMinutes, managedWindows, autoRefreshTimers) {
     const intervalMs = intervalMinutes * 60 * 1000;
 
     log.info(
-        `[AUTO-REFRESH]: Configurando auto-refresh cada ${intervalMinutes} minutos para pantalla ${screenIndex}`
+        `[AUTO-REFRESH]: Setting up auto-refresh every ${intervalMinutes} minutes for screen ${screenIndex}`
     );
 
     const timerId = setInterval(() => {
         const win = managedWindows.get(screenIndex);
         if (win && !win.isDestroyed()) {
             log.info(
-                `[AUTO-REFRESH]: Recargando pantalla ${screenIndex} (programado cada ${intervalMinutes}min)`
+                `[AUTO-REFRESH]: Reloading screen ${screenIndex} (scheduled every ${intervalMinutes}min)`
             );
             win.webContents.reload();
         } else {
-            log.info(`[AUTO-REFRESH]: Ventana ${screenIndex} no existe, limpiando timer`);
+            log.info(`[AUTO-REFRESH]: Window ${screenIndex} does not exist, clearing timer`);
             clearInterval(timerId);
             autoRefreshTimers.delete(screenIndex);
         }
@@ -108,10 +135,31 @@ function setupAutoRefresh(screenIndex, intervalMinutes, managedWindows, autoRefr
     autoRefreshTimers.set(screenIndex, timerId);
 }
 
+// Write lock: prevents concurrent writes from corrupting state.json
+// when multiple handleShowUrl calls arrive simultaneously
+let writeLock = Promise.resolve();
+
 /**
- * Guarda el estado actual de una pantalla.
+ * Saves the current state of a screen.
+ * Serialized through writeLock to prevent race conditions.
  */
 function saveCurrentState(
+    screenIndex,
+    url,
+    credentials,
+    refreshInterval,
+    autoRefreshTimers,
+    managedWindows
+) {
+    writeLock = writeLock
+        .then(() =>
+            _saveCurrentState(screenIndex, url, credentials, refreshInterval, autoRefreshTimers, managedWindows)
+        )
+        .catch(() => {});
+    return writeLock;
+}
+
+function _saveCurrentState(
     screenIndex,
     url,
     credentials,
@@ -124,13 +172,14 @@ function saveCurrentState(
     if (autoRefreshTimers.has(screenIndex)) {
         clearInterval(autoRefreshTimers.get(screenIndex));
         autoRefreshTimers.delete(screenIndex);
-        log.info(`[AUTO-REFRESH]: Timer limpiado para pantalla ${screenIndex}`);
+        log.info(`[AUTO-REFRESH]: Timer cleared for screen ${screenIndex}`);
     }
 
     if (url) {
+        const encryptedCredentials = credentials ? encryptCredentials(credentials) : null;
         state[screenIndex] = {
             url: url,
-            credentials: credentials || null,
+            credentials: encryptedCredentials ?? credentials ?? null,
             refreshInterval: refreshInterval || 0,
             timestamp: new Date().toISOString(),
         };
@@ -145,10 +194,10 @@ function saveCurrentState(
     try {
         fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2));
         log.info(
-            `[STATE]: Estado guardado para pantalla ${screenIndex}: ${url || '(vacio)'}${refreshInterval ? ` (auto-refresh: ${refreshInterval}min)` : ''}`
+            `[STATE]: State saved for screen ${screenIndex}: ${url || '(empty)'}${refreshInterval ? ` (auto-refresh: ${refreshInterval}min)` : ''}`
         );
     } catch (error) {
-        log.error('[STATE]: Error al guardar estado:', error);
+        log.error('[STATE]: Error saving state:', error);
     }
 }
 
@@ -156,24 +205,24 @@ const { net } = require('electron');
 const path = require('path');
 
 /**
- * Restaura las URLs guardadas.
+ * Restores saved URLs.
  */
 function restoreLastState(hardwareIdToDisplayMap, handleShowUrlCallback) {
-    log.info('[STATE]: Iniciando restauracion de estado...');
+    log.info('[STATE]: Initiating state restoration...');
     const lastState = cleanOrphanedState(hardwareIdToDisplayMap);
 
     if (Object.keys(lastState).length === 0) {
-        log.info('[STATE]: No hay estado previo para restaurar (archivo vacio o no existe).');
+        log.info('[STATE]: No previous state found to restore (file empty or non-existent).');
         return;
     }
 
-    log.info('[STATE]: Restaurando ultimo estado conocido:', JSON.stringify(lastState, null, 2));
+    log.info('[STATE]: Restoring last known state:', JSON.stringify(lastState, null, 2));
 
     let restoredCount = 0;
     for (const [stableId, screenData] of Object.entries(lastState)) {
         if (hardwareIdToDisplayMap.has(stableId)) {
             log.info(
-                `[STATE]: Restaurando pantalla ${stableId} con URL: ${screenData.url}${screenData.refreshInterval ? ` (auto-refresh: ${screenData.refreshInterval}min)` : ''}`
+                `[STATE]: Restoring screen ${stableId} with URL: ${screenData.url}${screenData.refreshInterval ? ` (auto-refresh: ${screenData.refreshInterval}min)` : ''}`
             );
             const command = {
                 action: 'show_url',
@@ -190,13 +239,13 @@ function restoreLastState(hardwareIdToDisplayMap, handleShowUrlCallback) {
         }
     }
 
-    log.info(`[STATE]: Restauracion completada. ${restoredCount} pantallas restauradas.`);
+    log.info(`[STATE]: Restoration completed. ${restoredCount} screens restored.`);
 }
 
 /**
- * Restaura TODO el contenido inmediatamente sin depender del servidor.
- * Se ejecuta al inicio para garantizar que las pantallas muestren contenido
- * aunque el servidor no este disponible.
+ * Restores ALL content immediately without server dependency.
+ * Runs at startup to ensure screens display content even if 
+ * the server is unavailable.
  */
 function restoreAllContentImmediately(
     hardwareIdToDisplayMap,
@@ -206,12 +255,12 @@ function restoreAllContentImmediately(
 ) {
     const lastState = loadLastState();
     if (Object.keys(lastState).length === 0) {
-        log.info('[STARTUP]: No hay estado previo para restaurar.');
+        log.info('[STARTUP]: No previous state found to restore.');
         return;
     }
 
     const hasInternet = net.isOnline();
-    log.info(`[STARTUP]: Restaurando contenido (Internet: ${hasInternet ? 'SI' : 'NO'})...`);
+    log.info(`[STARTUP]: Restoring content (Internet: ${hasInternet ? 'YES' : 'NO'})...`);
 
     const fallbackPath = `file://${path.join(__dirname, '../fallback.html')}`;
     let restoredCount = 0;
@@ -222,9 +271,9 @@ function restoreAllContentImmediately(
             const targetDisplay = hardwareIdToDisplayMap.get(stableId);
 
             if (!hasInternet && !isLocalContent) {
-                // Sin internet y contenido remoto: crear ventana directamente con fallback
+                // No internet and remote content: create window directly with fallback
                 log.info(
-                    `[STARTUP]: Sin internet - creando ventana fallback en pantalla ${stableId}`
+                    `[STARTUP]: No internet - attempting local carousel fallback on display ${stableId}`
                 );
 
                 setTimeout(() => {
@@ -241,10 +290,14 @@ function restoreAllContentImmediately(
                         refreshInterval: screenData.refreshInterval || 0,
                     };
 
-                    createContentWindow(targetDisplay, fallbackPath, command);
+                    const { buildLocalCarouselUrl } = require('./localCarousel');
+                    const carouselUrl = buildLocalCarouselUrl();
+                    const pathToLoad = carouselUrl || fallbackPath;
+
+                    createContentWindow(targetDisplay, pathToLoad, command);
                 }, 500 * restoredCount);
             } else {
-                log.info(`[STARTUP]: Restaurando pantalla ${stableId}: ${screenData.url}`);
+                log.info(`[STARTUP]: Restoring screen ${stableId}: ${screenData.url}`);
 
                 setTimeout(() => {
                     handleShowUrl({
@@ -259,7 +312,7 @@ function restoreAllContentImmediately(
             restoredCount++;
         }
     }
-    log.info(`[STARTUP]: ${restoredCount} pantallas procesadas.`);
+    log.info(`[STARTUP]: ${restoredCount} screens processed.`);
 }
 
 module.exports = {

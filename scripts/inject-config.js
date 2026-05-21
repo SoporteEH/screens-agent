@@ -1,5 +1,5 @@
 /**
- * SERVER_URL y AGENT_THEME e inyecta en package.json
+ * Injects SERVER_URL and AGENT_THEME into package.json
  */
 
 const fs = require('fs');
@@ -22,14 +22,14 @@ if (!SERVER_URL) {
 const packagePath = path.join(__dirname, '..', 'package.json');
 const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
 
-// SERVER_URL en la configuración de package.json
+// Inject SERVER_URL into package.json config
 packageJson.config = packageJson.config || {};
 packageJson.config.serverUrl = SERVER_URL;
 
 fs.writeFileSync(packagePath, JSON.stringify(packageJson, null, 2) + '\n');
-console.log(`SERVER_URL inyectado en package.json: ${SERVER_URL}`);
+console.log(`SERVER_URL injected into package.json: ${SERVER_URL}`);
 
-// Inyección de Tema
+// Theme injection
 const themeColors = agentThemes[AGENT_THEME.toLowerCase()] || agentThemes.default;
 let themeCssContent = ':root {\n';
 for (const [prop, value] of Object.entries(themeColors)) {
@@ -46,10 +46,10 @@ const cssFilePath = path.join(cssDir, 'theme.css');
 
 try {
     fs.writeFileSync(cssFilePath, themeCssContent, 'utf8');
-    console.log(`Archivo de tema generado: ${cssFilePath} (${AGENT_THEME})`);
+    console.log(`Theme file generated: ${cssFilePath} (${AGENT_THEME})`);
 } catch (error) {
-    console.error(`ERROR: Fallo al generar archivo CSS de tema:`, error);
+    console.error(`ERROR: Failed to generate theme CSS file:`, error);
     process.exit(1);
 }
 
-console.log(`package.json y Tema CSS actualizados con '${AGENT_THEME}'.`);
+console.log(`package.json and Theme CSS updated with '${AGENT_THEME}'.`);

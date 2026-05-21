@@ -1,5 +1,5 @@
 /**
- * Agent Modes - Normal y Provisioning
+ * Agent Modes - Normal and Provisioning
  */
 
 const { log } = require('../utils/logConfig');
@@ -64,6 +64,7 @@ const startNormalMode = async (context) => {
                         refreshInterval: screenData.refreshInterval || 0,
                         silent: true,
                     });
+                    context.screenModes.set(String(screenIndex), 'live');
                 } else if (serverAvailable) {
                     const playerUrl = `${serverUrl}/player/${config.deviceId}/${screenIndex}`;
                     log.info(
@@ -76,6 +77,7 @@ const startNormalMode = async (context) => {
                         contentName: `Player ${screenIndex}`,
                         silent: true,
                     });
+                    context.screenModes.set(String(screenIndex), 'live');
                 } else {
                     const currentUrl = screenData?.url || '';
                     const hasInternet = net.isOnline();
@@ -100,6 +102,7 @@ const startNormalMode = async (context) => {
                                 silent: true,
                             });
                         }
+                        context.screenModes.set(String(screenIndex), 'live');
                     } else if (hasCachedPlayer(screenIndex) || currentUrl) {
                         const offlineUrl = getCachedPlayerFileUrl(
                             screenIndex,
@@ -107,7 +110,7 @@ const startNormalMode = async (context) => {
                             serverUrl
                         );
                         log.info(
-                            `[PLAYER]: Server offline. Loading cached player for screen ${screenIndex} (content: ${currentUrl || 'none'})`
+                            `[PLAYER]: Server offline. Loading carousel for screen ${screenIndex} (content: ${currentUrl || 'none'})`
                         );
                         if (targetDisplay) {
                             createContentWindow(targetDisplay, offlineUrl, {
@@ -118,6 +121,7 @@ const startNormalMode = async (context) => {
                                 silent: true,
                             });
                         }
+                        context.screenModes.set(String(screenIndex), 'offline');
                     } else {
                         log.info(
                             `[PLAYER]: Server offline, no cache for screen ${screenIndex}. Showing fallback.`
@@ -132,6 +136,7 @@ const startNormalMode = async (context) => {
                                 silent: true,
                             });
                         }
+                        context.screenModes.set(String(screenIndex), 'offline');
                     }
                 }
             }, 500 * i);
@@ -154,16 +159,37 @@ const startNormalMode = async (context) => {
 
     setInterval(() => {
         if (managedWindows.size === 0) return;
-        log.info('[OPTIMIZATION]: Limpiando HTTP cache (preservando storageData).');
+        log.info('[OPTIMIZATION]: Clearing HTTP cache and DOM storage.');
         managedWindows.forEach((win) => {
             if (win?.isDestroyed()) return;
-            win.webContents.session.clearCache().catch(() => {});
+            win.webContents.session.clearCache().catch(() => { });
+            win.webContents
+                .executeJavaScript('try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}')
+                .catch(() => { });
         });
     }, CONSTANTS.GC_INTERVAL_MS);
+
+    // Memory monitoring: reload renderer if it exceeds 800MB
+    setInterval(async () => {
+        for (const [screenId, win] of managedWindows) {
+            if (!win || win.isDestroyed()) continue;
+            try {
+                const memInfo = await win.webContents.getProcessMemoryInfo();
+                const memMB = memInfo.privateBytes / (1024 * 1024);
+                log.info(`[MEMORY]: Screen ${screenId}: ${memMB.toFixed(0)}MB`);
+                if (memMB > 800) {
+                    log.warn(`[MEMORY]: Screen ${screenId} exceeds 800MB — reloading renderer.`);
+                    win.webContents.reload();
+                }
+            } catch (e) {
+                log.error(`[MEMORY]: Failed to check memory for screen ${screenId}:`, e);
+            }
+        }
+    }, 60 * 60 * 1000); // every hour
 };
 
 const startProvisioningMode = (context) => {
-    log.info('[INIT]: Sin configuracion. Modo vinculacion.');
+    log.info('[INIT]: No configuration found. Entering provisioning mode.');
     return context.startProvisioningHandler({
         get socket() {
             return context.socket;
