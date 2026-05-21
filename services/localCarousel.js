@@ -6,9 +6,7 @@ const { CONTENT_DIR, CONFIG_DIR } = require('../config/constants');
 const CAROUSEL_HTML_PATH = path.join(CONFIG_DIR, 'offline-carousel.html');
 
 /**
- * Builds an offline HTML file that acts as a carousel for all 
- * media files (images and videos) stored in CONTENT_DIR. 
- * @returns {string|null} The file:// URL to the generated HTML, or null if no assets exist.
+ * Builds an offline HTML file that acts as a carousel
  */
 
 function buildLocalCarouselUrl() {
@@ -35,7 +33,7 @@ function buildLocalCarouselUrl() {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ScreensWeb - Modo Offline</title>
+    <title>ScreensWeb</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
@@ -51,15 +49,16 @@ function buildLocalCarouselUrl() {
         }
         .active { display: block; }
         .offline-indicator {
-            position: fixed; bottom: 10px; right: 10px;
-            color: rgba(255,255,255,0.4);
-            z-index: 100; font-family: sans-serif; font-size: 11px;
+            position: fixed; bottom: 6px; right: 6px;
+            width: 7px; height: 7px; border-radius: 50%;
+            background: #ee3232ff;
+            z-index: 9999;
         }
     </style>
 </head>
 <body>
     <div id="container" class="media-container"></div>
-    <div class="offline-indicator">Modo Offline</div>
+    <div class="offline-indicator"></div>
 
     <script>
         const mediaUrls = ${JSON.stringify(mediaUrls)};

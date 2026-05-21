@@ -82,12 +82,15 @@ async function bootstrap() {
         };
 
         registerIpcHandlers(constants.getServerUrl, constants.AGENT_VERSION, () => ({
-            isOnline: context.isOnline,
+            isOnline: context.getIsOnline?.() ?? context.isOnline,
             deviceName: getDeviceName(),
         }));
 
         // COMMAND HANDLER INITIALIZATION
-        context.isOnline = () => context.isOnline;
+        // isOnline is a boolean flag (kept in sync via socket connect/disconnect handlers).
+        // Expose a getter for consumers that need a function reference without
+        // overwriting the boolean state.
+        context.getIsOnline = () => context.isOnline;
         context.saveCurrentState = stateService.saveCurrentState;
         context.handleShowUrl = (cmd, att) => commandHandlers.handleShowUrl(cmd, att);
         commandHandlers.initializeHandlers(context);

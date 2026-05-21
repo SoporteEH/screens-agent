@@ -142,7 +142,7 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl) {
         .offline-msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #888; text-align: center; z-index: 5; }
         .offline-msg h2 { font-size: 1.8rem; margin-bottom: 0.5rem; }
         .offline-msg p { font-size: 1rem; color: #666; margin-top: 0.3rem; }
-        .status-dot { position: fixed; bottom: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: ${usingCache ? '#f59e0b' : '#ef4444'}; z-index: 9999; }
+        .status-dot { position: fixed; bottom: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: #ee3232ff; z-index: 9999; display: none; }
     </style>
 </head>
 <body>
@@ -156,20 +156,21 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl) {
         var iframeUrl = ${JSON.stringify(iframeUrl)};
         var frame = document.getElementById('contentFrame');
         var offlineMsg = document.getElementById('offlineMsg');
+        var statusDot = document.getElementById('statusDot');
 
         if (iframeUrl) {
             frame.onload = function() {
                 frame.style.display = 'block';
                 offlineMsg.style.display = 'none';
             };
-            // Do not show error overlay. Iframe itself will handle retries or Chromium "site can't be reached"
-            // However, Chromium native error is suppressed at the main window level in commands.js
             frame.src = iframeUrl;
             frame.style.display = 'block';
+            // Carousel inside iframe shows its own red dot — hide wrapper dot to avoid duplicates
         } else {
-            // No URL at all, generic message
+            // No content at all: show message and red dot from wrapper
             frame.style.display = 'none';
             offlineMsg.style.display = 'block';
+            statusDot.style.display = 'block';
         }
 
         setInterval(function() { location.reload(); }, 60000); // 1 minute retry

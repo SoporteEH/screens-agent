@@ -5,6 +5,7 @@ const { getHttpsAgent } = require('../utils/httpClient');
 
 function connectToSocketServer(token, handlers) {
     let consecutiveFailures = 0;
+    let circuitBreakerState = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
 
     const isHttps = SERVER_URL && SERVER_URL.startsWith('https://');
 
@@ -21,10 +22,11 @@ function connectToSocketServer(token, handlers) {
 
     // CIRCUIT BREAKER: CLOSED
     socket.on('connect', () => {
-        if (consecutiveFailures >= CONSTANTS.CIRCUIT_BREAKER_THRESHOLD) {
+        if (circuitBreakerState !== 'CLOSED') {
             log.info(
                 `[CIRCUIT BREAKER]: CLOSED — connection restored after ${consecutiveFailures} consecutive failures`
             );
+            circuitBreakerState = 'CLOSED';
         }
         consecutiveFailures = 0;
 
@@ -50,11 +52,12 @@ function connectToSocketServer(token, handlers) {
         log.debug(`[SOCKET]: Reconnecting attempt #${n}...`);
     });
 
-    // CIRCUIT BREAKER: OPEN 
+    // CIRCUIT BREAKER: OPEN/HALF-OPEN state management
     socket.on('connect_error', (err) => {
         consecutiveFailures++;
 
-        if (consecutiveFailures === CONSTANTS.CIRCUIT_BREAKER_THRESHOLD) {
+        if (circuitBreakerState === 'CLOSED' && consecutiveFailures === CONSTANTS.CIRCUIT_BREAKER_THRESHOLD) {
+            circuitBreakerState = 'OPEN';
             log.warn(
                 `[CIRCUIT BREAKER]: OPEN — ${consecutiveFailures} consecutive failures. ` +
                 `Server appears down. Retry interval now at max ` +
@@ -62,6 +65,7 @@ function connectToSocketServer(token, handlers) {
                 `Will keep retrying indefinitely.`
             );
         } else if (
+            circuitBreakerState === 'OPEN' &&
             consecutiveFailures > CONSTANTS.CIRCUIT_BREAKER_THRESHOLD &&
             consecutiveFailures % 10 === 0
         ) {
