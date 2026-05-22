@@ -1,6 +1,5 @@
 name: Release Local Agent
 
-# tag con formato
 on:
   push:
     tags:
@@ -20,13 +19,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm install
+        run: pnpm install --frozen-lockfile
 
       - name: Inject Configuration
         run: node scripts/inject-config.js
@@ -35,12 +40,12 @@ jobs:
 
       - name: Build and Release (Windows)
         if: matrix.os == 'windows-latest'
-        run: npx electron-builder --win --publish always
+        run: pnpm exec electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and Release (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: npx electron-builder --linux deb AppImage --arm64 --armv7l --x64 --publish always
+        run: pnpm exec electron-builder --linux deb AppImage --arm64 --armv7l --x64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

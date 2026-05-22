@@ -22,8 +22,7 @@ updates:
           - "minor"
           - "patch"
     ignore:
-      # Electron majors require manual validation: ABI changes, build matrix tests,
-      # and renderer compatibility (we run a kiosk with iframe-heavy workloads).
+      # Electron majors require manual validation: ABI changes, build matrix tests
       - dependency-name: "electron"
         update-types: ["version-update:semver-major"]
       - dependency-name: "electron-builder"

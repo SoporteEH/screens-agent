@@ -6,6 +6,7 @@ const { getHttpsAgent } = require('../utils/httpClient');
 function connectToSocketServer(token, handlers) {
     let consecutiveFailures = 0;
     let circuitBreakerState = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
+    let circuitBreakerTimer = null;
 
     const isHttps = SERVER_URL && SERVER_URL.startsWith('https://');
 
@@ -27,6 +28,10 @@ function connectToSocketServer(token, handlers) {
                 `[CIRCUIT BREAKER]: CLOSED — connection restored after ${consecutiveFailures} consecutive failures`
             );
             circuitBreakerState = 'CLOSED';
+        }
+        if (circuitBreakerTimer) {
+            clearTimeout(circuitBreakerTimer);
+            circuitBreakerTimer = null;
         }
         consecutiveFailures = 0;
 
@@ -60,10 +65,15 @@ function connectToSocketServer(token, handlers) {
             circuitBreakerState = 'OPEN';
             log.warn(
                 `[CIRCUIT BREAKER]: OPEN — ${consecutiveFailures} consecutive failures. ` +
-                `Server appears down. Retry interval now at max ` +
-                `(${CONSTANTS.SOCKET_RECONNECT_DELAY_MAX_MS / 1000}s + jitter). ` +
-                `Will keep retrying indefinitely.`
+                `Disconnecting and pausing for 5 minutes before next attempt.`
             );
+            socket.disconnect();
+            circuitBreakerTimer = setTimeout(() => {
+                circuitBreakerTimer = null;
+                circuitBreakerState = 'HALF_OPEN';
+                log.info('[CIRCUIT BREAKER]: HALF_OPEN — attempting reconnect after pause.');
+                socket.connect();
+            }, 5 * 60 * 1000);
         } else if (
             circuitBreakerState === 'OPEN' &&
             consecutiveFailures > CONSTANTS.CIRCUIT_BREAKER_THRESHOLD &&
@@ -87,6 +97,13 @@ function connectToSocketServer(token, handlers) {
     socket.on('device-info', (device) => handlers.onDeviceInfo?.(device));
     socket.on('assets-updated', () => handlers.onAssetsUpdated?.());
     socket.on('force-reprovision', () => handlers.onForceReprovision?.());
+
+    socket.clearCircuitBreaker = () => {
+        if (circuitBreakerTimer) {
+            clearTimeout(circuitBreakerTimer);
+            circuitBreakerTimer = null;
+        }
+    };
 
     return socket;
 }

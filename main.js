@@ -435,6 +435,12 @@ async function bootstrap() {
         });
 
         // LIFECYCLE
+        app.on('before-quit', () => {
+            if (context.socket?.clearCircuitBreaker) {
+                context.socket.clearCircuitBreaker();
+            }
+        });
+
         app.on('window-all-closed', () => {
             if (context.provisionWindow && !context.provisionWindow.isDestroyed()) {
                 app.quit();

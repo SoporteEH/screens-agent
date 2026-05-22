@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Vinculación</title>
+    <title>Device Setup</title>
     <style>
         .titlebar {
             position: fixed;
@@ -170,10 +170,21 @@
     </div>
 
     <div class="container" id="config-container">
-        <h1>Vinculación</h1>
+        <h1>Device Setup</h1>
 
         <div style="margin-bottom: 20px;">
-            <input type="text" id="serverUrl" placeholder="Server..." style="
+            <input type="text" id="serverUrl" placeholder="Server URL (https://...)" style="
+                width: 100%;
+                background-color: var(--color-bg-input);
+                padding: 12px;
+                border-radius: var(--border-radius-lg);
+                font-size: 14px;
+                color: var(--color-text-primary);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                margin-bottom: 10px;
+                outline: none;
+            ">
+            <input type="text" id="nonceInput" placeholder="Setup code (from admin panel)" style="
                 width: 100%;
                 background-color: var(--color-bg-input);
                 padding: 12px;
@@ -183,6 +194,8 @@
                 border: 1px solid rgba(255, 255, 255, 0.1);
                 margin-bottom: 15px;
                 outline: none;
+                font-family: 'Courier New', monospace;
+                letter-spacing: 0.05em;
             ">
             <button id="connectBtn" style="
                 width: 100%;
@@ -208,6 +221,7 @@
     <script>
         const deviceIdElement = document.getElementById('deviceId');
         const serverUrlInput = document.getElementById('serverUrl');
+        const nonceInput = document.getElementById('nonceInput');
         const connectBtn = document.getElementById('connectBtn');
         const statusMessage = document.getElementById('statusMessage');
         const idSection = document.getElementById('id-section');
@@ -228,12 +242,15 @@
             } else {
                 connectBtn.disabled = false;
                 serverUrlInput.disabled = false;
+                nonceInput.disabled = false;
                 connectBtn.style.opacity = '1';
             }
         });
 
         connectBtn.addEventListener('click', () => {
             const url = serverUrlInput.value.trim();
+            const nonce = nonceInput.value.trim();
+
             if (!url) {
                 statusMessage.innerText = 'Please enter a valid URL';
                 statusMessage.style.color = '#ef4444';
@@ -248,13 +265,20 @@
                 return;
             }
 
+            if (!nonce) {
+                statusMessage.innerText = 'Please enter the setup code from the admin panel';
+                statusMessage.style.color = '#ef4444';
+                return;
+            }
+
             statusMessage.innerText = 'Connecting to server...';
             statusMessage.style.color = 'var(--color-text-secondary)';
             connectBtn.disabled = true;
             serverUrlInput.disabled = true;
+            nonceInput.disabled = true;
             connectBtn.style.opacity = '0.5';
 
-            window.electron.send('set-server-url', url);
+            window.electron.send('set-server-url', { url, nonce });
         });
 
         document.querySelector('.titlebar-button.minimize')?.addEventListener('click', () => {

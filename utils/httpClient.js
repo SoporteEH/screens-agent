@@ -27,7 +27,7 @@ function getHttpsAgent() {
         }
         _httpsAgent = new https.Agent(agentOptions);
     } else {
-        _httpsAgent = new https.Agent({ rejectUnauthorized: false });
+        _httpsAgent = new https.Agent();
     }
 
     return _httpsAgent;

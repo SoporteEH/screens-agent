@@ -40,23 +40,25 @@ function startProvisioningMode() {
 
     provisionWindow.setMenu(null);
 
-    // Listen for URL from window
-    ipcMain.on('set-server-url', (event, url) => {
+    // Listen for URL + nonce from window
+    ipcMain.on('set-server-url', (event, payload) => {
         if (socket) {
             socket.disconnect();
             socket.removeAllListeners();
         }
 
+        const { url, nonce } = typeof payload === 'string' ? { url: payload, nonce: '' } : payload;
         pendingServerUrl = url.endsWith('/') ? url.slice(0, -1) : url;
         log.info(`[PROVISIONING]: Attempting to connect to: ${pendingServerUrl}`);
 
         const isHttps = pendingServerUrl.startsWith('https://');
 
         socket = io(pendingServerUrl, {
-            auth: { provisioning: true },
+            auth: { provisioning: true, nonce },
             reconnection: true,
             reconnectionAttempts: 3,
             timeout: 10000,
+            // first-time enrollment only: device has no CA cert yet to verify the server
             ...(isHttps ? { agent: new https.Agent({ rejectUnauthorized: false }) } : {}),
         });
 

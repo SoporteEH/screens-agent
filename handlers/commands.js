@@ -74,7 +74,7 @@ function createContentWindow(display, urlToLoad, command) {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            nodeIntegrationInSubFrames: true,
+            nodeIntegrationInSubFrames: false,
             webSecurity: true,
             allowRunningInsecureContent: false,
             backgroundThrottling: true,

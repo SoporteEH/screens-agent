@@ -15,6 +15,9 @@ const crypto = require('crypto');
 const { log } = require('./logConfig');
 
 const LEGACY_KEY = 'screensweb-agent-secure-key';
+const SENSITIVE_FIELDS = ['agentToken', 'certPem', 'keyPem'];
+
+let _usingFallbackKey = false;
 
 /**
  * Derives a unique encryption key from the device hardware ID.
@@ -34,7 +37,7 @@ function getHardwareKey() {
  * Initializes the config store.
  *
  * Decision tree:
- * 1. No hardware ID available → use legacy key (graceful degradation)
+ * 1. No hardware ID available → use legacy key for non-sensitive data only; sensitive fields excluded
  * 2. Hardware key works and store has data → already on new key, done
  * 3. Hardware key returns empty, legacy key has data → migrate (re-encrypt)
  * 4. Neither key has data → new device, use hardware key from scratch
@@ -43,7 +46,8 @@ function initStore() {
     const hwKey = getHardwareKey();
 
     if (!hwKey) {
-        log.warn('[CONFIG]: Hardware ID unavailable. Using shared fallback key.');
+        log.error('[CONFIG]: Hardware ID unavailable. Sensitive credentials (agentToken, certPem, keyPem) will NOT be persisted — device requires re-provisioning after each restart.');
+        _usingFallbackKey = true;
         return new Store({ name: 'config', encryptionKey: LEGACY_KEY, clearInvalidConfig: true });
     }
 
@@ -92,7 +96,13 @@ const store = initStore();
 
 function loadConfig() {
     try {
-        return store.store;
+        const data = store.store;
+        if (_usingFallbackKey) {
+            const safe = { ...data };
+            SENSITIVE_FIELDS.forEach((f) => delete safe[f]);
+            return safe;
+        }
+        return data;
     } catch (error) {
         log.error('[CONFIG]: Error reading:', error);
         return {};
@@ -101,7 +111,13 @@ function loadConfig() {
 
 function saveConfig(config) {
     try {
-        store.set(config);
+        if (_usingFallbackKey) {
+            const safe = { ...config };
+            SENSITIVE_FIELDS.forEach((f) => delete safe[f]);
+            store.set(safe);
+        } else {
+            store.set(config);
+        }
     } catch (error) {
         log.error('[CONFIG]: Error saving:', error);
     }
