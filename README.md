@@ -352,7 +352,3 @@ del "%APPDATA%\ScreensWeb\state.json"
 rmdir /s "%APPDATA%\ScreensWeb\content"
 rmdir /s "%APPDATA%\ScreensWeb\playlist-assets"
 ```
-
-## License
-
-Proprietary
