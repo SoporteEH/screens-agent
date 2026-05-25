@@ -10,10 +10,7 @@ const http = require('http');
 const https = require('https');
 const url = require('url');
 
-/**
- * Ping al servidor para verificar conectividad real.
- * Retorna true si el servidor responde, false si no.
- */
+/** Ping to server check connection*/
 function pingServer() {
     return new Promise((resolve) => {
         const serverUrl = getServerUrl();
@@ -89,11 +86,10 @@ function pingInternet() {
  * Adaptive polling network monitor.
  *
  * Intervals:
- *   STABLE   (everything OK)  → 15 seconds — minimizes load on 350 devices
- *   DEGRADED (something down) → 5 seconds  — detects recovery quickly
+ *   STABLE   (everything OK)  → 15 seconds
+ *   DEGRADED (something down) → 5 seconds
  *
- * Uses recursive setTimeout instead of setInterval to prevent check accumulation
- * when ping timeouts (up to 9s total) exceed the poll interval.
+ * Uses recursive setTimeout, when ping timeouts (up to 9s) exceed the poll interval.
  * Never backs off to 0 attempts — recovery is always possible.
  */
 

@@ -89,7 +89,7 @@ class ServerLogTransport extends winston.Transport {
                     timestamp: new Date().toISOString(),
                 }, {
                     headers: { Authorization: `Bearer ${config.agentToken}` },
-                }).catch(() => { }); // fire-and-forget
+                }).catch(() => { });
             } catch (e) {
                 void e;
             }
@@ -156,8 +156,7 @@ const updaterLog = {
     },
 };
 
-// --- Helpers ---
-
+// Helpers
 function getLogDir() {
     return LOG_DIR;
 }

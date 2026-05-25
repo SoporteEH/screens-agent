@@ -185,7 +185,7 @@ const startNormalMode = async (context) => {
                 log.error(`[MEMORY]: Failed to check memory for screen ${screenId}:`, e);
             }
         }
-    }, 60 * 60 * 1000); // every hour
+    }, 60 * 60 * 1000);
 };
 
 const startProvisioningMode = (context) => {

@@ -89,7 +89,6 @@ async function bootstrap() {
         // COMMAND HANDLER INITIALIZATION
         // isOnline is a boolean flag (kept in sync via socket connect/disconnect handlers).
         // Expose a getter for consumers that need a function reference without
-        // overwriting the boolean state.
         context.getIsOnline = () => context.isOnline;
         context.saveCurrentState = stateService.saveCurrentState;
         context.handleShowUrl = (cmd, att) => commandHandlers.handleShowUrl(cmd, att);
@@ -267,12 +266,10 @@ async function bootstrap() {
                     `[NETWORK]: Screen ${screenIdStr} — URL: "${currentUrl}", mode: ${currentMode}, dependent: ${isDependent}, reason: ${reason}`
                 );
 
-                // Case 1: Server down
+                // Case 1 Server down
                 if (reason === 'NO_SERVER') {
                     if (isDependent) {
-                        // Internal URL (playlist/player) + server down
                         // Only act if the screen is currently in live mode
-                        // (avoid reloading the carousel if it's already in carousel)
                         if (currentMode !== 'offline') {
                             log.info(`[NETWORK]: Server down. Scheduling carousel fallback for screen ${screenIdStr} in ${constants.CONSTANTS.FALLBACK_DELAY_MS}ms`);
                             const timer = setTimeout(() => {
@@ -317,7 +314,7 @@ async function bootstrap() {
                     return;
                 }
 
-                // Case 2: No internet
+                // Case 2 No internet
                 if (reason === 'NO_INTERNET') {
                     // Any URL (external or internal) requires internet
                     // Only act if the screen is not already in carousel

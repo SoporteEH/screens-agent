@@ -341,7 +341,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
         win.webContents.removeAllListeners('did-navigate-in-page');
         win.webContents.removeAllListeners('did-navigate');
 
-        // Sportradar/LuckiaTV autologin logic
+        // SportradarTV autologin logic
         const checkIsTargetUrl = (testUrl) => {
             if (!testUrl) return false;
             return (
