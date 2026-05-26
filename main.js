@@ -367,6 +367,21 @@ async function bootstrap() {
                         }
                     });
                 }, 2000);
+
+                // Recreate any auto-refresh timers that may have been lost while offline.
+                // This path bypasses handleShowUrl so timers aren't set up automatically.
+                setTimeout(() => {
+                    const lastState = stateService.loadLastState();
+                    for (const [screenId, screenData] of Object.entries(lastState)) {
+                        if ((screenData.refreshInterval || 0) > 0 && !context.autoRefreshTimers.has(screenId)) {
+                            const win = context.managedWindows.get(screenId);
+                            if (win && !win.isDestroyed()) {
+                                log.info(`[NETWORK]: Recreating missing auto-refresh timer for screen ${screenId} (${screenData.refreshInterval}s)`);
+                                stateService.setupAutoRefresh(screenId, screenData.refreshInterval, context.managedWindows, context.autoRefreshTimers);
+                            }
+                        }
+                    }
+                }, 3500);
             } else {
                 setTimeout(
                     () =>

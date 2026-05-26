@@ -1,7 +1,3 @@
-/**
- * Agent Modes - Normal and Provisioning
- */
-
 const { log } = require('../utils/logConfig');
 const { loadConfig } = require('../utils/configManager');
 const { startTokenRefreshLoop } = require('./auth');
@@ -10,7 +6,7 @@ const { checkForUpdates } = require('./updater');
 const { initializeMonitors } = require('./monitors');
 const { pingServer } = require('./network');
 const { getCachedPlayerFileUrl, hasCachedPlayer, isServerDependentUrl } = require('./playerCache');
-const { net } = require('electron');
+const { net, app } = require('electron');
 
 const startNormalMode = async (context) => {
     const {
@@ -170,12 +166,15 @@ const startNormalMode = async (context) => {
     }, CONSTANTS.GC_INTERVAL_MS);
 
     // Memory monitoring: reload renderer if it exceeds 800MB
-    setInterval(async () => {
+    setInterval(() => {
+        const metrics = app.getAppMetrics();
         for (const [screenId, win] of managedWindows) {
             if (!win || win.isDestroyed()) continue;
             try {
-                const memInfo = await win.webContents.getProcessMemoryInfo();
-                const memMB = memInfo.privateBytes / (1024 * 1024);
+                const pid = win.webContents.getOSProcessId();
+                const metric = metrics.find(m => m.pid === pid);
+                if (!metric) continue;
+                const memMB = metric.memory.privateBytes / (1024 * 1024);
                 log.info(`[MEMORY]: Screen ${screenId}: ${memMB.toFixed(0)}MB`);
                 if (memMB > 800) {
                     log.warn(`[MEMORY]: Screen ${screenId} exceeds 800MB — reloading renderer.`);
