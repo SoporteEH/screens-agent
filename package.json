@@ -139,13 +139,11 @@
   "config": {
     "serverUrl": ""
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "electron",
-      "electron-winstaller"
-    ],
-    "overrides": {
-      "tmp": ">=0.2.6"
-    }
+  "pnpm.onlyBuiltDependencies": [
+    "electron",
+    "electron-winstaller"
+  ],
+  "pnpm.overrides": {
+    "tmp": ">=0.2.6"
   }
 }
