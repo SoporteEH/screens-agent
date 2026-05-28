@@ -149,7 +149,7 @@ The WebSocket connection uses exponential backoff with a circuit breaker to avoi
 **Development:**
 - Windows 10/11
 - Node.js 22+
-- npm 9+
+- pnpm 9+
 - Git
 
 ## Installation
@@ -159,7 +159,7 @@ The WebSocket connection uses exponential backoff with a circuit breaker to avoi
 ```bash
 git clone <repository-url>
 cd screens-agent
-npm install
+pnpm install
 ```
 
 ### Production Installation
@@ -215,7 +215,7 @@ Socket reconnection constants (in `config/constants.js`):
 Start the agent in development mode:
 
 ```bash
-npm start
+pnpm start
 ```
 
 **Expected Behavior:**
@@ -232,7 +232,7 @@ npm start
 Generate the Windows installer:
 
 ```bash
-npm run build:prod
+pnpm build:prod
 ```
 
 **Output:**
@@ -352,7 +352,3 @@ del "%APPDATA%\ScreensWeb\state.json"
 rmdir /s "%APPDATA%\ScreensWeb\content"
 rmdir /s "%APPDATA%\ScreensWeb\playlist-assets"
 ```
-
-## License
-
-Proprietary

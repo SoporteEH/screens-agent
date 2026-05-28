@@ -1,13 +1,6 @@
 /**
  * Config Manager — electron-store wrapper with per-device encryption
- *
  * Each device derives its encryption key from the hardware ID (via node-machine-id).
- * This means that even if the source code is obtained, the config of any specific
- * device cannot be decrypted without also having that machine's hardware ID.
- *
- * Migration: On first launch after updating from an older agent version that used
- * the legacy hardcoded key, the existing config is automatically re-encrypted with
- * the hardware-derived key. No manual intervention required.
  */
 
 const Store = require('electron-store');
@@ -15,10 +8,13 @@ const crypto = require('crypto');
 const { log } = require('./logConfig');
 
 const LEGACY_KEY = 'screensweb-agent-secure-key';
+const SENSITIVE_FIELDS = ['agentToken', 'certPem', 'keyPem'];
+
+let _usingFallbackKey = false;
 
 /**
  * Derives a unique encryption key from the device hardware ID.
- * Returns null if the hardware ID cannot be obtained (e.g. heavily sandboxed VM).
+ * Returns null if the hardware ID cannot be obtained.
  */
 function getHardwareKey() {
     try {
@@ -30,38 +26,29 @@ function getHardwareKey() {
     }
 }
 
-/**
- * Initializes the config store.
- *
- * Decision tree:
- * 1. No hardware ID available → use legacy key (graceful degradation)
- * 2. Hardware key works and store has data → already on new key, done
- * 3. Hardware key returns empty, legacy key has data → migrate (re-encrypt)
- * 4. Neither key has data → new device, use hardware key from scratch
- */
+/** Initializes the config store.*/
 function initStore() {
     const hwKey = getHardwareKey();
 
     if (!hwKey) {
-        log.warn('[CONFIG]: Hardware ID unavailable. Using shared fallback key.');
+        log.error('[CONFIG]: Hardware ID unavailable. Sensitive credentials (agentToken, certPem, keyPem) will NOT be persisted — device requires re-provisioning after each restart.');
+        _usingFallbackKey = true;
         return new Store({ name: 'config', encryptionKey: LEGACY_KEY, clearInvalidConfig: true });
     }
 
-    // Step 1 — try hardware key (non-destructive: clearInvalidConfig: false)
+    // Try hardware key (non-destructive: clearInvalidConfig: false)
     try {
         const hwStore = new Store({ name: 'config', encryptionKey: hwKey, clearInvalidConfig: false });
         const data = hwStore.store;
 
         if (data && Object.keys(data).length > 0) {
-            // Config already encrypted with this device's hardware key — done
             return hwStore;
         }
     } catch (_) {
-        // Decryption failed: config exists but was written with a different key.
-        // Fall through to migration attempt.
+
     }
 
-    // Step 2 — attempt to read config written with the legacy key
+    // Attempt to read config written with the legacy key
     let legacyData = null;
     try {
         const legacyStore = new Store({
@@ -74,10 +61,10 @@ function initStore() {
             legacyData = { ...data };
         }
     } catch (_) {
-        // No readable legacy config — either a fresh device or already wiped
+        
     }
 
-    // Step 3 — create final store with hardware key and migrate data if any
+    // Create final store with hardware key and migrate data if any
     const finalStore = new Store({ name: 'config', encryptionKey: hwKey, clearInvalidConfig: true });
 
     if (legacyData) {
@@ -92,7 +79,13 @@ const store = initStore();
 
 function loadConfig() {
     try {
-        return store.store;
+        const data = store.store;
+        if (_usingFallbackKey) {
+            const safe = { ...data };
+            SENSITIVE_FIELDS.forEach((f) => delete safe[f]);
+            return safe;
+        }
+        return data;
     } catch (error) {
         log.error('[CONFIG]: Error reading:', error);
         return {};
@@ -101,7 +94,13 @@ function loadConfig() {
 
 function saveConfig(config) {
     try {
-        store.set(config);
+        if (_usingFallbackKey) {
+            const safe = { ...config };
+            SENSITIVE_FIELDS.forEach((f) => delete safe[f]);
+            store.set(safe);
+        } else {
+            store.set(config);
+        }
     } catch (error) {
         log.error('[CONFIG]: Error saving:', error);
     }
@@ -118,7 +117,7 @@ function deleteConfig() {
 
 /**
  * Derives a 32-byte AES key from the hardware key string.
- * Returns null if no hardware key is available (falls back to no encryption).
+ * Returns null if no hardware key is available.
  */
 function getAesKey() {
     const hwKey = getHardwareKey();
@@ -128,8 +127,6 @@ function getAesKey() {
 
 /**
  * Encrypts a credentials object using AES-256-GCM with the device hardware key.
- * Returns an opaque string: "<iv_hex>:<authTag_hex>:<ciphertext_hex>"
- * Returns null if encryption is unavailable (no hardware key).
  */
 function encryptCredentials(credentials) {
     if (!credentials) return null;
@@ -150,7 +147,6 @@ function encryptCredentials(credentials) {
 
 /**
  * Decrypts a credentials string produced by encryptCredentials().
- * Returns the original object, or null if decryption fails.
  */
 function decryptCredentials(encrypted) {
     if (!encrypted || typeof encrypted !== 'string') return null;

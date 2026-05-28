@@ -110,25 +110,27 @@ function cleanOrphanedState(hardwareIdToDisplayMap) {
 
 /**
  * Configures an auto-refresh timer for a specific screen.
+ * @param {string} screenIndex
+ * @param {number} intervalSeconds - interval in seconds (e.g. 600 = 10 min)
  */
-function setupAutoRefresh(screenIndex, intervalMinutes, managedWindows, autoRefreshTimers) {
-    const intervalMs = intervalMinutes * 60 * 1000;
+function setupAutoRefresh(screenIndex, intervalSeconds, managedWindows, autoRefreshTimers) {
+    const intervalMs = intervalSeconds * 1000;
+    const intervalMin = Math.round(intervalSeconds / 60);
 
     log.info(
-        `[AUTO-REFRESH]: Setting up auto-refresh every ${intervalMinutes} minutes for screen ${screenIndex}`
+        `[AUTO-REFRESH]: Setting up auto-refresh every ${intervalMin} minutes (${intervalSeconds}s) for screen ${screenIndex}`
     );
 
     const timerId = setInterval(() => {
         const win = managedWindows.get(screenIndex);
         if (win && !win.isDestroyed()) {
             log.info(
-                `[AUTO-REFRESH]: Reloading screen ${screenIndex} (scheduled every ${intervalMinutes}min)`
+                `[AUTO-REFRESH]: Reloading screen ${screenIndex} (every ${intervalMin}min)`
             );
             win.webContents.reload();
         } else {
-            log.info(`[AUTO-REFRESH]: Window ${screenIndex} does not exist, clearing timer`);
-            clearInterval(timerId);
-            autoRefreshTimers.delete(screenIndex);
+            // Window temporarily unavailable (offline mode, transition, etc.) — skip this cycle
+            log.info(`[AUTO-REFRESH]: Window ${screenIndex} not available, skipping reload cycle`);
         }
     }, intervalMs);
 
