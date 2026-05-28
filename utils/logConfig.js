@@ -9,9 +9,22 @@ const winston = require('winston');
 const DailyRotateFile = require('winston-daily-rotate-file');
 const path = require('path');
 const fs = require('fs');
-const { app } = require('electron');
+const os = require('os');
 
-const LOG_DIR = app.getPath('logs');
+// app.getPath('logs') requires the Electron app object to be initialized.
+// Defer resolution to avoid "Cannot read properties of undefined" on early require.
+function resolveLogDir() {
+    try {
+        const { app } = require('electron');
+        if (app && typeof app.getPath === 'function') {
+            return app.getPath('logs');
+        }
+    } catch (_) {}
+    const base = process.env.APPDATA || path.join(os.homedir(), '.config');
+    return path.join(base, 'screensWeb', 'logs');
+}
+
+const LOG_DIR = resolveLogDir();
 
 if (!fs.existsSync(LOG_DIR)) {
     fs.mkdirSync(LOG_DIR, { recursive: true });

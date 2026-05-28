@@ -138,12 +138,5 @@
   },
   "config": {
     "serverUrl": ""
-  },
-  "pnpm.onlyBuiltDependencies": [
-    "electron",
-    "electron-winstaller"
-  ],
-  "pnpm.overrides": {
-    "tmp": ">=0.2.6"
   }
 }
