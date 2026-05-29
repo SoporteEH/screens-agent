@@ -4,3 +4,5 @@ allowBuilds:
 
 overrides:
   tmp: '>=0.2.6'
+
+nodeLinker: hoisted
