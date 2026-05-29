@@ -266,14 +266,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
     const isPlayerMode = !!serverUrl && config.deviceId;
 
     // Bypass player mode for autologin
-    const checkIsAutologinUrl = (testUrl) => {
-        if (!testUrl) return false;
-        return (
-            testUrl.startsWith('https://lcr.sportradar.com') ||
-            testUrl.toLowerCase().includes('luckiatv') ||
-            testUrl.includes('luckia-tv')
-        );
-    };
+    const { isAutologinUrl: checkIsAutologinUrl } = require('../utils/autologinUrl');
 
     if (isPlayerMode && !checkIsAutologinUrl(url)) {
         const playerUrl = `${serverUrl}/player/${config.deviceId}/${screenIndex}`;
@@ -342,14 +335,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
         win.webContents.removeAllListeners('did-navigate');
 
         // SportradarTV autologin logic
-        const checkIsTargetUrl = (testUrl) => {
-            if (!testUrl) return false;
-            return (
-                testUrl.startsWith('https://lcr.sportradar.com') ||
-                testUrl.toLowerCase().includes('luckiatv') ||
-                testUrl.includes('luckia-tv')
-            );
-        };
+        const { isAutologinUrl: checkIsTargetUrl } = require('../utils/autologinUrl');
 
         if (!!credentials) {
             const injectionScript = `

@@ -157,16 +157,12 @@ async function bootstrap() {
                             context.fallbackTimers.forEach(t => clearTimeout(t));
                             context.fallbackTimers.clear();
 
+                            const { isAutologinUrl } = require('./utils/autologinUrl');
                             context.managedWindows.forEach((win, screenId) => {
                                 if (!win || win.isDestroyed()) return;
                                 const screenIdStr = String(screenId);
                                 const screenData = savedState[screenIdStr];
-                                const isAutologinUrl =
-                                    screenData?.url &&
-                                    (screenData.url.startsWith('https://lcr.sportradar.com') ||
-                                        screenData.url.toLowerCase().includes('luckiatv') ||
-                                        screenData.url.includes('luckia-tv'));
-                                if (isAutologinUrl && screenData.credentials) {
+                                if (isAutologinUrl(screenData?.url) && screenData.credentials) {
                                     log.info(
                                         `[SOCKET]: Reconnected. Re-applying autologin for screen ${screenId}: ${screenData.url}`
                                     );

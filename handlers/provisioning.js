@@ -52,14 +52,17 @@ function startProvisioningMode() {
         log.info(`[PROVISIONING]: Attempting to connect to: ${pendingServerUrl}`);
 
         const isHttps = pendingServerUrl.startsWith('https://');
+        const allowInsecureTLS = process.env.ALLOW_INSECURE_PROVISIONING_TLS === '1';
+        const httpsAgent = isHttps && allowInsecureTLS
+            ? new https.Agent({ rejectUnauthorized: false })
+            : undefined;
 
         socket = io(pendingServerUrl, {
             auth: { provisioning: true, nonce },
             reconnection: true,
             reconnectionAttempts: 3,
             timeout: 10000,
-            // first-time enrollment only: device has no CA cert yet to verify the server
-            ...(isHttps ? { agent: new https.Agent({ rejectUnauthorized: false }) } : {}),
+            ...(httpsAgent ? { agent: httpsAgent } : {}),
         });
 
         socket.on('connect', () => {

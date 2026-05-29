@@ -39,11 +39,7 @@ const startNormalMode = async (context) => {
 
         log.info(`[NORMAL]: Server available: ${serverAvailable}`);
 
-        const isAutologinUrl = (url) =>
-            url &&
-            (url.startsWith('https://lcr.sportradar.com') ||
-                url.toLowerCase().includes('luckiatv') ||
-                url.includes('luckia-tv'));
+        const { isAutologinUrl } = require('../utils/autologinUrl');
 
         screens.forEach((screenIndex, i) => {
             const screenData = savedState[String(screenIndex)];

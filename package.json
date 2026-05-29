@@ -1,6 +1,6 @@
 {
   "name": "local-agent",
-  "version": "1.1.48",
+  "version": "1.1.49",
   "private": true,
   "description": "ScreensWeb Agent",
   "main": "main.js",
@@ -8,8 +8,8 @@
     "start": "electron . --js-flags=\"--expose-gc\"",
     "inject:b": "set AGENT_THEME=B&& node scripts/inject-config.js",
     "inject:default": "set AGENT_THEME=default&& node scripts/inject-config.js",
-    "start:b": "pnpm inject:b && pnpm start",
-    "start:default": "pnpm inject:default && pnpm start",
+    "start:b": "npm run inject:b && npm start",
+    "start:default": "npm run inject:default && npm start",
     "build": "electron-builder",
     "build:prod": "node scripts/inject-config.js && electron-builder",
     "format": "prettier --write \"**/*.js\"",
@@ -21,8 +21,7 @@
   "author": "SoporteEH",
   "license": "ISC",
   "engines": {
-    "node": ">=20",
-    "pnpm": ">=9"
+    "node": ">=20"
   },
   "dependencies": {
     "archiver": "^7.0.1",
@@ -34,7 +33,6 @@
     "form-data": "^4.0.5",
     "jwt-decode": "^4.0.0",
     "node-machine-id": "^1.1.12",
-    "process": "^0.11.10",
     "socket.io-client": "^4.8.1",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0"
@@ -53,7 +51,6 @@
     "copyright": "Copyright © 2026 SoporteEH",
     "asar": true,
     "compression": "maximum",
-    "npmRebuild": false,
     "files": [
       "main.js",
       "config/**/*",
@@ -67,26 +64,6 @@
       "identify-preload.js",
       "package.json",
       "!mainOld.js"
-    ],
-    "extraResources": [
-      {
-        "from": "node_modules",
-        "to": "node_modules",
-        "filter": [
-          "**/*",
-          "!**/{CHANGELOG.md,README.md,README,readme.md,readme}",
-          "!**/{test,__tests__,tests,powered-test,example,examples}",
-          "!**/*.d.ts",
-          "!**/.bin",
-          "!.pnpm/**",
-          "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
-          "!**/._*",
-          "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
-          "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
-          "!**/{appveyor.yml,.travis.yml,circle.yml}",
-          "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
-        ]
-      }
     ],
     "executableName": "screens-web-agent",
     "win": {

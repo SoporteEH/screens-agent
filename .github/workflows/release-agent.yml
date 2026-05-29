@@ -24,24 +24,19 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: '22'
-
-      - name: Setup pnpm
-        run: npm install -g pnpm@11
+          cache: 'npm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Inject Configuration
         run: node scripts/inject-config.js
         env:
           SERVER_URL: ${{ secrets.SERVER_URL }}
 
-      - name: Flatten prod dependencies for electron-builder
-        run: node scripts/flatten-prod-deps.js
-
       - name: Build (Windows)
         if: matrix.os == 'windows-latest'
-        run: pnpm exec electron-builder --win --publish never
+        run: npx electron-builder --win --publish never
 
       - name: Smoke test (Windows)
         if: matrix.os == 'windows-latest'
@@ -49,110 +44,41 @@ jobs:
         run: |
           $installer = Get-ChildItem dist -Filter "ScreensWebAgent-Setup-*.exe" | Select-Object -First 1
           if (-not $installer) { Write-Error "Installer not found in dist/"; exit 1 }
-          Write-Host "=== Pre-install state of LOCALAPPDATA\Programs ==="
-          Get-ChildItem "$env:LOCALAPPDATA\Programs" -ErrorAction SilentlyContinue | Format-Table Name
 
           Write-Host "=== Installing $($installer.Name) silently ==="
-          $installLog = "$env:TEMP\nsis-install.log"
           $installProc = Start-Process -FilePath $installer.FullName -ArgumentList "/S","/D=$env:LOCALAPPDATA\Programs\ScreensWebAgent" -Wait -PassThru
           Write-Host "Installer exit code: $($installProc.ExitCode)"
-          Start-Sleep -Seconds 5
+          Start-Sleep -Seconds 3
 
-          Write-Host "=== Post-install state of LOCALAPPDATA\Programs ==="
-          Get-ChildItem "$env:LOCALAPPDATA\Programs" -ErrorAction SilentlyContinue | Format-Table Name
-          Write-Host "=== Post-install state of Program Files ==="
-          Get-ChildItem "$env:ProgramFiles" -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*creens*" } | Format-Table Name
-
-          Write-Host "=== Searching for installed exe ==="
-          $candidates = @(
-            "$env:LOCALAPPDATA\Programs",
-            "$env:ProgramFiles",
-            "${env:ProgramFiles(x86)}"
-          )
           $exe = $null
-          foreach ($base in $candidates) {
+          foreach ($base in @("$env:LOCALAPPDATA\Programs", "$env:ProgramFiles", "${env:ProgramFiles(x86)}")) {
             if (Test-Path $base) {
-              Write-Host "Scanning $base ..."
               $found = Get-ChildItem $base -Recurse -Filter "screens-web-agent.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
               if ($found) { $exe = $found.FullName; break }
             }
           }
-          if (-not $exe) {
-            Write-Host "Trying registry uninstall entries..."
-            $regPaths = @(
-              "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
-              "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
-              "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
-            )
-            foreach ($p in $regPaths) {
-              Get-ItemProperty $p -ErrorAction SilentlyContinue |
-                Where-Object { $_.DisplayName -like "*ScreensWeb*" -or $_.DisplayName -like "*screens-web*" } |
-                ForEach-Object { Write-Host "Registry: $($_.DisplayName) -> $($_.InstallLocation)" }
-            }
-            Write-Error "Could not locate installed exe"
-            exit 1
-          }
-          $installRoot = Split-Path $exe -Parent
-          Write-Host "=== Install root: $installRoot ==="
-          Get-ChildItem $installRoot -ErrorAction SilentlyContinue | Select-Object Name, Length | Format-Table
+          if (-not $exe) { Write-Error "Could not locate installed exe"; exit 1 }
+          Write-Host "=== Installed exe: $exe ==="
 
-          $asar = Join-Path $installRoot "resources\app.asar"
-          if (Test-Path $asar) {
-            Write-Host "=== asar size ==="
-            (Get-Item $asar).Length
-            Write-Host "=== asar top-level node_modules packages ==="
-            $allFiles = npx --yes asar list $asar
-            $allFiles | Select-String "^/node_modules/[^/]+/package\.json$" | Select-Object -First 100
-            Write-Host "=== Total entries in asar: $($allFiles.Count) ==="
-            Write-Host "=== Looking for specific transitive deps ==="
-            foreach ($pkg in @("combined-stream","process","readable-stream","asynckit","mime-types")) {
-              $found = $allFiles | Select-String "/node_modules/$pkg/package.json"
-              if ($found) { Write-Host "  FOUND: $pkg" } else { Write-Host "  MISSING: $pkg" }
-            }
-          } else {
-            Write-Host "asar not found at $asar"
-          }
-
-          Write-Host "=== Launching app with stderr capture ==="
           $stdoutFile = "$env:TEMP\agent-stdout.log"
           $stderrFile = "$env:TEMP\agent-stderr.log"
           $proc = Start-Process -FilePath $exe -ArgumentList "--enable-logging" -PassThru -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
           Start-Sleep -Seconds 10
 
-          $alive = -not $proc.HasExited
-          Write-Host "=== App alive after 10s: $alive ==="
-
           Write-Host "=== STDOUT ==="
-          if (Test-Path $stdoutFile) { Get-Content $stdoutFile | Select-Object -First 200 }
+          if (Test-Path $stdoutFile) { Get-Content $stdoutFile | Select-Object -First 100 }
           Write-Host "=== STDERR ==="
-          if (Test-Path $stderrFile) { Get-Content $stderrFile | Select-Object -First 200 }
-
-          $logDir = "$env:APPDATA\screensWeb\logs"
-          if (Test-Path $logDir) {
-            Write-Host "=== App log dir contents ==="
-            Get-ChildItem $logDir | Format-Table
-            Get-ChildItem $logDir -Filter "*.log" | ForEach-Object {
-              Write-Host "--- $($_.Name) ---"
-              Get-Content $_.FullName | Select-Object -Last 100
-            }
-          }
+          if (Test-Path $stderrFile) { Get-Content $stderrFile | Select-Object -First 100 }
 
           $stdoutContent = if (Test-Path $stdoutFile) { Get-Content $stdoutFile -Raw } else { "" }
           $bootMarker = $stdoutContent -match "\[INIT\]: ScreensWeb Agent starting"
           $fatalError = $stdoutContent -match "FATAL BOOTSTRAP ERROR|Cannot find module"
 
-          if ($fatalError) {
-            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-            Write-Error "App crashed on startup with FATAL error — release blocked"
-            exit 1
-          }
-          if (-not $bootMarker) {
-            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-            Write-Error "App did not reach [INIT] marker within 10s — release blocked"
-            exit 1
-          }
-          Write-Host "Smoke test passed — boot marker found, no fatal errors"
           Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+
+          if ($fatalError) { Write-Error "FATAL error during boot — release blocked"; exit 1 }
+          if (-not $bootMarker) { Write-Error "App did not reach [INIT] marker — release blocked"; exit 1 }
+          Write-Host "Smoke test passed"
 
       - name: Publish (Windows)
         if: matrix.os == 'windows-latest'
@@ -174,10 +100,7 @@ jobs:
           foreach ($p in $patterns) {
             $artifacts += Get-ChildItem -Path dist -Filter $p -File -ErrorAction SilentlyContinue
           }
-          if ($artifacts.Count -eq 0) {
-            Write-Error "No artifacts found to upload"
-            exit 1
-          }
+          if ($artifacts.Count -eq 0) { Write-Error "No artifacts found to upload"; exit 1 }
           Write-Host "=== Artifacts to upload ==="
           $artifacts | ForEach-Object { Write-Host " - $($_.Name) ($([math]::Round($_.Length / 1MB, 2)) MB)" }
           gh release upload $TAG ($artifacts | Select-Object -ExpandProperty FullName) --clobber
@@ -200,7 +123,7 @@ jobs:
 
       - name: Build dir (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: pnpm exec electron-builder --linux --dir
+        run: npx electron-builder --linux --dir
 
       - name: Smoke test (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -210,20 +133,23 @@ jobs:
           chmod +x "$exe"
           Xvfb :99 -screen 0 1024x768x24 &
           XVFB_PID=$!
-          DISPLAY=:99 "$exe" --no-sandbox &
+          DISPLAY=:99 "$exe" --no-sandbox > /tmp/agent-stdout.log 2>&1 &
           APP_PID=$!
-          sleep 8
-          if kill -0 $APP_PID 2>/dev/null; then
-            echo "Smoke test passed"
-            kill $APP_PID && kill $XVFB_PID
-          else
-            kill $XVFB_PID 2>/dev/null
-            echo "App crashed on startup — release blocked"
-            exit 1
+          sleep 10
+          echo "=== STDOUT ==="
+          head -100 /tmp/agent-stdout.log || true
+          kill $APP_PID 2>/dev/null
+          kill $XVFB_PID 2>/dev/null
+          if grep -q "FATAL BOOTSTRAP ERROR\|Cannot find module" /tmp/agent-stdout.log; then
+            echo "FATAL error during boot — release blocked"; exit 1
           fi
+          if ! grep -q "\[INIT\]: ScreensWeb Agent starting" /tmp/agent-stdout.log; then
+            echo "App did not reach [INIT] marker — release blocked"; exit 1
+          fi
+          echo "Smoke test passed"
 
       - name: Build and Release (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: pnpm exec electron-builder --linux deb AppImage --arm64 --armv7l --x64 --publish always
+        run: npx electron-builder --linux deb AppImage --arm64 --armv7l --x64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
