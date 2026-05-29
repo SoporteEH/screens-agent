@@ -35,11 +35,59 @@ jobs:
         env:
           SERVER_URL: ${{ secrets.SERVER_URL }}
 
+      - name: Build dir (Windows)
+        if: matrix.os == 'windows-latest'
+        run: pnpm exec electron-builder --win --dir
+
+      - name: Smoke test (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $exe = "dist\win-unpacked\screens-web-agent.exe"
+          if (-not (Test-Path $exe)) { Write-Error "Binary not found: $exe"; exit 1 }
+          $proc = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 8
+          if (Get-Process -Id $proc.Id -ErrorAction SilentlyContinue) {
+            Write-Host "Smoke test passed"
+            Stop-Process -Id $proc.Id -Force
+          } else {
+            Write-Error "App crashed on startup — release blocked"
+            exit 1
+          }
+
       - name: Build and Release (Windows)
         if: matrix.os == 'windows-latest'
         run: pnpm exec electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Xvfb (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get install -y xvfb
+
+      - name: Build dir (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: pnpm exec electron-builder --linux --dir
+
+      - name: Smoke test (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          exe="dist/linux-unpacked/screens-web-agent"
+          if [ ! -f "$exe" ]; then echo "Binary not found: $exe"; exit 1; fi
+          chmod +x "$exe"
+          Xvfb :99 -screen 0 1024x768x24 &
+          XVFB_PID=$!
+          DISPLAY=:99 "$exe" --no-sandbox &
+          APP_PID=$!
+          sleep 8
+          if kill -0 $APP_PID 2>/dev/null; then
+            echo "Smoke test passed"
+            kill $APP_PID && kill $XVFB_PID
+          else
+            kill $XVFB_PID 2>/dev/null
+            echo "App crashed on startup — release blocked"
+            exit 1
+          fi
 
       - name: Build and Release (Linux)
         if: matrix.os == 'ubuntu-latest'
