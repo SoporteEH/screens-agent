@@ -46,14 +46,56 @@ jobs:
         run: |
           $installer = Get-ChildItem dist -Filter "ScreensWebAgent-Setup-*.exe" | Select-Object -First 1
           if (-not $installer) { Write-Error "Installer not found in dist/"; exit 1 }
-          Write-Host "Installing $($installer.Name) silently..."
+          Write-Host "=== Installing $($installer.Name) silently ==="
           Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait
-          Start-Sleep -Seconds 10
-          if (Get-Process "screens-web-agent" -ErrorAction SilentlyContinue) {
-            Write-Host "Smoke test passed — app is running after install"
-            Stop-Process -Name "screens-web-agent" -Force
+
+          $installRoot = "$env:LOCALAPPDATA\Programs\ScreensWeb Agent"
+          if (-not (Test-Path $installRoot)) { $installRoot = "$env:LOCALAPPDATA\Programs\screens-web-agent" }
+          Write-Host "=== Install root: $installRoot ==="
+          Get-ChildItem $installRoot -ErrorAction SilentlyContinue | Select-Object Name, Length | Format-Table
+
+          $asar = Join-Path $installRoot "resources\app.asar"
+          if (Test-Path $asar) {
+            Write-Host "=== Checking asar for process/ package ==="
+            npx --yes asar list $asar | Select-String "node_modules/process" | Select-Object -First 20
+            Write-Host "=== Checking asar for readable-stream ==="
+            npx --yes asar list $asar | Select-String "readable-stream/package.json"
           } else {
-            Write-Error "App crashed on startup after install — release blocked"
+            Write-Host "asar not found at $asar"
+          }
+
+          $exe = Join-Path $installRoot "screens-web-agent.exe"
+          if (-not (Test-Path $exe)) { Write-Error "exe not found at $exe"; exit 1 }
+
+          Write-Host "=== Launching app with stderr capture ==="
+          $stdoutFile = "$env:TEMP\agent-stdout.log"
+          $stderrFile = "$env:TEMP\agent-stderr.log"
+          $proc = Start-Process -FilePath $exe -ArgumentList "--enable-logging" -PassThru -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
+          Start-Sleep -Seconds 10
+
+          $alive = -not $proc.HasExited
+          Write-Host "=== App alive after 10s: $alive ==="
+
+          Write-Host "=== STDOUT ==="
+          if (Test-Path $stdoutFile) { Get-Content $stdoutFile | Select-Object -First 200 }
+          Write-Host "=== STDERR ==="
+          if (Test-Path $stderrFile) { Get-Content $stderrFile | Select-Object -First 200 }
+
+          $logDir = "$env:APPDATA\screensWeb\logs"
+          if (Test-Path $logDir) {
+            Write-Host "=== App log dir contents ==="
+            Get-ChildItem $logDir | Format-Table
+            Get-ChildItem $logDir -Filter "*.log" | ForEach-Object {
+              Write-Host "--- $($_.Name) ---"
+              Get-Content $_.FullName | Select-Object -Last 100
+            }
+          }
+
+          if ($alive) {
+            Write-Host "Smoke test passed"
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          } else {
+            Write-Error "App crashed on startup after install — release blocked (exit code: $($proc.ExitCode))"
             exit 1
           }
 
