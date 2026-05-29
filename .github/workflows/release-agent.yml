@@ -38,37 +38,22 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: npx electron-builder --win nsis --publish never
 
-      - name: Smoke test (Windows)
+      - name: Smoke test unpacked binary (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $installer = Get-ChildItem dist -Filter "ScreensWebAgent-Setup-*.exe" | Select-Object -First 1
-          if (-not $installer) { Write-Error "Installer not found in dist/"; exit 1 }
-
-          Write-Host "=== Installing $($installer.Name) silently ==="
-          $installProc = Start-Process -FilePath $installer.FullName -ArgumentList "/S","/D=$env:LOCALAPPDATA\Programs\ScreensWebAgent" -Wait -PassThru
-          Write-Host "Installer exit code: $($installProc.ExitCode)"
-          Start-Sleep -Seconds 3
-
-          $exe = $null
-          foreach ($base in @("$env:LOCALAPPDATA\Programs", "$env:ProgramFiles", "${env:ProgramFiles(x86)}")) {
-            if (Test-Path $base) {
-              $found = Get-ChildItem $base -Recurse -Filter "screens-web-agent.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-              if ($found) { $exe = $found.FullName; break }
-            }
-          }
-          if (-not $exe) { Write-Error "Could not locate installed exe"; exit 1 }
-          Write-Host "=== Installed exe: $exe ==="
-
-          $stdoutFile = "$env:TEMP\agent-stdout.log"
-          $stderrFile = "$env:TEMP\agent-stderr.log"
+          $exe = "dist/win-unpacked/screens-web-agent.exe"
+          if (-not (Test-Path $exe)) { Write-Error "Unpacked exe not found: $exe"; exit 1 }
+          Write-Host "=== Testing unpacked binary BEFORE NSIS install ==="
+          $stdoutFile = "$env:TEMP\unpacked-stdout.log"
+          $stderrFile = "$env:TEMP\unpacked-stderr.log"
           $proc = Start-Process -FilePath $exe -ArgumentList "--enable-logging" -PassThru -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
           Start-Sleep -Seconds 10
 
           Write-Host "=== STDOUT ==="
-          if (Test-Path $stdoutFile) { Get-Content $stdoutFile | Select-Object -First 100 }
+          if (Test-Path $stdoutFile) { Get-Content $stdoutFile | Select-Object -First 80 }
           Write-Host "=== STDERR ==="
-          if (Test-Path $stderrFile) { Get-Content $stderrFile | Select-Object -First 100 }
+          if (Test-Path $stderrFile) { Get-Content $stderrFile | Select-Object -First 80 }
 
           $stdoutContent = if (Test-Path $stdoutFile) { Get-Content $stdoutFile -Raw } else { "" }
           $bootMarker = $stdoutContent -match "\[INIT\]: ScreensWeb Agent starting"
@@ -76,9 +61,48 @@ jobs:
 
           Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
 
-          if ($fatalError) { Write-Error "FATAL error during boot — release blocked"; exit 1 }
-          if (-not $bootMarker) { Write-Error "App did not reach [INIT] marker — release blocked"; exit 1 }
-          Write-Host "Smoke test passed"
+          if ($fatalError) { Write-Error "Unpacked binary has FATAL error — release blocked"; exit 1 }
+          if (-not $bootMarker) { Write-Error "Unpacked binary did not reach [INIT] marker — release blocked"; exit 1 }
+          Write-Host "Unpacked binary boots OK"
+
+      - name: Smoke test installed app (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem dist -Filter "ScreensWebAgent-Setup-*.exe" | Select-Object -First 1
+          if (-not $installer) { Write-Error "Installer not found"; exit 1 }
+          $installDir = "$env:LOCALAPPDATA\Programs\ScreensWebAgent"
+          Write-Host "=== Installing $($installer.Name) to $installDir ==="
+          $installProc = Start-Process -FilePath $installer.FullName -ArgumentList "/S","/D=$installDir" -Wait -PassThru
+          Write-Host "Installer exit code: $($installProc.ExitCode)"
+
+          if ($installProc.ExitCode -ne 0) {
+            Write-Host "=== Install dir contents (partial) ==="
+            if (Test-Path $installDir) { Get-ChildItem $installDir -ErrorAction SilentlyContinue | Format-Table Name, Length }
+            Write-Error "Installer failed with exit code $($installProc.ExitCode)"
+            exit 1
+          }
+
+          $exe = "$installDir\screens-web-agent.exe"
+          if (-not (Test-Path $exe)) { Write-Error "Installed exe not found at $exe"; exit 1 }
+
+          $stdoutFile = "$env:TEMP\installed-stdout.log"
+          $stderrFile = "$env:TEMP\installed-stderr.log"
+          $proc = Start-Process -FilePath $exe -ArgumentList "--enable-logging" -PassThru -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
+          Start-Sleep -Seconds 10
+
+          Write-Host "=== STDOUT ==="
+          if (Test-Path $stdoutFile) { Get-Content $stdoutFile | Select-Object -First 80 }
+
+          $stdoutContent = if (Test-Path $stdoutFile) { Get-Content $stdoutFile -Raw } else { "" }
+          $bootMarker = $stdoutContent -match "\[INIT\]: ScreensWeb Agent starting"
+          $fatalError = $stdoutContent -match "FATAL BOOTSTRAP ERROR|Cannot find module"
+
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+
+          if ($fatalError) { Write-Error "Installed app has FATAL error — release blocked"; exit 1 }
+          if (-not $bootMarker) { Write-Error "Installed app did not reach [INIT] marker — release blocked"; exit 1 }
+          Write-Host "Installed app boots OK"
 
       - name: Build all and publish (Windows)
         if: matrix.os == 'windows-latest'
