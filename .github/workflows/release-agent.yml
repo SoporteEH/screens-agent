@@ -8,6 +8,7 @@ on:
 jobs:
   build-and-release:
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
@@ -68,6 +69,16 @@ jobs:
           gh release upload $TAG (Get-ChildItem dist -Include "*.exe","*.yml","*.blockmap" -Recurse | Where-Object { -not $_.PSIsContainer } | Select-Object -ExpandProperty FullName) --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Free disk space (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h
 
       - name: Install Xvfb (Linux)
         if: matrix.os == 'ubuntu-latest'
