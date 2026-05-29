@@ -8,3 +8,4 @@ overrides:
 nodeLinker: hoisted
 publicHoistPattern:
   - '*'
+verifyDepsBeforeRun: false

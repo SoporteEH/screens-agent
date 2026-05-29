@@ -53,6 +53,7 @@
     "copyright": "Copyright © 2026 SoporteEH",
     "asar": true,
     "compression": "maximum",
+    "npmRebuild": false,
     "files": [
       "main.js",
       "config/**/*",
