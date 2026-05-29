@@ -38,6 +38,21 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: npx electron-builder --win --publish never
 
+      - name: Inspect build artifacts (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Write-Host "=== dist/ contents ==="
+          Get-ChildItem -Path dist -File | Sort-Object Length -Descending | Select-Object Name, @{N='MB';E={[math]::Round($_.Length/1MB,2)}} | Format-Table
+          Write-Host "=== win-unpacked/ summary ==="
+          if (Test-Path dist/win-unpacked) {
+            Get-ChildItem dist/win-unpacked -File | Sort-Object Length -Descending | Select-Object -First 10 Name, @{N='MB';E={[math]::Round($_.Length/1MB,2)}} | Format-Table
+            $asar = "dist/win-unpacked/resources/app.asar"
+            if (Test-Path $asar) {
+              Write-Host "asar size: $([math]::Round((Get-Item $asar).Length/1MB,2)) MB"
+            }
+          }
+
       - name: Smoke test (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
