@@ -149,13 +149,22 @@ jobs:
             }
           }
 
-          if ($alive) {
-            Write-Host "Smoke test passed"
+          $stdoutContent = if (Test-Path $stdoutFile) { Get-Content $stdoutFile -Raw } else { "" }
+          $bootMarker = $stdoutContent -match "\[INIT\]: ScreensWeb Agent starting"
+          $fatalError = $stdoutContent -match "FATAL BOOTSTRAP ERROR|Cannot find module"
+
+          if ($fatalError) {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-          } else {
-            Write-Error "App crashed on startup after install — release blocked (exit code: $($proc.ExitCode))"
+            Write-Error "App crashed on startup with FATAL error — release blocked"
             exit 1
           }
+          if (-not $bootMarker) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            Write-Error "App did not reach [INIT] marker within 10s — release blocked"
+            exit 1
+          }
+          Write-Host "Smoke test passed — boot marker found, no fatal errors"
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
 
       - name: Publish (Windows)
         if: matrix.os == 'windows-latest'
