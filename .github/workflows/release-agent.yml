@@ -31,6 +31,21 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify node_modules structure
+        shell: bash
+        run: |
+          echo "=== pnpm config ==="
+          pnpm config get nodeLinker || true
+          pnpm config get node-linker || true
+          echo "=== Top-level packages in node_modules ==="
+          ls node_modules | head -30
+          echo "=== Checking presence of transitive deps ==="
+          for pkg in combined-stream asynckit mime-types process readable-stream; do
+            if [ -d "node_modules/$pkg" ]; then echo "FOUND: $pkg"; else echo "MISSING: $pkg"; fi
+          done
+          echo "=== .pnpm directory contents ==="
+          ls node_modules/.pnpm 2>/dev/null | head -5 || echo "no .pnpm"
+
       - name: Inject Configuration
         run: node scripts/inject-config.js
         env:

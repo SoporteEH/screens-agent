@@ -1,4 +1,12 @@
-const { app, BrowserWindow, screen, net, ipcMain } = require('electron');
+const { app } = require('electron');
+const Module = require('module');
+const nodePath = require('path');
+const extraNodeModules = nodePath.join(process.resourcesPath, 'node_modules');
+if (require('fs').existsSync(extraNodeModules) && !Module.globalPaths.includes(extraNodeModules)) {
+    Module.globalPaths.push(extraNodeModules);
+}
+
+const { BrowserWindow, screen, net, ipcMain } = require('electron');
 const { log } = require('./utils/logConfig');
 const path = require('path');
 const fs = require('fs');

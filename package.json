@@ -67,6 +67,26 @@
       "package.json",
       "!mainOld.js"
     ],
+    "extraResources": [
+      {
+        "from": "node_modules",
+        "to": "node_modules",
+        "filter": [
+          "**/*",
+          "!**/{CHANGELOG.md,README.md,README,readme.md,readme}",
+          "!**/{test,__tests__,tests,powered-test,example,examples}",
+          "!**/*.d.ts",
+          "!**/.bin",
+          "!.pnpm/**",
+          "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+          "!**/._*",
+          "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+          "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+          "!**/{appveyor.yml,.travis.yml,circle.yml}",
+          "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+        ]
+      }
+    ],
     "executableName": "screens-web-agent",
     "win": {
       "target": [
