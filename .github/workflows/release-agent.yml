@@ -35,29 +35,37 @@ jobs:
         env:
           SERVER_URL: ${{ secrets.SERVER_URL }}
 
-      - name: Build dir (Windows)
+      - name: Build (Windows)
         if: matrix.os == 'windows-latest'
-        run: pnpm exec electron-builder --win --dir
+        run: pnpm exec electron-builder --win --publish never
 
       - name: Smoke test (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $exe = "dist\win-unpacked\screens-web-agent.exe"
-          if (-not (Test-Path $exe)) { Write-Error "Binary not found: $exe"; exit 1 }
-          $proc = Start-Process -FilePath $exe -PassThru
-          Start-Sleep -Seconds 8
-          if (Get-Process -Id $proc.Id -ErrorAction SilentlyContinue) {
-            Write-Host "Smoke test passed"
-            Stop-Process -Id $proc.Id -Force
+          $installer = Get-ChildItem dist -Filter "ScreensWebAgent-Setup-*.exe" | Select-Object -First 1
+          if (-not $installer) { Write-Error "Installer not found in dist/"; exit 1 }
+          Write-Host "Installing $($installer.Name) silently..."
+          Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait
+          Start-Sleep -Seconds 10
+          if (Get-Process "screens-web-agent" -ErrorAction SilentlyContinue) {
+            Write-Host "Smoke test passed — app is running after install"
+            Stop-Process -Name "screens-web-agent" -Force
           } else {
-            Write-Error "App crashed on startup — release blocked"
+            Write-Error "App crashed on startup after install — release blocked"
             exit 1
           }
 
-      - name: Build and Release (Windows)
+      - name: Publish (Windows)
         if: matrix.os == 'windows-latest'
-        run: pnpm exec electron-builder --win --publish always
+        shell: pwsh
+        run: |
+          $VERSION = (Get-Content package.json | ConvertFrom-Json).version
+          $TAG = "v$VERSION"
+          Get-ChildItem dist -Include "*.exe","*.yml","*.blockmap" -Recurse |
+            Where-Object { -not $_.PSIsContainer } |
+            ForEach-Object { Write-Host "Uploading $($_.Name)" }
+          gh release upload $TAG (Get-ChildItem dist -Include "*.exe","*.yml","*.blockmap" -Recurse | Where-Object { -not $_.PSIsContainer } | Select-Object -ExpandProperty FullName) --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
