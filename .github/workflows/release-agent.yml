@@ -95,10 +95,17 @@ jobs:
 
           $asar = Join-Path $installRoot "resources\app.asar"
           if (Test-Path $asar) {
-            Write-Host "=== Checking asar for process/ package ==="
-            npx --yes asar list $asar | Select-String "node_modules/process" | Select-Object -First 20
-            Write-Host "=== Checking asar for readable-stream ==="
-            npx --yes asar list $asar | Select-String "readable-stream/package.json"
+            Write-Host "=== asar size ==="
+            (Get-Item $asar).Length
+            Write-Host "=== asar top-level node_modules packages ==="
+            $allFiles = npx --yes asar list $asar
+            $allFiles | Select-String "^/node_modules/[^/]+/package\.json$" | Select-Object -First 100
+            Write-Host "=== Total entries in asar: $($allFiles.Count) ==="
+            Write-Host "=== Looking for specific transitive deps ==="
+            foreach ($pkg in @("combined-stream","process","readable-stream","asynckit","mime-types")) {
+              $found = $allFiles | Select-String "/node_modules/$pkg/package.json"
+              if ($found) { Write-Host "  FOUND: $pkg" } else { Write-Host "  MISSING: $pkg" }
+            }
           } else {
             Write-Host "asar not found at $asar"
           }
