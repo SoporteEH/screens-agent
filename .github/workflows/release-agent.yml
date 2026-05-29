@@ -34,38 +34,9 @@ jobs:
         env:
           SERVER_URL: ${{ secrets.SERVER_URL }}
 
-      - name: Build NSIS installer (Windows)
+      - name: Build NSIS for smoke test (Windows)
         if: matrix.os == 'windows-latest'
         run: npx electron-builder --win nsis --publish never
-
-      - name: Build NSIS-Web installer (Windows)
-        if: matrix.os == 'windows-latest'
-        run: npx electron-builder --win nsis-web --publish never
-
-      - name: Inspect build artifacts (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          Write-Host "=== dist/ contents ==="
-          Get-ChildItem -Path dist -File | Sort-Object Length -Descending | Select-Object Name, @{N='MB';E={[math]::Round($_.Length/1MB,2)}} | Format-Table
-
-          $expected = @(
-            "ScreensWebAgent-Setup-*.exe",
-            "ScreensWebAgent-installer.exe",
-            "local-agent-*.nsis.7z",
-            "latest.yml"
-          )
-          $missing = @()
-          foreach ($p in $expected) {
-            if (-not (Get-ChildItem -Path dist -Filter $p -File -ErrorAction SilentlyContinue)) {
-              $missing += $p
-            }
-          }
-          if ($missing.Count -gt 0) {
-            Write-Error "Missing expected artifacts: $($missing -join ', ')"
-            exit 1
-          }
-          Write-Host "All expected artifacts present"
 
       - name: Smoke test (Windows)
         if: matrix.os == 'windows-latest'
@@ -109,32 +80,36 @@ jobs:
           if (-not $bootMarker) { Write-Error "App did not reach [INIT] marker — release blocked"; exit 1 }
           Write-Host "Smoke test passed"
 
-      - name: Publish (Windows)
+      - name: Build all and publish (Windows)
+        if: matrix.os == 'windows-latest'
+        run: npx electron-builder --win nsis nsis-web --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify Windows artifacts published
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $VERSION = (Get-Content package.json | ConvertFrom-Json).version
-          $TAG = "v$VERSION"
-          $patterns = @(
+          Write-Host "=== Final dist/ contents ==="
+          Get-ChildItem -Path dist -File | Sort-Object Length -Descending | Select-Object Name, @{N='MB';E={[math]::Round($_.Length/1MB,2)}} | Format-Table
+
+          $expected = @(
             "ScreensWebAgent-Setup-*.exe",
-            "ScreensWebAgent-Setup-*.exe.blockmap",
             "ScreensWebAgent-installer.exe",
             "local-agent-*.nsis.7z",
-            "local-agent-*.nsis.7z.blockmap",
             "latest.yml"
           )
-          Write-Host "=== Contents of dist/ ==="
-          Get-ChildItem -Path dist -File | Format-Table Name, Length
-          $artifacts = @()
-          foreach ($p in $patterns) {
-            $artifacts += Get-ChildItem -Path dist -Filter $p -File -ErrorAction SilentlyContinue
+          $missing = @()
+          foreach ($p in $expected) {
+            if (-not (Get-ChildItem -Path dist -Filter $p -File -ErrorAction SilentlyContinue)) {
+              $missing += $p
+            }
           }
-          if ($artifacts.Count -eq 0) { Write-Error "No artifacts found to upload"; exit 1 }
-          Write-Host "=== Artifacts to upload ==="
-          $artifacts | ForEach-Object { Write-Host " - $($_.Name) ($([math]::Round($_.Length / 1MB, 2)) MB)" }
-          gh release upload $TAG ($artifacts | Select-Object -ExpandProperty FullName) --clobber
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          if ($missing.Count -gt 0) {
+            Write-Error "Missing expected artifacts: $($missing -join ', ')"
+            exit 1
+          }
+          Write-Host "All expected artifacts present"
 
       - name: Free disk space (Linux)
         if: matrix.os == 'ubuntu-latest'
