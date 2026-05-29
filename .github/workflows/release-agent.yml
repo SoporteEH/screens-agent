@@ -46,8 +46,19 @@ jobs:
         run: |
           $installer = Get-ChildItem dist -Filter "ScreensWebAgent-Setup-*.exe" | Select-Object -First 1
           if (-not $installer) { Write-Error "Installer not found in dist/"; exit 1 }
+          Write-Host "=== Pre-install state of LOCALAPPDATA\Programs ==="
+          Get-ChildItem "$env:LOCALAPPDATA\Programs" -ErrorAction SilentlyContinue | Format-Table Name
+
           Write-Host "=== Installing $($installer.Name) silently ==="
-          Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait
+          $installLog = "$env:TEMP\nsis-install.log"
+          $installProc = Start-Process -FilePath $installer.FullName -ArgumentList "/S","/D=$env:LOCALAPPDATA\Programs\ScreensWebAgent" -Wait -PassThru
+          Write-Host "Installer exit code: $($installProc.ExitCode)"
+          Start-Sleep -Seconds 5
+
+          Write-Host "=== Post-install state of LOCALAPPDATA\Programs ==="
+          Get-ChildItem "$env:LOCALAPPDATA\Programs" -ErrorAction SilentlyContinue | Format-Table Name
+          Write-Host "=== Post-install state of Program Files ==="
+          Get-ChildItem "$env:ProgramFiles" -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*creens*" } | Format-Table Name
 
           Write-Host "=== Searching for installed exe ==="
           $candidates = @(
