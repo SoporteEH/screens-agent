@@ -49,8 +49,36 @@ jobs:
           Write-Host "=== Installing $($installer.Name) silently ==="
           Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait
 
-          $installRoot = "$env:LOCALAPPDATA\Programs\ScreensWeb Agent"
-          if (-not (Test-Path $installRoot)) { $installRoot = "$env:LOCALAPPDATA\Programs\screens-web-agent" }
+          Write-Host "=== Searching for installed exe ==="
+          $candidates = @(
+            "$env:LOCALAPPDATA\Programs",
+            "$env:ProgramFiles",
+            "${env:ProgramFiles(x86)}"
+          )
+          $exe = $null
+          foreach ($base in $candidates) {
+            if (Test-Path $base) {
+              Write-Host "Scanning $base ..."
+              $found = Get-ChildItem $base -Recurse -Filter "screens-web-agent.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($found) { $exe = $found.FullName; break }
+            }
+          }
+          if (-not $exe) {
+            Write-Host "Trying registry uninstall entries..."
+            $regPaths = @(
+              "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+              "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
+              "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
+            )
+            foreach ($p in $regPaths) {
+              Get-ItemProperty $p -ErrorAction SilentlyContinue |
+                Where-Object { $_.DisplayName -like "*ScreensWeb*" -or $_.DisplayName -like "*screens-web*" } |
+                ForEach-Object { Write-Host "Registry: $($_.DisplayName) -> $($_.InstallLocation)" }
+            }
+            Write-Error "Could not locate installed exe"
+            exit 1
+          }
+          $installRoot = Split-Path $exe -Parent
           Write-Host "=== Install root: $installRoot ==="
           Get-ChildItem $installRoot -ErrorAction SilentlyContinue | Select-Object Name, Length | Format-Table
 
@@ -63,9 +91,6 @@ jobs:
           } else {
             Write-Host "asar not found at $asar"
           }
-
-          $exe = Join-Path $installRoot "screens-web-agent.exe"
-          if (-not (Test-Path $exe)) { Write-Error "exe not found at $exe"; exit 1 }
 
           Write-Host "=== Launching app with stderr capture ==="
           $stdoutFile = "$env:TEMP\agent-stdout.log"
