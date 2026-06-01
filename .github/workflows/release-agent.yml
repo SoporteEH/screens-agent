@@ -104,9 +104,16 @@ jobs:
           if (-not $bootMarker) { Write-Error "Installed app did not reach [INIT] marker — release blocked"; exit 1 }
           Write-Host "Installed app boots OK"
 
+      - name: Clean dist before publish build (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          if (Test-Path dist) { Remove-Item -Recurse -Force dist }
+          Write-Host "dist/ cleaned"
+
       - name: Build all and publish (Windows)
         if: matrix.os == 'windows-latest'
-        run: npx electron-builder --win nsis nsis-web --publish always
+        run: npx electron-builder --win=nsis --win=nsis-web --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -114,26 +121,34 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
+          $VERSION = (Get-Content package.json | ConvertFrom-Json).version
+          $TAG = "v$VERSION"
           Write-Host "=== Final dist/ contents ==="
           Get-ChildItem -Path dist -File | Sort-Object Length -Descending | Select-Object Name, @{N='MB';E={[math]::Round($_.Length/1MB,2)}} | Format-Table
 
+          Write-Host "=== GitHub Release $TAG assets ==="
+          $releaseAssets = gh release view $TAG --json assets --jq '.assets[].name'
+          $releaseAssets | ForEach-Object { Write-Host " - $_" }
+
           $expected = @(
-            "ScreensWebAgent-Setup-*.exe",
+            "ScreensWebAgent-Setup-",
             "ScreensWebAgent-installer.exe",
-            "local-agent-*.nsis.7z",
+            "local-agent-",
             "latest.yml"
           )
           $missing = @()
           foreach ($p in $expected) {
-            if (-not (Get-ChildItem -Path dist -Filter $p -File -ErrorAction SilentlyContinue)) {
+            if (-not ($releaseAssets -match [regex]::Escape($p))) {
               $missing += $p
             }
           }
           if ($missing.Count -gt 0) {
-            Write-Error "Missing expected artifacts: $($missing -join ', ')"
+            Write-Error "Missing expected artifacts on release: $($missing -join ', ')"
             exit 1
           }
-          Write-Host "All expected artifacts present"
+          Write-Host "All expected artifacts present on release"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Free disk space (Linux)
         if: matrix.os == 'ubuntu-latest'
