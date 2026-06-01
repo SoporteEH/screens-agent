@@ -89,7 +89,7 @@
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "runAfterFinish": false,
+      "runAfterFinish": true,
       "differentialPackage": true,
       "deleteAppDataOnUninstall": true,
       "include": "installer-script.nsh"
