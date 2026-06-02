@@ -9,6 +9,31 @@ const { app, BrowserWindow } = require('electron');
 let isCheckingForUpdate = false;
 let checksumRetries = 0;
 
+/**
+ * Reads the device's update channel from config. Defaults to 'latest' (stable)
+ * on any error so a config problem can never silently move a device to beta.
+ */
+function getChannel() {
+    try {
+        const { loadConfig } = require('../utils/configManager');
+        return loadConfig().updateChannel === 'beta' ? 'beta' : 'latest';
+    } catch (_) {
+        return 'latest';
+    }
+}
+
+/**
+ * Points electron-updater at the right channel file (latest.yml vs beta.yml).
+ * Beta devices opt into prereleases; stable devices never see them.
+ */
+function applyChannel() {
+    const channel = getChannel();
+    autoUpdater.channel = channel;
+    autoUpdater.allowPrerelease = channel === 'beta';
+    log.info(`[UPDATER]: Update channel = ${channel}`);
+    return channel;
+}
+
 function configureUpdater() {
     autoUpdater.logger = {
         info: (msg) => {
@@ -21,7 +46,7 @@ function configureUpdater() {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowDowngrade = true;
-    autoUpdater.allowPrerelease = false;
+    applyChannel();
 
     if (!app.isPackaged) {
         autoUpdater.forceDevUpdateConfig = true;
@@ -98,6 +123,7 @@ async function checkForUpdates() {
 
     autoUpdater.disableWebInstaller = false;
     autoUpdater.allowDowngrade = true;
+    applyChannel();
 
     autoUpdater.checkForUpdates().catch((error) => {
         log.error('[UPDATER]: Error checking for updates:', error);
@@ -140,10 +166,41 @@ async function handleForceUpdate() {
     );
 }
 
+/**
+ * Remote command: move this device between the 'latest' (stable) and 'beta'
+ * (canary) update channels, then immediately re-check so beta devices pick up
+ * the staged build without waiting for the next interval.
+ */
+async function handleSetChannel(command) {
+    const requested = command && command.channel;
+    if (requested !== 'beta' && requested !== 'latest') {
+        log.warn(`[UPDATER]: set_channel ignored — invalid channel: ${JSON.stringify(requested)}`);
+        return;
+    }
+
+    try {
+        const { saveConfig } = require('../utils/configManager');
+        saveConfig({ updateChannel: requested });
+    } catch (e) {
+        log.error('[UPDATER]: Failed to persist update channel:', e);
+        return;
+    }
+
+    log.info(`[UPDATER]: Update channel set to "${requested}". Re-checking for updates...`);
+    applyChannel();
+
+    if (!isCheckingForUpdate) {
+        autoUpdater.checkForUpdates().catch((e) =>
+            log.error('[UPDATER]: set_channel re-check failed:', e)
+        );
+    }
+}
+
 module.exports = {
     configureUpdater,
     checkForUpdates,
     isUpdating,
     setUpdating,
     handleForceUpdate,
+    handleSetChannel,
 };

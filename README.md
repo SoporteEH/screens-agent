@@ -262,16 +262,81 @@ The agent uses `electron-updater` for seamless updates.
    ```
 
 3. GitHub Actions automatically:
-   - Builds the application
-   - Generates installer and `latest.yml`
-   - Creates a GitHub Release with artifacts
+   - Builds the application **without publishing** (`--publish never`)
+   - **Runs a smoke test** that boots the packaged binary and waits for the
+     `[INIT]: ScreensWeb Agent starting` marker (see [CI Smoke Test](#ci-smoke-test))
+   - Only if the smoke test passes: rebuilds with `--publish always`, generates
+     the installer + `latest.yml`, and creates the GitHub Release with artifacts
 
 ### Update Process (Agent)
 
 1. Agent checks for updates at startup (random delay 15–60s to avoid thundering herd with 350 devices)
-2. Detects new version from `latest.yml`
+2. Detects new version from its channel file (`latest.yml` or `beta.yml`)
 3. Downloads installer in background
 4. Installs silently and restarts
+
+### CI Smoke Test
+
+The historical crashes (`Cannot find module ...`) were broken builds that
+reached production. The release pipeline now gates every build:
+
+```
+build (--publish never) ──▶ scripts/smoke-test.js ──▶ build (--publish always)
+                              │  boots win-unpacked        (only if test passed)
+                              │  waits for [INIT] marker
+                              ▼
+                         exit 1 = release blocked
+```
+
+Because the marker is logged in `main.js` **after** every heavy service
+`require`, a missing transitive dependency throws before it prints — so the
+smoke test fails and the broken build is never published. The smoke test runs
+only on Windows (the production fleet); Linux builds publish unchanged.
+
+### Release Channels (Staged Rollout)
+
+Two channels let a new version be validated on a handful of devices before the
+whole fleet gets it — **no extra server required**, just GitHub Releases.
+
+| Channel | File | Audience | `allowPrerelease` |
+|---------|------|----------|-------------------|
+| `latest` | `latest.yml` | All devices (default) | `false` |
+| `beta` | `beta.yml` | ~10 canary devices | `true` |
+
+A device's channel is stored encrypted in its config (`updateChannel`) and
+changed remotely with the `set_channel` command:
+
+```json
+{ "action": "set_channel", "channel": "beta" }   // or "latest"
+```
+
+The agent persists it, re-points `electron-updater`, and re-checks immediately.
+
+**Staged release workflow:**
+
+1. **Ship to beta** — bump version to a prerelease and tag it:
+   ```bash
+   # package.json -> "version": "1.2.0-beta.1"
+   git tag v1.2.0-beta.1 && git push origin main --tags
+   ```
+   CI builds, smoke-tests, publishes a **prerelease** with `beta.yml`.
+   Only `beta` devices update; production keeps reading `latest.yml`.
+
+2. **Validate** the canary devices (24h recommended).
+
+3. **Promote to everyone** — bump to the final version and tag it:
+   ```bash
+   # package.json -> "version": "1.2.0"
+   git tag v1.2.0 && git push origin main --tags
+   ```
+   CI publishes `latest.yml`; the whole fleet updates.
+
+> Beta devices stay on the `beta` channel and lead each cycle. To pull one fully
+> back to stable, send `set_channel` with `"channel": "latest"`.
+
+**Rollback:** `allowDowngrade` is enabled, so editing the relevant channel file
+(or publishing an older version to it) makes agents move back down on the next
+check. Move only the affected channel to limit blast radius.
 
 ## Project Structure
 

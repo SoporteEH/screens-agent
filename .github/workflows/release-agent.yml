@@ -34,9 +34,29 @@ jobs:
         env:
           SERVER_URL: ${{ secrets.SERVER_URL }}
 
+      # Build without publishing first, so a broken build is caught before any
+      # agent can download it. win-unpacked is produced regardless of --publish.
+      - name: Build (Windows, no publish)
+        if: matrix.os == 'windows-latest'
+        run: npx electron-builder --win --publish never
+
+      - name: Smoke test the built binary
+        if: matrix.os == 'windows-latest'
+        run: node scripts/smoke-test.js
+
+      # Only reached if the smoke test passed. Reuses the proven publish command
+      # (generates all assets including nsis-web) and uploads latest.yml/beta.yml.
       - name: Build and Release (Windows)
         if: matrix.os == 'windows-latest'
         run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Beta tags (vX.Y.Z-beta.N) must be marked prerelease so production agents
+      # (channel=latest, allowPrerelease=false) skip them and keep reading latest.yml.
+      - name: Mark release as prerelease (beta tags)
+        if: matrix.os == 'windows-latest' && contains(github.ref_name, '-beta')
+        run: gh release edit "${{ github.ref_name }}" --prerelease --repo "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
