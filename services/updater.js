@@ -39,7 +39,12 @@ function configureUpdater() {
         info: (msg) => {
             if (msg && !msg.includes('Checking for update')) log.info(msg);
         },
-        warn: (msg) => log.warn(msg),
+        // disableWebInstaller=false is intentional (we ship the nsis-web installer),
+        // so electron-updater's deprecation warning about it is just noise.
+        warn: (msg) => {
+            if (msg && msg.includes('disableWebInstaller')) return;
+            log.warn(msg);
+        },
         error: (msg) => log.error(msg),
         debug: (msg) => log.debug(msg)
     };
