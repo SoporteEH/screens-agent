@@ -9,6 +9,22 @@ const { app, BrowserWindow } = require('electron');
 let isCheckingForUpdate = false;
 let checksumRetries = 0;
 
+// Latest update verdict from electron-updater for THIS device's channel
+// (latest.yml or beta.yml). The control panel reads this via the
+// 'get-update-state' IPC instead of doing its own version math, so the
+// indicator is always channel-correct and never misreads a -beta suffix.
+let lastUpdateState = { state: 'checking', message: 'Comprobando versión…' };
+
+function getUpdateState() {
+    return lastUpdateState;
+}
+
+// Records the verdict and pushes it to any open window in one place.
+function setUpdateState(state, extra = {}) {
+    lastUpdateState = { state, ...extra };
+    notifyAllWindows({ type: state, state, ...extra });
+}
+
 /**
  * Reads the device's update channel from config. Defaults to 'latest' (stable)
  * on any error so a config problem can never silently move a device to beta.
@@ -77,21 +93,21 @@ async function checkForUpdates() {
 
     autoUpdater.on('update-available', (info) => {
         log.info('[UPDATER]: Update available:', info.version);
-        notifyAllWindows({
-            type: 'downloading',
+        setUpdateState('downloading', {
             message: `Downloading version ${info.version}...`,
+            version: info.version,
         });
     });
 
     autoUpdater.on('update-not-available', () => {
         isCheckingForUpdate = false;
-        notifyAllWindows({ type: 'up-to-date', message: 'Agent is up to date' });
+        setUpdateState('up-to-date', { message: 'Agent is up to date' });
     });
 
     autoUpdater.on('error', (err) => {
         log.error('[UPDATER]: Update error:', err);
         isCheckingForUpdate = false;
-        notifyAllWindows({ status: 'error', message: 'Error checking for updates' });
+        setUpdateState('error', { message: 'Error checking for updates' });
 
         if (err.message && err.message.includes('checksum')) {
             if (checksumRetries < 3) {
@@ -113,14 +129,16 @@ async function checkForUpdates() {
     });
 
     autoUpdater.on('download-progress', (progressObj) => {
-        log.info(`[UPDATER]: Downloading: ${Math.round(progressObj.percent)}%`);
+        const percent = Math.round(progressObj.percent);
+        log.info(`[UPDATER]: Downloading: ${percent}%`);
+        setUpdateState('downloading', { message: `Downloading ${percent}%`, percent });
     });
 
     autoUpdater.on('update-downloaded', (info) => {
         log.info('[UPDATER]: Update downloaded:', info.version);
-        notifyAllWindows({
-            type: 'downloaded',
+        setUpdateState('downloaded', {
             message: 'Update downloaded. Restarting...',
+            version: info.version,
         });
 
         setTimeout(() => autoUpdater.quitAndInstall(true, true), 5000);
@@ -130,9 +148,11 @@ async function checkForUpdates() {
     autoUpdater.allowDowngrade = true;
     applyChannel();
 
+    setUpdateState('checking', { message: 'Comprobando versión…' });
     autoUpdater.checkForUpdates().catch((error) => {
         log.error('[UPDATER]: Error checking for updates:', error);
         isCheckingForUpdate = false;
+        setUpdateState('error', { message: 'Error checking for updates' });
     });
 
     setInterval(
@@ -208,4 +228,5 @@ module.exports = {
     setUpdating,
     handleForceUpdate,
     handleSetChannel,
+    getUpdateState,
 };

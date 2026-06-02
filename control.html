@@ -619,17 +619,10 @@
             }
         });
 
-        let agentServerUrl = null;
         console.log('[INIT] Control panel script loaded');
 
         window.electron.onAgentInfo((info) => {
             document.getElementById('agent-version').textContent = 'v' + info.version;
-
-            if (info.serverUrl && !agentServerUrl) {
-                agentServerUrl = info.serverUrl;
-                console.log('[AGENT INFO] Server URL set to:', agentServerUrl);
-                setTimeout(() => checkVersionStatus(), 500);
-            }
 
             const statusBadge = document.getElementById('status-container');
             const statusText = document.getElementById('agent-status');
@@ -670,71 +663,64 @@
             }
         });
 
-        // Passive version indicator — shows whether the agent is on the latest
-        // version. Updates install automatically in the background (electron-updater);
-        // there is no manual update button anymore.
+        // Version indicator — driven entirely by electron-updater, which checks
+        // the device's OWN channel (latest.yml / beta.yml). No version math and
+        // no HTTP: we just reflect the updater's verdict, so it can never misread
+        // a -beta suffix or compare a beta device against the stable line.
         const versionStatus = document.getElementById('version-status');
         const versionStatusText = document.getElementById('version-status-text');
         const versionStatusIcon = document.getElementById('version-status-icon');
 
-        async function checkVersionStatus() {
-            if (!agentServerUrl) {
-                console.log('[VERSION CHECK] Waiting for server URL...');
-                return;
-            }
-
-            try {
-                const currentVersion = await window.electron.getAppVersion();
-                const url = `${agentServerUrl}/api/agent/check-version?current=${currentVersion}`;
-                console.log('[VERSION CHECK] Fetching:', url);
-
-                const response = await fetch(url);
-                const data = await response.json();
-
-                console.log('[VERSION CHECK] Response:', data);
-
-                if (data.updateAvailable) {
-                    versionStatus.className = 'version-status update-available';
-                    versionStatusIcon.textContent = 'system_update_alt';
-                    versionStatusText.textContent = 'Actualización disponible';
-                } else {
-                    versionStatus.className = 'version-status up-to-date';
-                    versionStatusIcon.textContent = 'check_circle';
-                    versionStatusText.textContent = 'App actualizada';
-                }
-            } catch (error) {
-                console.error('[VERSION CHECK] Error:', error);
+        function applyUpdateState(s) {
+            const state = s && s.state;
+            if (state === 'up-to-date') {
+                versionStatus.className = 'version-status up-to-date';
+                versionStatusIcon.textContent = 'check_circle';
+                versionStatusText.textContent = 'App actualizada';
+            } else if (state === 'downloading') {
+                versionStatus.className = 'version-status update-available';
+                versionStatusIcon.textContent = 'system_update_alt';
+                versionStatusText.textContent =
+                    s.percent != null
+                        ? `Descargando actualización… ${s.percent}%`
+                        : 'Descargando actualización…';
+            } else if (state === 'downloaded') {
+                versionStatus.className = 'version-status update-available';
+                versionStatusIcon.textContent = 'system_update_alt';
+                versionStatusText.textContent = 'Actualización lista — reiniciando…';
+            } else if (state === 'error') {
                 versionStatus.className = 'version-status';
                 versionStatusIcon.textContent = 'help_outline';
                 versionStatusText.textContent = 'No se pudo comprobar la versión';
+            } else {
+                // 'checking' or unknown
+                versionStatus.className = 'version-status';
+                versionStatusIcon.textContent = 'sync';
+                versionStatusText.textContent = 'Comprobando versión…';
             }
         }
 
-        setInterval(() => {
-            if (agentServerUrl) {
-                checkVersionStatus();
-            }
-        }, 2 * 60 * 1000);
+        // Show the last known verdict immediately, then ask the updater to
+        // re-check this device's channel so opening the panel reflects reality.
+        window.electron.getUpdateState().then(applyUpdateState).catch(() => {});
+        window.electron.sendAction('check-update');
 
         window.electron.onUpdateStatus((status) => {
-            const notification = document.getElementById('notification');
+            applyUpdateState(status);
 
-            if (status.type === 'up-to-date') {
-                notification.textContent = 'App en la última versión';
-                notification.className = 'notification success show';
-            } else if (status.type === 'downloading') {
-                notification.textContent = `Descargando actualización...`;
+            const notification = document.getElementById('notification');
+            // Toasts only for active events; the passive indicator covers the rest.
+            if (status.state === 'downloading') {
+                notification.textContent = 'Descargando actualización...';
                 notification.className = 'notification info show';
-            } else if (status.type === 'downloaded') {
+            } else if (status.state === 'downloaded') {
                 notification.textContent = 'Actualización descargada. Reiniciando...';
                 notification.className = 'notification success show';
-            } else if (status.type === 'error') {
+            } else if (status.state === 'error') {
                 notification.textContent = 'Error al buscar actualización';
                 notification.className = 'notification error show';
-            }
-
-            if (status.type === 'up-to-date' || status.type === 'downloaded') {
-                setTimeout(() => checkVersionStatus(), 2000);
+            } else {
+                return;
             }
             setTimeout(() => {
                 notification.classList.remove('show');

@@ -1,7 +1,7 @@
 const { ipcMain, app } = require('electron');
 const { log } = require('../utils/logConfig');
 const { openControlWindow } = require('../services/tray');
-const { handleForceUpdate } = require('../services/updater');
+const { handleForceUpdate, getUpdateState } = require('../services/updater');
 
 const registerIpcHandlers = (getServerUrl, AGENT_VERSION, getStatus) => {
     ipcMain.on('agent-action', (event, { action, data }) => {
@@ -34,6 +34,9 @@ const registerIpcHandlers = (getServerUrl, AGENT_VERSION, getStatus) => {
     ipcMain.handle('get-app-version', () => {
         return AGENT_VERSION;
     });
+
+    // Channel-correct update verdict from electron-updater, for the control panel.
+    ipcMain.handle('get-update-state', () => getUpdateState());
 };
 
 module.exports = { registerIpcHandlers };
