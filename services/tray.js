@@ -19,7 +19,6 @@ function createTray(serverUrl, version) {
 
         const contextMenu = Menu.buildFromTemplate([
             { label: `ScreensWeb Agent v${version}`, enabled: false },
-            { label: 'Server: ' + (serverUrl || 'Not configured'), enabled: false },
             { type: 'separator' },
             { label: 'Open Control Panel', click: () => openControlWindow(serverUrl, version) },
             { type: 'separator' },

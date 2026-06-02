@@ -169,15 +169,6 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            background: var(--color-success-bg);
-            padding: 6px 12px;
-            border-radius: 20px;
-            border: 1px solid var(--color-success-border);
-        }
-
-        .status-badge.offline {
-            background: var(--color-error-bg);
-            border-color: var(--color-error-border);
         }
 
         .status-dot {
@@ -307,6 +298,30 @@
 
         .btn-danger:hover {
             background: var(--color-error-bg);
+        }
+
+        /* Version status (passive, not a button) */
+        .version-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            margin-top: 16px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--color-text-secondary);
+        }
+
+        .version-status .material-icons {
+            font-size: 16px;
+        }
+
+        .version-status.up-to-date {
+            color: var(--color-success-text);
+        }
+
+        .version-status.update-available {
+            color: var(--color-primary);
         }
 
         /* Spinner */
@@ -524,18 +539,15 @@
                         <span>Reiniciar</span>
                     </button>
 
-                    <button class="btn btn-secondary" id="btn-update">
-                        <span id="update-btn-text">
-                            <span class="material-icons">sync</span>
-                            <span>Verificando...</span>
-                        </span>
-                        <span id="update-spinner" class="spinner" style="display: none;"></span>
-                    </button>
-
                     <button class="btn btn-danger" id="btn-quit">
                         <span class="material-icons">power_settings_new</span>
                         <span>Cerrar App</span>
                     </button>
+                </div>
+
+                <div class="version-status" id="version-status">
+                    <span class="material-icons" id="version-status-icon">sync</span>
+                    <span id="version-status-text">Comprobando versión…</span>
                 </div>
             </div>
 
@@ -658,10 +670,13 @@
             }
         });
 
-        const updateBtn = document.getElementById('btn-update');
-        const updateBtnText = document.getElementById('update-btn-text');
-        const updateSpinner = document.getElementById('update-spinner');
-        let updateAvailable = false;
+        // Passive version indicator — shows whether the agent is on the latest
+        // version. Updates install automatically in the background (electron-updater);
+        // there is no manual update button anymore.
+        const versionStatus = document.getElementById('version-status');
+        const versionStatusText = document.getElementById('version-status-text');
+        const versionStatusIcon = document.getElementById('version-status-icon');
+
         async function checkVersionStatus() {
             if (!agentServerUrl) {
                 console.log('[VERSION CHECK] Waiting for server URL...');
@@ -677,23 +692,21 @@
                 const data = await response.json();
 
                 console.log('[VERSION CHECK] Response:', data);
-                updateAvailable = data.updateAvailable;
 
-                if (updateAvailable) {
-                    updateBtnText.innerHTML = '<span class="material-icons">system_update_alt</span><span>Actualizar App</span>';
-                    updateBtn.classList.remove('btn-secondary');
-                    updateBtn.classList.add('btn-success');
-                    updateBtn.disabled = false;
+                if (data.updateAvailable) {
+                    versionStatus.className = 'version-status update-available';
+                    versionStatusIcon.textContent = 'system_update_alt';
+                    versionStatusText.textContent = 'Actualización disponible';
                 } else {
-                    updateBtnText.innerHTML = '<span class="material-icons">check_circle</span><span>App Actualizada</span>';
-                    updateBtn.classList.remove('btn-success');
-                    updateBtn.classList.add('btn-secondary');
-                    updateBtn.disabled = true;
+                    versionStatus.className = 'version-status up-to-date';
+                    versionStatusIcon.textContent = 'check_circle';
+                    versionStatusText.textContent = 'App actualizada';
                 }
             } catch (error) {
                 console.error('[VERSION CHECK] Error:', error);
-                updateBtnText.innerHTML = '<span class="material-icons">system_update_alt</span><span>Buscar Actualización</span>';
-                updateBtn.disabled = false;
+                versionStatus.className = 'version-status';
+                versionStatusIcon.textContent = 'help_outline';
+                versionStatusText.textContent = 'No se pudo comprobar la versión';
             }
         }
 
@@ -702,30 +715,6 @@
                 checkVersionStatus();
             }
         }, 2 * 60 * 1000);
-
-
-        updateBtn.addEventListener('click', () => {
-            if (!updateAvailable) return;
-
-            updateBtnText.style.display = 'none';
-            updateSpinner.style.display = 'inline-block';
-            updateBtn.disabled = true;
-            window.electron.sendAction('check-update');
-            let countdown = 10;
-            const countdownInterval = setInterval(() => {
-                countdown--;
-                if (countdown > 0) {
-                    updateSpinner.style.display = 'none';
-                    updateBtnText.style.display = 'flex';
-                    updateBtnText.innerHTML = `<span class="material-icons">timer</span><span>Espera ${countdown}s</span>`;
-                } else {
-                    clearInterval(countdownInterval);
-                    checkVersionStatus();
-                    updateBtnText.style.display = 'flex';
-                    updateSpinner.style.display = 'none';
-                }
-            }, 1000);
-        });
 
         window.electron.onUpdateStatus((status) => {
             const notification = document.getElementById('notification');
@@ -743,12 +732,6 @@
                 notification.textContent = 'Error al buscar actualización';
                 notification.className = 'notification error show';
             }
-
-            updateBtnText.style.display = 'flex';
-            updateBtnText.style.alignItems = 'center';
-            updateBtnText.style.gap = '8px';
-            updateSpinner.style.display = 'none';
-            updateBtn.disabled = false;
 
             if (status.type === 'up-to-date' || status.type === 'downloaded') {
                 setTimeout(() => checkVersionStatus(), 2000);
