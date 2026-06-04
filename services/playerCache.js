@@ -19,13 +19,12 @@ function getCachePath(screenIndex) {
     return path.join(PLAYER_CACHE_DIR, `player-${screenIndex}.html`);
 }
 
-function cachePlayerHTML(screenIndex, html) {
+function cachePlayerHTML(screenIndex) {
     try {
         ensureDir(PLAYER_CACHE_DIR);
-        fs.writeFileSync(getCachePath(screenIndex), html, 'utf8');
-        log.info(`[PLAYER-CACHE]: Cached player HTML for screen ${screenIndex}`);
+        fs.writeFile(getCachePath(screenIndex), new Date().toISOString(), () => {});
     } catch (error) {
-        log.error(`[PLAYER-CACHE]: Error caching HTML for screen ${screenIndex}:`, error);
+        log.error(`[PLAYER-CACHE]: Error marking player cache for screen ${screenIndex}:`, error);
     }
 }
 

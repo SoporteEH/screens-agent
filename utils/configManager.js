@@ -11,19 +11,17 @@ const LEGACY_KEY = 'screensweb-agent-secure-key';
 const SENSITIVE_FIELDS = ['agentToken', 'certPem', 'keyPem'];
 
 let _usingFallbackKey = false;
+let _hardwareKey;
 
-/**
- * Derives a unique encryption key from the device hardware ID.
- * Returns null if the hardware ID cannot be obtained.
- */
 function getHardwareKey() {
+    if (_hardwareKey !== undefined) return _hardwareKey;
     try {
         const { machineIdSync } = require('node-machine-id');
-        const rawId = machineIdSync({ original: true });
-        return `screensweb-${rawId}`;
+        _hardwareKey = `screensweb-${machineIdSync({ original: true })}`;
     } catch (e) {
-        return null;
+        _hardwareKey = null;
     }
+    return _hardwareKey;
 }
 
 /** Initializes the config store.*/

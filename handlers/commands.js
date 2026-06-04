@@ -90,20 +90,21 @@ function createContentWindow(display, urlToLoad, command) {
     win.webContents.setVisualZoomLevelLimits(1, 1);
 
     win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-        const responseHeaders = Object.keys(details.responseHeaders).reduce((acc, key) => {
-            const lowerKey = key.toLowerCase();
-            if (lowerKey === 'x-frame-options' || lowerKey === 'frame-options') {
-                return acc;
-            }
-            if (lowerKey === 'content-security-policy') {
-                let cspMatch = details.responseHeaders[key][0];
-                cspMatch = cspMatch.replace(/frame-ancestors[^;]+;?/gi, '');
-                acc[key] = [cspMatch];
-                return acc;
-            }
-            acc[key] = details.responseHeaders[key];
-            return acc;
-        }, {});
+        const headers = details.responseHeaders;
+        const keys = Object.keys(headers);
+        const xframeKey = keys.find(k => { const l = k.toLowerCase(); return l === 'x-frame-options' || l === 'frame-options'; });
+        const cspKey = keys.find(k => k.toLowerCase() === 'content-security-policy');
+
+        if (!xframeKey && !cspKey) {
+            callback({ cancel: false });
+            return;
+        }
+
+        const responseHeaders = { ...headers };
+        if (xframeKey) delete responseHeaders[xframeKey];
+        if (cspKey) {
+            responseHeaders[cspKey] = [responseHeaders[cspKey][0].replace(/frame-ancestors[^;]+;?/gi, '')];
+        }
 
         callback({ cancel: false, responseHeaders });
     });
@@ -132,10 +133,7 @@ function createContentWindow(display, urlToLoad, command) {
     win.webContents.on('did-finish-load', () => {
         const loadedUrl = win.webContents.getURL();
         if (loadedUrl.includes('/player/') && screenIndex) {
-            win.webContents
-                .executeJavaScript('document.documentElement.outerHTML')
-                .then((html) => cachePlayerHTML(screenIndex, html))
-                .catch(() => { });
+            cachePlayerHTML(screenIndex);
             if (context.retryManager.has(screenIndex)) {
                 clearTimeout(context.retryManager.get(screenIndex).timerId);
                 context.retryManager.delete(screenIndex);

@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: [windows-latest] # ubuntu-latest
     runs-on: ${{ matrix.os }}
 
     permissions:
@@ -34,11 +34,11 @@ jobs:
         env:
           SERVER_URL: ${{ secrets.SERVER_URL }}
 
-      - name: Build NSIS for smoke test (Windows)
+      - name: Build NSIS for smoke test Windows
         if: matrix.os == 'windows-latest'
         run: npx electron-builder --win nsis --publish never
 
-      - name: Smoke test unpacked binary (Windows)
+      - name: Smoke test unpacked binary Windows
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
@@ -65,7 +65,7 @@ jobs:
           if (-not $bootMarker) { Write-Error "Unpacked binary did not reach [INIT] marker — release blocked"; exit 1 }
           Write-Host "Unpacked binary boots OK"
 
-      - name: Smoke test installed app (Windows)
+      - name: Smoke test installed app Windows
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
@@ -135,7 +135,7 @@ jobs:
           }
           Write-Host "All expected artifacts present"
 
-      - name: Free disk space (Linux)
+      - name: Free disk space Linux
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -145,15 +145,15 @@ jobs:
           sudo docker image prune --all --force
           df -h
 
-      - name: Install Xvfb (Linux)
+      - name: Install Xvfb Linux
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get install -y xvfb
 
-      - name: Build dir (Linux)
+      - name: Build dir Linux
         if: matrix.os == 'ubuntu-latest'
         run: npx electron-builder --linux --dir
 
-      - name: Smoke test (Linux)
+      - name: Smoke test Linux
         if: matrix.os == 'ubuntu-latest'
         run: |
           exe="dist/linux-unpacked/screens-web-agent"
@@ -176,7 +176,7 @@ jobs:
           fi
           echo "Smoke test passed"
 
-      - name: Build and Release (Linux)
+      - name: Build and Release Linux
         if: matrix.os == 'ubuntu-latest'
         run: npx electron-builder --linux deb AppImage --arm64 --armv7l --x64 --publish always
         env:

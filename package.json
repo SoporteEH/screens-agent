@@ -59,6 +59,7 @@
       "utils/**/*",
       "icons/**/*",
       "css/**/*",
+      "js/**/*",
       "*.html",
       "preload.js",
       "identify-preload.js",
