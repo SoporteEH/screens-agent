@@ -44,4 +44,6 @@
 
   --transition-fast: 150ms ease;
   --transition-base: 200ms ease;
+
+  --color-backdrop: rgba(0, 0, 0, 0.70);
 }

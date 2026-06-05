@@ -121,7 +121,7 @@ The WebSocket connection uses exponential backoff with a circuit breaker to avoi
 ## Technology Stack
 
 **Core:**
-- Electron 38.x
+- Electron 41.x
 - Node.js 22+
 - Socket.IO Client 4.x
 
@@ -365,11 +365,16 @@ screens-agent/
 ├── utils/
 │   ├── configManager.js       # electron-store wrapper with per-device encryption
 │   └── logConfig.js           # Logging configuration
+├── css/
+│   ├── theme.css              # Global design tokens (colors, radius, shadow, motion)
+│   └── control.css            # Control panel styles
+├── js/
+│   └── control.js             # Control panel renderer logic
 ├── icons/                     # Application icons
 ├── main.js                    # Main process orchestrator and context
 ├── preload.js                 # Preload script for renderer security
 ├── identify-preload.js        # Preload for screen identification overlay
-├── control.html               # Control panel UI
+├── control.html               # Control panel UI (shell — loads css/ and js/)
 ├── fallback.html              # Offline fallback page
 ├── identify.html              # Screen identification overlay
 ├── provision.html             # Provisioning mode UI
