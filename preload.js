@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electron', {
 
     sendAction: (action, data) => ipcRenderer.send('agent-action', { action, data }),
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+    getUpdateState: () => ipcRenderer.invoke('get-update-state'),
     minimizeWindow: () => ipcRenderer.send('window-control', 'minimize'),
     closeWindow: () => ipcRenderer.send('window-control', 'close'),
     send: (channel, data) => ipcRenderer.send(channel, data),

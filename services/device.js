@@ -7,6 +7,7 @@ const { exec } = require('child_process');
 const { log } = require('../utils/logConfig');
 const { app } = require('electron');
 const { loadLastState } = require('./state');
+const { loadConfig } = require('../utils/configManager');
 
 function getMachineId() {
     try {
@@ -32,11 +33,14 @@ function registerDevice(socket, deviceId, hardwareIdToDisplayMap) {
         })
     );
 
+    const updateChannel = loadConfig().updateChannel === 'beta' ? 'beta' : 'latest';
+
     log.info('[DEVICE]: Registering with displays:', screenInfo);
     socket.emit('registerDevice', {
         deviceId,
         screens: screenInfo,
         agentVersion: app.getVersion(),
+        updateChannel,
     });
 }
 

@@ -295,6 +295,31 @@ body {
     animation: spin 0.8s linear infinite;
 }
 
+/* ---- Version status ---- */
+.version-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    transition: color var(--transition-base);
+}
+
+.version-status .material-icons {
+    font-size: 16px;
+}
+
+.version-status.up-to-date {
+    color: var(--color-success-text);
+}
+
+.version-status.update-available {
+    color: var(--color-primary);
+}
+
 /* ---- Footer ---- */
 .footer {
     margin-top: 32px;

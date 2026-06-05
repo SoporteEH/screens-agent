@@ -34,106 +34,31 @@ jobs:
         env:
           SERVER_URL: ${{ secrets.SERVER_URL }}
 
-      - name: Build NSIS for smoke test Windows
+      # Build without publishing first, so a broken build is caught before any
+      # agent can download it. win-unpacked is produced regardless of --publish.
+      - name: Build (Windows, no publish)
         if: matrix.os == 'windows-latest'
-        run: npx electron-builder --win nsis --publish never
+        run: npx electron-builder --win --publish never
 
-      - name: Smoke test unpacked binary Windows
+      - name: Smoke test the built binary
         if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          $exe = "dist/win-unpacked/screens-web-agent.exe"
-          if (-not (Test-Path $exe)) { Write-Error "Unpacked exe not found: $exe"; exit 1 }
-          Write-Host "=== Testing unpacked binary BEFORE NSIS install ==="
-          $stdoutFile = "$env:TEMP\unpacked-stdout.log"
-          $stderrFile = "$env:TEMP\unpacked-stderr.log"
-          $proc = Start-Process -FilePath $exe -ArgumentList "--enable-logging" -PassThru -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
-          Start-Sleep -Seconds 10
+        run: node scripts/smoke-test.js
 
-          Write-Host "=== STDOUT ==="
-          if (Test-Path $stdoutFile) { Get-Content $stdoutFile | Select-Object -First 80 }
-          Write-Host "=== STDERR ==="
-          if (Test-Path $stderrFile) { Get-Content $stderrFile | Select-Object -First 80 }
-
-          $stdoutContent = if (Test-Path $stdoutFile) { Get-Content $stdoutFile -Raw } else { "" }
-          $bootMarker = $stdoutContent -match "\[INIT\]: ScreensWeb Agent starting"
-          $fatalError = $stdoutContent -match "FATAL BOOTSTRAP ERROR|Cannot find module"
-
-          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-
-          if ($fatalError) { Write-Error "Unpacked binary has FATAL error — release blocked"; exit 1 }
-          if (-not $bootMarker) { Write-Error "Unpacked binary did not reach [INIT] marker — release blocked"; exit 1 }
-          Write-Host "Unpacked binary boots OK"
-
-      - name: Smoke test installed app Windows
+      # Only reached if the smoke test passed. Reuses the proven publish command
+      # (generates all assets including nsis-web) and uploads latest.yml/beta.yml.
+      - name: Build and Release (Windows)
         if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          $installer = Get-ChildItem dist -Filter "ScreensWebAgent-Setup-*.exe" | Select-Object -First 1
-          if (-not $installer) { Write-Error "Installer not found"; exit 1 }
-          $installDir = "$env:LOCALAPPDATA\Programs\ScreensWebAgent"
-          Write-Host "=== Installing $($installer.Name) to $installDir ==="
-          $installProc = Start-Process -FilePath $installer.FullName -ArgumentList "/S","/D=$installDir" -Wait -PassThru
-          Write-Host "Installer exit code: $($installProc.ExitCode)"
-
-          if ($installProc.ExitCode -ne 0) {
-            Write-Host "=== Install dir contents (partial) ==="
-            if (Test-Path $installDir) { Get-ChildItem $installDir -ErrorAction SilentlyContinue | Format-Table Name, Length }
-            Write-Error "Installer failed with exit code $($installProc.ExitCode)"
-            exit 1
-          }
-
-          $exe = "$installDir\screens-web-agent.exe"
-          if (-not (Test-Path $exe)) { Write-Error "Installed exe not found at $exe"; exit 1 }
-
-          $stdoutFile = "$env:TEMP\installed-stdout.log"
-          $stderrFile = "$env:TEMP\installed-stderr.log"
-          $proc = Start-Process -FilePath $exe -ArgumentList "--enable-logging" -PassThru -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
-          Start-Sleep -Seconds 10
-
-          Write-Host "=== STDOUT ==="
-          if (Test-Path $stdoutFile) { Get-Content $stdoutFile | Select-Object -First 80 }
-
-          $stdoutContent = if (Test-Path $stdoutFile) { Get-Content $stdoutFile -Raw } else { "" }
-          $bootMarker = $stdoutContent -match "\[INIT\]: ScreensWeb Agent starting"
-          $fatalError = $stdoutContent -match "FATAL BOOTSTRAP ERROR|Cannot find module"
-
-          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-
-          if ($fatalError) { Write-Error "Installed app has FATAL error — release blocked"; exit 1 }
-          if (-not $bootMarker) { Write-Error "Installed app did not reach [INIT] marker — release blocked"; exit 1 }
-          Write-Host "Installed app boots OK"
-
-      - name: Build all and publish (Windows)
-        if: matrix.os == 'windows-latest'
-        run: npx electron-builder --win nsis nsis-web --publish always
+        run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify Windows artifacts published
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          Write-Host "=== Final dist/ contents ==="
-          Get-ChildItem -Path dist -File | Sort-Object Length -Descending | Select-Object Name, @{N='MB';E={[math]::Round($_.Length/1MB,2)}} | Format-Table
-
-          $expected = @(
-            "ScreensWebAgent-Setup-*.exe",
-            "ScreensWebAgent-installer.exe",
-            "local-agent-*.nsis.7z",
-            "latest.yml"
-          )
-          $missing = @()
-          foreach ($p in $expected) {
-            if (-not (Get-ChildItem -Path dist -Filter $p -File -ErrorAction SilentlyContinue)) {
-              $missing += $p
-            }
-          }
-          if ($missing.Count -gt 0) {
-            Write-Error "Missing expected artifacts: $($missing -join ', ')"
-            exit 1
-          }
-          Write-Host "All expected artifacts present"
+      # Beta tags (vX.Y.Z-beta.N) must be marked prerelease so production agents
+      # (channel=latest, allowPrerelease=false) skip them and keep reading latest.yml.
+      - name: Mark release as prerelease (beta tags)
+        if: matrix.os == 'windows-latest' && contains(github.ref_name, '-beta')
+        run: gh release edit "${{ github.ref_name }}" --prerelease --repo "${{ github.repository }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Free disk space Linux
         if: matrix.os == 'ubuntu-latest'
@@ -145,38 +70,7 @@ jobs:
           sudo docker image prune --all --force
           df -h
 
-      - name: Install Xvfb Linux
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get install -y xvfb
-
-      - name: Build dir Linux
-        if: matrix.os == 'ubuntu-latest'
-        run: npx electron-builder --linux --dir
-
-      - name: Smoke test Linux
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          exe="dist/linux-unpacked/screens-web-agent"
-          if [ ! -f "$exe" ]; then echo "Binary not found: $exe"; exit 1; fi
-          chmod +x "$exe"
-          Xvfb :99 -screen 0 1024x768x24 &
-          XVFB_PID=$!
-          DISPLAY=:99 "$exe" --no-sandbox > /tmp/agent-stdout.log 2>&1 &
-          APP_PID=$!
-          sleep 10
-          echo "=== STDOUT ==="
-          head -100 /tmp/agent-stdout.log || true
-          kill $APP_PID 2>/dev/null
-          kill $XVFB_PID 2>/dev/null
-          if grep -q "FATAL BOOTSTRAP ERROR\|Cannot find module" /tmp/agent-stdout.log; then
-            echo "FATAL error during boot — release blocked"; exit 1
-          fi
-          if ! grep -q "\[INIT\]: ScreensWeb Agent starting" /tmp/agent-stdout.log; then
-            echo "App did not reach [INIT] marker — release blocked"; exit 1
-          fi
-          echo "Smoke test passed"
-
-      - name: Build and Release Linux
+      - name: Build and Release (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: npx electron-builder --linux deb AppImage --arm64 --armv7l --x64 --publish always
         env:

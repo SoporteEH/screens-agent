@@ -9,19 +9,65 @@ const { app, BrowserWindow } = require('electron');
 let isCheckingForUpdate = false;
 let checksumRetries = 0;
 
+// Latest update verdict from electron-updater for THIS device's channel
+// (latest.yml or beta.yml). The control panel reads this via the
+// 'get-update-state' IPC instead of doing its own version math, so the
+// indicator is always channel-correct and never misreads a -beta suffix.
+let lastUpdateState = { state: 'checking', message: 'Comprobando versión…' };
+
+function getUpdateState() {
+    return lastUpdateState;
+}
+
+// Records the verdict and pushes it to any open window in one place.
+function setUpdateState(state, extra = {}) {
+    lastUpdateState = { state, ...extra };
+    notifyAllWindows({ type: state, state, ...extra });
+}
+
+/**
+ * Reads the device's update channel from config. Defaults to 'latest' (stable)
+ * on any error so a config problem can never silently move a device to beta.
+ */
+function getChannel() {
+    try {
+        const { loadConfig } = require('../utils/configManager');
+        return loadConfig().updateChannel === 'beta' ? 'beta' : 'latest';
+    } catch (_) {
+        return 'latest';
+    }
+}
+
+/**
+ * Points electron-updater at the right channel file (latest.yml vs beta.yml).
+ * Beta devices opt into prereleases; stable devices never see them.
+ */
+function applyChannel() {
+    const channel = getChannel();
+    autoUpdater.channel = channel;
+    autoUpdater.allowPrerelease = channel === 'beta';
+    log.info(`[UPDATER]: Update channel = ${channel}`);
+    return channel;
+}
+
 function configureUpdater() {
     autoUpdater.logger = {
         info: (msg) => {
             if (msg && !msg.includes('Checking for update')) log.info(msg);
         },
-        warn: (msg) => log.warn(msg),
+        // disableWebInstaller=false is intentional (we ship the nsis-web installer),
+        // so electron-updater's deprecation warning about it is just noise.
+        warn: (msg) => {
+            if (msg && msg.includes('disableWebInstaller')) return;
+            log.warn(msg);
+        },
         error: (msg) => log.error(msg),
         debug: (msg) => log.debug(msg)
     };
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowDowngrade = true;
-    autoUpdater.allowPrerelease = false;
+    applyChannel();
 
     if (!app.isPackaged) {
         autoUpdater.forceDevUpdateConfig = true;
@@ -47,21 +93,21 @@ async function checkForUpdates() {
 
     autoUpdater.on('update-available', (info) => {
         log.info('[UPDATER]: Update available:', info.version);
-        notifyAllWindows({
-            type: 'downloading',
+        setUpdateState('downloading', {
             message: `Downloading version ${info.version}...`,
+            version: info.version,
         });
     });
 
     autoUpdater.on('update-not-available', () => {
         isCheckingForUpdate = false;
-        notifyAllWindows({ type: 'up-to-date', message: 'Agent is up to date' });
+        setUpdateState('up-to-date', { message: 'Agent is up to date' });
     });
 
     autoUpdater.on('error', (err) => {
         log.error('[UPDATER]: Update error:', err);
         isCheckingForUpdate = false;
-        notifyAllWindows({ status: 'error', message: 'Error checking for updates' });
+        setUpdateState('error', { message: 'Error checking for updates' });
 
         if (err.message && err.message.includes('checksum')) {
             if (checksumRetries < 3) {
@@ -83,14 +129,16 @@ async function checkForUpdates() {
     });
 
     autoUpdater.on('download-progress', (progressObj) => {
-        log.info(`[UPDATER]: Downloading: ${Math.round(progressObj.percent)}%`);
+        const percent = Math.round(progressObj.percent);
+        log.info(`[UPDATER]: Downloading: ${percent}%`);
+        setUpdateState('downloading', { message: `Downloading ${percent}%`, percent });
     });
 
     autoUpdater.on('update-downloaded', (info) => {
         log.info('[UPDATER]: Update downloaded:', info.version);
-        notifyAllWindows({
-            type: 'downloaded',
+        setUpdateState('downloaded', {
             message: 'Update downloaded. Restarting...',
+            version: info.version,
         });
 
         setTimeout(() => autoUpdater.quitAndInstall(true, true), 5000);
@@ -98,10 +146,13 @@ async function checkForUpdates() {
 
     autoUpdater.disableWebInstaller = false;
     autoUpdater.allowDowngrade = true;
+    applyChannel();
 
+    setUpdateState('checking', { message: 'Comprobando versión…' });
     autoUpdater.checkForUpdates().catch((error) => {
         log.error('[UPDATER]: Error checking for updates:', error);
         isCheckingForUpdate = false;
+        setUpdateState('error', { message: 'Error checking for updates' });
     });
 
     setInterval(
@@ -140,10 +191,42 @@ async function handleForceUpdate() {
     );
 }
 
+/**
+ * Remote command: move this device between the 'latest' (stable) and 'beta'
+ * (canary) update channels, then immediately re-check so beta devices pick up
+ * the staged build without waiting for the next interval.
+ */
+async function handleSetChannel(command) {
+    const requested = command && command.channel;
+    if (requested !== 'beta' && requested !== 'latest') {
+        log.warn(`[UPDATER]: set_channel ignored — invalid channel: ${JSON.stringify(requested)}`);
+        return;
+    }
+
+    try {
+        const { saveConfig } = require('../utils/configManager');
+        saveConfig({ updateChannel: requested });
+    } catch (e) {
+        log.error('[UPDATER]: Failed to persist update channel:', e);
+        return;
+    }
+
+    log.info(`[UPDATER]: Update channel set to "${requested}". Re-checking for updates...`);
+    applyChannel();
+
+    if (!isCheckingForUpdate) {
+        autoUpdater.checkForUpdates().catch((e) =>
+            log.error('[UPDATER]: set_channel re-check failed:', e)
+        );
+    }
+}
+
 module.exports = {
     configureUpdater,
     checkForUpdates,
     isUpdating,
     setUpdating,
     handleForceUpdate,
+    handleSetChannel,
+    getUpdateState,
 };

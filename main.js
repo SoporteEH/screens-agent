@@ -203,6 +203,12 @@ async function bootstrap() {
                         refresh_screen: commandHandlers.handleRefreshScreen,
                         reboot_device: deviceService.handleRebootDevice,
                         force_update: require('./services/updater').handleForceUpdate,
+                        set_channel: (cmd) => {
+                            require('./services/updater').handleSetChannel(cmd);
+                            // Report the new channel to the server right away so the
+                            // admin panel reflects it without waiting for a reconnect.
+                            context.registerDevice?.();
+                        },
                         get_logs: commandHandlers.handleGetLogs,
                     };
                     if (actions[command.action]) actions[command.action](command);
