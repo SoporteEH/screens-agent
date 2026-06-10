@@ -5,6 +5,7 @@
   "description": "ScreensWeb Agent",
   "main": "main.js",
   "scripts": {
+    "preinstall": "node -e \"const ua=process.env.npm_config_user_agent||'';if(!ua.startsWith('npm/')){console.error('\\n[screens-agent] This project must be installed with npm, NOT pnpm/yarn (electron-builder + electron postinstall require npm). Run: npm install\\n');process.exit(1)}\"",
     "start": "electron . --js-flags=\"--expose-gc\"",
     "inject:b": "set AGENT_THEME=B&& node scripts/inject-config.js",
     "inject:default": "set AGENT_THEME=default&& node scripts/inject-config.js",
