@@ -15,6 +15,7 @@ const { getMachineId } = require('../services/device');
 function startProvisioningMode() {
     const deviceId = getMachineId();
     let pendingServerUrl = '';
+    let agentTokenNonce = '';
     let socket = null;
 
     log.info(`[PROVISIONING]: Machine ID: ${deviceId}`);
@@ -49,10 +50,25 @@ function startProvisioningMode() {
 
         const { url, nonce } = typeof payload === 'string' ? { url: payload, nonce: '' } : payload;
         pendingServerUrl = url.endsWith('/') ? url.slice(0, -1) : url;
+        agentTokenNonce = '';
         log.info(`[PROVISIONING]: Attempting to connect to: ${pendingServerUrl}`);
 
         const isHttps = pendingServerUrl.startsWith('https://');
-        const allowInsecureTLS = process.env.ALLOW_INSECURE_PROVISIONING_TLS === '1';
+
+        // Packaged builds must provision over HTTPS with a validated cert: first contact
+        // exchanges the device token + private key + CA, so an http:// or cert-bypassed
+        // channel is a key-theft risk. The insecure-TLS escape hatch is dev-only.
+        if (app.isPackaged && !isHttps) {
+            log.error(`[PROVISIONING]: Rejected non-HTTPS server URL in packaged build: ${pendingServerUrl}`);
+            provisionWindow.webContents.send('provision-status', {
+                type: 'error',
+                message: 'The server URL must use HTTPS.',
+            });
+            return;
+        }
+
+        const allowInsecureTLS =
+            process.env.ALLOW_INSECURE_PROVISIONING_TLS === '1' && !app.isPackaged;
         const httpsAgent = isHttps && allowInsecureTLS
             ? new https.Agent({ rejectUnauthorized: false })
             : undefined;
@@ -74,6 +90,12 @@ function startProvisioningMode() {
             });
         });
 
+        // Single-use nonce the server requires when we POST /agent-token.
+        socket.on('provision-token-nonce', (payload) => {
+            agentTokenNonce = payload?.nonce || '';
+            log.info('[PROVISIONING]: Received agent-token nonce.');
+        });
+
         socket.on('connect_error', (error) => {
             log.error(`[PROVISIONING]: Connection error to ${pendingServerUrl}: ${error.message}`);
             provisionWindow.webContents.send('provision-status', {
@@ -89,7 +111,7 @@ function startProvisioningMode() {
                 const response = await fetch(`${pendingServerUrl}/api/auth/agent-token`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ deviceId }),
+                    body: JSON.stringify({ deviceId, nonce: agentTokenNonce }),
                 });
 
                 if (!response.ok) throw new Error('Error obtaining token from server');

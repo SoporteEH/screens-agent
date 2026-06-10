@@ -402,10 +402,12 @@ async function bootstrap() {
 
             const serverArg = process.argv.find(arg => arg.startsWith('--server='));
             const tokenArg = process.argv.find(arg => arg.startsWith('--token='));
+            const nonceArg = process.argv.find(arg => arg.startsWith('--nonce='));
 
             if (serverArg) {
                 const serverUrl = serverArg.split('=')[1];
                 let agentToken = tokenArg ? tokenArg.split('=')[1] : null;
+                const provisionNonce = nonceArg ? nonceArg.split('=')[1] : '';
                 const { getMachineId } = require('./services/device');
                 const deviceId = getMachineId();
 
@@ -418,7 +420,7 @@ async function bootstrap() {
                         const axios = require('axios');
                         const response = await axios.post(
                             `${serverUrl}/api/auth/agent-token`,
-                            { deviceId },
+                            { deviceId, nonce: provisionNonce },
                             { httpsAgent: require('./utils/httpClient').getHttpsAgent() }
                         );
                         const data = response.data;

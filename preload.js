@@ -14,6 +14,17 @@ contextBridge.exposeInMainWorld('electron', {
     getUpdateState: () => ipcRenderer.invoke('get-update-state'),
     minimizeWindow: () => ipcRenderer.send('window-control', 'minimize'),
     closeWindow: () => ipcRenderer.send('window-control', 'close'),
-    send: (channel, data) => ipcRenderer.send(channel, data),
-    on: (channel, func) => ipcRenderer.on(channel, (event, ...args) => func(...args)),
+
+    // Generic passthrough restricted to a fixed channel allow-list so a renderer
+    // can't emit/listen on arbitrary IPC channels.
+    send: (channel, data) => {
+        const allowed = ['set-server-url', 'window-control', 'agent-action'];
+        if (allowed.includes(channel)) ipcRenderer.send(channel, data);
+    },
+    on: (channel, func) => {
+        const allowed = ['provision-status', 'device-id', 'agent-info', 'update-status'];
+        if (allowed.includes(channel)) {
+            ipcRenderer.on(channel, (event, ...args) => func(...args));
+        }
+    },
 });

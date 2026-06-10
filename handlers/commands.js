@@ -3,11 +3,33 @@ const path = require('path');
 const fs = require('fs');
 const { log } = require('../utils/logConfig');
 const axios = require('axios');
-const { CONTENT_DIR } = require('../config/constants');
+const { CONTENT_DIR, getServerUrl } = require('../config/constants');
 const { cachePlayerHTML, cacheContentURL } = require('../services/playerCache');
+const { isAutologinUrl } = require('../utils/autologinUrl');
 
 let context = {};
 const isLinux = process.platform === 'linux';
+
+function isNavigationAllowed(targetUrl, currentUrl) {
+    if (!targetUrl) return false;
+    if (/^(file:|about:|data:|blob:|local:)/i.test(targetUrl)) return true;
+    if (isAutologinUrl(targetUrl)) return true;
+
+    let target;
+    try {
+        target = new URL(targetUrl);
+    } catch {
+        return false;
+    }
+    try {
+        if (currentUrl && new URL(currentUrl).origin === target.origin) return true;
+    } catch { /* ignore */ }
+    try {
+        const serverUrl = getServerUrl();
+        if (serverUrl && new URL(serverUrl).origin === target.origin) return true;
+    } catch { /* ignore */ }
+    return false;
+}
 
 function initializeHandlers(ctx) {
     context = ctx;
@@ -88,6 +110,14 @@ function createContentWindow(display, urlToLoad, command) {
 
     win.webContents.setZoomFactor(1);
     win.webContents.setVisualZoomLevelLimits(1, 1);
+
+    // Deny popups and confine renderer-initiated navigation to known origins.
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    win.webContents.on('will-navigate', (event, targetUrl) => {
+        if (isNavigationAllowed(targetUrl, win.webContents.getURL())) return;
+        log.warn(`[SECURITY]: Blocked navigation to ${targetUrl}`);
+        event.preventDefault();
+    });
 
     win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
         const headers = details.responseHeaders;
@@ -519,7 +549,13 @@ function handleIdentifyScreen(command) {
         transparent: true,
         alwaysOnTop: true,
         skipTaskbar: true,
-        webPreferences: { preload: path.join(__dirname, '../identify-preload.js') },
+        webPreferences: {
+            preload: path.join(__dirname, '../identify-preload.js'),
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true,
+            webSecurity: true,
+        },
     });
     identifyWin.setMenu(null);
     identifyWin.loadFile(path.join(__dirname, '../identify.html'));

@@ -5,9 +5,20 @@
 const { autoUpdater } = require('electron-updater');
 const { log } = require('../utils/logConfig');
 const { app, BrowserWindow } = require('electron');
+const fs = require('fs');
+const path = require('path');
 
 let isCheckingForUpdate = false;
 let checksumRetries = 0;
+
+// In a packaged build, updates always run. In dev (electron .) there is no update
+// metadata, so forcing the dev update config just makes electron-updater spam
+// "ENOENT dev-app-update.yml". Allow dev update-testing only when the developer
+// has actually placed a dev-app-update.yml at the project root; otherwise skip.
+const DEV_UPDATE_CONFIG = path.join(__dirname, '..', 'dev-app-update.yml');
+function updatesEnabled() {
+    return app.isPackaged || fs.existsSync(DEV_UPDATE_CONFIG);
+}
 
 // Latest update verdict from electron-updater for THIS device's channel
 // (latest.yml or beta.yml). The control panel reads this via the
@@ -69,7 +80,7 @@ function configureUpdater() {
     autoUpdater.allowDowngrade = true;
     applyChannel();
 
-    if (!app.isPackaged) {
+    if (!app.isPackaged && updatesEnabled()) {
         autoUpdater.forceDevUpdateConfig = true;
     }
     autoUpdater.fullChangelog = true;
@@ -84,6 +95,11 @@ function notifyAllWindows(data) {
 }
 
 async function checkForUpdates() {
+    if (!updatesEnabled()) {
+        log.info('[UPDATER]: Dev mode without dev-app-update.yml — skipping update checks.');
+        setUpdateState('up-to-date', { message: 'Updates disabled (dev)' });
+        return;
+    }
 
     autoUpdater.removeAllListeners('update-available');
     autoUpdater.removeAllListeners('update-not-available');
@@ -213,6 +229,11 @@ async function handleSetChannel(command) {
 
     log.info(`[UPDATER]: Update channel set to "${requested}". Re-checking for updates...`);
     applyChannel();
+
+    if (!updatesEnabled()) {
+        log.info('[UPDATER]: Dev mode — channel persisted but update re-check skipped.');
+        return;
+    }
 
     if (!isCheckingForUpdate) {
         autoUpdater.checkForUpdates().catch((e) =>
