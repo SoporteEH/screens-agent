@@ -9,7 +9,6 @@ const { log } = require('../utils/logConfig');
 const {
     SYNC_API_URL,
     CONTENT_DIR,
-    PLAYLIST_ASSETS_DIR,
     SERVER_URL,
 } = require('../config/constants');
 const { loadConfig } = require('../utils/configManager');
@@ -77,7 +76,7 @@ async function syncDir(assets, targetDir, remotePath) {
 
         // Check total storage limit before each download
         const maxBytes = getMaxStorageBytes();
-        const currentSize = getDirSizeBytes(CONTENT_DIR) + getDirSizeBytes(PLAYLIST_ASSETS_DIR);
+        const currentSize = getDirSizeBytes(CONTENT_DIR);
         if (currentSize >= maxBytes) {
             log.warn(`[SYNC]: Storage limit reached (${(currentSize / 1024 / 1024).toFixed(0)}MB / ${maxBytes / 1024 / 1024}MB). Skipping remaining downloads.`);
             break;
@@ -126,12 +125,10 @@ async function syncLocalAssets(agentToken) {
         });
         const assets = res.data;
         const generalAssets = assets.filter((a) => a.assetType !== 'playlist');
-        const playlistAssets = assets.filter((a) => a.assetType === 'playlist');
 
-        log.info(`[SYNC]: ${generalAssets.length} general assets, ${playlistAssets.length} playlist assets`);
+        log.info(`[SYNC]: ${generalAssets.length} general assets`);
 
         await syncDir(generalAssets, CONTENT_DIR, '/local-assets/');
-        await syncDir(playlistAssets, PLAYLIST_ASSETS_DIR, '/playlist-assets/');
 
         log.info('[SYNC]: Synchronization completed.');
         return true;
