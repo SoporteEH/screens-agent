@@ -6,11 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { log } = require('../utils/logConfig');
-const {
-    SYNC_API_URL,
-    CONTENT_DIR,
-    SERVER_URL,
-} = require('../config/constants');
+const { SYNC_API_URL, CONTENT_DIR, SERVER_URL } = require('../config/constants');
 const { loadConfig } = require('../utils/configManager');
 const { getHttpClient } = require('../utils/httpClient');
 
@@ -23,11 +19,25 @@ function getMaxStorageBytes() {
 }
 
 const ALLOWED_EXTENSIONS = new Set([
-    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp',
-    '.mp4', '.webm', '.mov', '.avi', '.mkv',
-    '.mp3', '.wav', '.ogg', '.aac',
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.gif',
+    '.webp',
+    '.svg',
+    '.bmp',
+    '.mp4',
+    '.webm',
+    '.mov',
+    '.avi',
+    '.mkv',
+    '.mp3',
+    '.wav',
+    '.ogg',
+    '.aac',
     '.pdf',
-    '.html', '.htm',
+    '.html',
+    '.htm',
 ]);
 
 function getDirSizeBytes(dir) {
@@ -66,19 +76,26 @@ async function syncDir(assets, targetDir, remotePath) {
     }
 
     const filesToDownload = assets.filter((a) => !localFiles.includes(a.serverFilename));
+
+    // Scan the content dir once and track the size incrementally per download,
+    // instead of re-walking the whole directory (sync readdir+stat) per file.
+    const maxBytes = getMaxStorageBytes();
+    let currentSize = getDirSizeBytes(CONTENT_DIR);
+
     for (const asset of filesToDownload) {
         // Validate file extension
         const ext = path.extname(asset.serverFilename).toLowerCase();
         if (!ALLOWED_EXTENSIONS.has(ext)) {
-            log.warn(`[SYNC]: Skipping asset with disallowed extension: ${asset.originalFilename} (${ext})`);
+            log.warn(
+                `[SYNC]: Skipping asset with disallowed extension: ${asset.originalFilename} (${ext})`
+            );
             continue;
         }
 
-        // Check total storage limit before each download
-        const maxBytes = getMaxStorageBytes();
-        const currentSize = getDirSizeBytes(CONTENT_DIR);
         if (currentSize >= maxBytes) {
-            log.warn(`[SYNC]: Storage limit reached (${(currentSize / 1024 / 1024).toFixed(0)}MB / ${maxBytes / 1024 / 1024}MB). Skipping remaining downloads.`);
+            log.warn(
+                `[SYNC]: Storage limit reached (${(currentSize / 1024 / 1024).toFixed(0)}MB / ${maxBytes / 1024 / 1024}MB). Skipping remaining downloads.`
+            );
             break;
         }
 
@@ -101,12 +118,19 @@ async function syncDir(assets, targetDir, remotePath) {
             if (asset.md5) {
                 const actualMd5 = md5OfFile(destPath);
                 if (actualMd5 !== asset.md5) {
-                    log.error(`[SYNC]: MD5 mismatch for ${asset.originalFilename}. Expected: ${asset.md5}, got: ${actualMd5}. Discarding.`);
+                    log.error(
+                        `[SYNC]: MD5 mismatch for ${asset.originalFilename}. Expected: ${asset.md5}, got: ${actualMd5}. Discarding.`
+                    );
                     fs.unlinkSync(destPath);
                     continue;
                 }
             }
 
+            try {
+                currentSize += fs.statSync(destPath).size;
+            } catch (_) {
+                /* size tracking is best-effort; limit re-checked on next sync */
+            }
             log.info(`[SYNC]: Completed: ${asset.originalFilename}`);
         } catch (err) {
             log.error(`[SYNC]: Error downloading ${asset.originalFilename}:`, err);
