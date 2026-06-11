@@ -6,16 +6,12 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { log } = require('../utils/logConfig');
-<<<<<<< HEAD
 const {
     SYNC_API_URL,
     CONTENT_DIR,
     PLAYLIST_ASSETS_DIR,
     SERVER_URL,
 } = require('../config/constants');
-=======
-const { SYNC_API_URL, CONTENT_DIR, SERVER_URL } = require('../config/constants');
->>>>>>> 085e9c5 (fix(security): stop persisting/logging decrypted screen credentials)
 const { loadConfig } = require('../utils/configManager');
 const { getHttpClient } = require('../utils/httpClient');
 
