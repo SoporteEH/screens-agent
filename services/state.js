@@ -89,6 +89,44 @@ function loadRawState() {
 }
 
 /**
+ * One-time startup migration: re-encrypts any plaintext credential objects left
+ * in state.json by older agent versions (a historical bug wrote the decrypted
+ * state back to disk). Idempotent — already-encrypted entries (strings) are
+ * untouched, and entries are only rewritten when encryption actually succeeds,
+ * so credentials are never lost if the hardware key is unavailable.
+ */
+function migrateStateEncryption() {
+    try {
+        const state = loadRawState();
+        let migrated = 0;
+
+        for (const entry of Object.values(state)) {
+            if (
+                entry &&
+                typeof entry === 'object' &&
+                entry.credentials &&
+                typeof entry.credentials === 'object'
+            ) {
+                const encrypted = encryptCredentials(entry.credentials);
+                if (encrypted) {
+                    entry.credentials = encrypted;
+                    migrated++;
+                }
+            }
+        }
+
+        if (migrated > 0) {
+            fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2));
+            log.info(
+                `[STATE]: Re-encrypted plaintext credentials for ${migrated} screen(s) in state.json`
+            );
+        }
+    } catch (error) {
+        log.error('[STATE]: Credential re-encryption migration failed:', error);
+    }
+}
+
+/**
  * Clears state for displays that no longer exist.
  * Operates on raw (encrypted) state to avoid writing credentials in plaintext.
  * @param {Map} hardwareIdToDisplayMap
@@ -351,6 +389,7 @@ module.exports = {
     buildDisplayMap,
     loadLastState,
     cleanOrphanedState,
+    migrateStateEncryption,
     setupAutoRefresh,
     saveCurrentState,
     restoreLastState,
