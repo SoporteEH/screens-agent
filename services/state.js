@@ -22,10 +22,7 @@ async function buildDisplayMap(hardwareIdToDisplayMap) {
         hardwareIdToDisplayMap.set(simpleId, display);
     });
 
-    log.info(
-        '[DISPLAY_MAP]: Display map updated:',
-        Array.from(hardwareIdToDisplayMap.keys())
-    );
+    log.info('[DISPLAY_MAP]: Display map updated:', Array.from(hardwareIdToDisplayMap.keys()));
 }
 
 // Loads last state from JSON file
@@ -35,27 +32,38 @@ function loadLastState() {
     try {
         if (fs.existsSync(STATE_FILE_PATH)) {
             const state = JSON.parse(fs.readFileSync(STATE_FILE_PATH, 'utf8')) || {};
-            const migratedState = {};
+            const migratedState = {}; // in-memory view (credentials decrypted)
+            const persistedState = {}; // on-disk view (credentials stay encrypted)
+            let needsStructuralMigration = false;
+
             for (const [key, value] of Object.entries(state)) {
                 if (typeof value === 'string') {
                     // Legacy format: bare URL string
-                    migratedState[key] = {
+                    const migrated = {
                         url: value,
                         credentials: null,
                         timestamp: new Date().toISOString(),
                     };
+                    migratedState[key] = migrated;
+                    persistedState[key] = migrated;
+                    needsStructuralMigration = true;
                 } else {
                     const entry = { ...value };
                     if (typeof entry.credentials === 'string') {
-                        // Encrypted format — decrypt in memory
+                        // Encrypted format — decrypt in memory ONLY. The persisted copy
+                        // keeps the encrypted string; writing the decrypted value back
+                        // to disk would silently undo the encryption on every startup.
                         entry.credentials = decryptCredentials(entry.credentials);
                     }
                     // Plain object credentials are kept as-is (legacy, re-encrypted on next save)
                     migratedState[key] = entry;
+                    persistedState[key] = value;
                 }
             }
-            if (JSON.stringify(state) !== JSON.stringify(migratedState)) {
-                fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(migratedState, null, 2));
+
+            // Only rewrite the file for the legacy string->object migration.
+            if (needsStructuralMigration) {
+                fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(persistedState, null, 2));
             }
             return migratedState;
         }
@@ -124,9 +132,7 @@ function setupAutoRefresh(screenIndex, intervalSeconds, managedWindows, autoRefr
     const timerId = setInterval(() => {
         const win = managedWindows.get(screenIndex);
         if (win && !win.isDestroyed()) {
-            log.info(
-                `[AUTO-REFRESH]: Reloading screen ${screenIndex} (every ${intervalMin}min)`
-            );
+            log.info(`[AUTO-REFRESH]: Reloading screen ${screenIndex} (every ${intervalMin}min)`);
             win.webContents.reload();
         } else {
             // Window temporarily unavailable (offline mode, transition, etc.) — skip this cycle
@@ -155,7 +161,14 @@ function saveCurrentState(
 ) {
     writeLock = writeLock
         .then(() =>
-            _saveCurrentState(screenIndex, url, credentials, refreshInterval, autoRefreshTimers, managedWindows)
+            _saveCurrentState(
+                screenIndex,
+                url,
+                credentials,
+                refreshInterval,
+                autoRefreshTimers,
+                managedWindows
+            )
         )
         .catch(() => {});
     return writeLock;
@@ -169,7 +182,9 @@ function _saveCurrentState(
     autoRefreshTimers,
     managedWindows
 ) {
-    const state = loadLastState();
+    // Operate on the RAW state so the other screens' credentials stay encrypted
+    // on disk. loadLastState() here would write every entry back decrypted.
+    const state = loadRawState();
 
     if (autoRefreshTimers.has(screenIndex)) {
         clearInterval(autoRefreshTimers.get(screenIndex));
@@ -218,7 +233,22 @@ function restoreLastState(hardwareIdToDisplayMap, handleShowUrlCallback) {
         return;
     }
 
-    log.info('[STATE]: Restoring last known state:', JSON.stringify(lastState, null, 2));
+    // Log screens/urls only — never the decrypted credentials.
+    log.info(
+        '[STATE]: Restoring last known state:',
+        JSON.stringify(
+            Object.fromEntries(
+                Object.entries(lastState).map(([id, s]) => [
+                    id,
+                    {
+                        url: s.url,
+                        hasCredentials: !!s.credentials,
+                        refreshInterval: s.refreshInterval || 0,
+                    },
+                ])
+            )
+        )
+    );
 
     let restoredCount = 0;
     for (const [stableId, screenData] of Object.entries(lastState)) {
@@ -246,7 +276,7 @@ function restoreLastState(hardwareIdToDisplayMap, handleShowUrlCallback) {
 
 /**
  * Restores ALL content immediately without server dependency.
- * Runs at startup to ensure screens display content even if 
+ * Runs at startup to ensure screens display content even if
  * the server is unavailable.
  */
 function restoreAllContentImmediately(
