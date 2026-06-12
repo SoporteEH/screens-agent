@@ -1,0 +1,3 @@
+/* Placeholder. scripts/inject-config.js overwrites this file at build time with
+   the per-theme color palette (AGENT_THEME). Loaded after theme.css so injected
+   colors override the defaults; structural variables stay in theme.css. */
