@@ -122,10 +122,14 @@ body {
 }
 
 .version-badge {
-    font-size: 13px;
-    font-weight: 600;
+    position: fixed;
+    right: 12px;
+    bottom: 8px;
+    font-size: 10px;
+    font-weight: 500;
     color: var(--color-text-secondary);
-    margin-top: -4px;
+    opacity: 0.5;
+    pointer-events: none;
 }
 
 .card {
@@ -156,18 +160,7 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 12px;
-    border-radius: var(--radius-full);
-    background: var(--color-success-bg);
-    border: 1px solid var(--color-success-border);
-    transition:
-        background var(--transition-base),
-        border-color var(--transition-base);
-}
-
-.status-badge.offline {
-    background: var(--color-error-bg);
-    border-color: var(--color-error-border);
+    padding: 6px 0;
 }
 
 .status-dot {
@@ -299,6 +292,10 @@ body {
 
 .version-status .material-icons {
     font-size: 16px;
+}
+
+.version-status.hidden {
+    display: none;
 }
 
 .version-status.up-to-date {

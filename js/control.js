@@ -91,12 +91,11 @@ const versionStatus = document.getElementById('version-status');
 const versionStatusIcon = document.getElementById('version-status-icon');
 const versionStatusText = document.getElementById('version-status-text');
 
+// Only visible while actively checking or updating; quiet states stay hidden.
 function applyUpdateState(s) {
     const state = s && s.state;
     if (state === 'up-to-date') {
-        versionStatus.className = 'version-status up-to-date';
-        versionStatusIcon.textContent = 'check_circle';
-        versionStatusText.textContent = 'App actualizada';
+        versionStatus.className = 'version-status hidden';
     } else if (state === 'downloading') {
         versionStatus.className = 'version-status update-available';
         versionStatusIcon.textContent = 'system_update_alt';
@@ -109,9 +108,7 @@ function applyUpdateState(s) {
         versionStatusIcon.textContent = 'system_update_alt';
         versionStatusText.textContent = 'Actualización lista — reiniciando…';
     } else if (state === 'error') {
-        versionStatus.className = 'version-status';
-        versionStatusIcon.textContent = 'help_outline';
-        versionStatusText.textContent = 'No se pudo comprobar la versión';
+        versionStatus.className = 'version-status hidden';
     } else {
         versionStatus.className = 'version-status';
         versionStatusIcon.textContent = 'sync';
