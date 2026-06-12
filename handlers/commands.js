@@ -96,6 +96,9 @@ function createContentWindow(display, urlToLoad, command) {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
+            // No preload here, so the OS-level Chromium sandbox can be fully enabled
+            // for remote content — this is the window most exposed to third-party pages.
+            sandbox: true,
             nodeIntegrationInSubFrames: false,
             webSecurity: true,
             allowRunningInsecureContent: false,
