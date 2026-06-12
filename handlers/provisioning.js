@@ -12,6 +12,26 @@ const { SERVER_URL } = require('../config/constants');
 const { saveConfig } = require('../utils/configManager');
 const { getMachineId } = require('../services/device');
 
+// Loopback or RFC1918/link-local hosts may provision over plain HTTP (on-premise
+// servers without TLS); anything else must use HTTPS in packaged builds.
+function isPrivateHost(serverUrl) {
+    let hostname;
+    try {
+        hostname = new URL(serverUrl).hostname;
+    } catch {
+        return false;
+    }
+    return (
+        hostname === 'localhost' ||
+        hostname === '::1' ||
+        /^127\./.test(hostname) ||
+        /^10\./.test(hostname) ||
+        /^192\.168\./.test(hostname) ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
+        /^169\.254\./.test(hostname)
+    );
+}
+
 function startProvisioningMode() {
     const deviceId = getMachineId();
     let pendingServerUrl = '';
@@ -57,14 +77,18 @@ function startProvisioningMode() {
 
         // Packaged builds must provision over HTTPS with a validated cert: first contact
         // exchanges the device token + private key + CA, so an http:// or cert-bypassed
-        // channel is a key-theft risk. The insecure-TLS escape hatch is dev-only.
-        if (app.isPackaged && !isHttps) {
+        // channel is a key-theft risk. Plain http is tolerated only toward loopback or
+        // RFC1918 LAN hosts (on-premise servers without TLS); public hosts stay HTTPS-only.
+        if (app.isPackaged && !isHttps && !isPrivateHost(pendingServerUrl)) {
             log.error(`[PROVISIONING]: Rejected non-HTTPS server URL in packaged build: ${pendingServerUrl}`);
             provisionWindow.webContents.send('provision-status', {
                 type: 'error',
-                message: 'The server URL must use HTTPS.',
+                message: 'The server URL must use HTTPS (plain HTTP is only allowed for local network addresses).',
             });
             return;
+        }
+        if (!isHttps) {
+            log.warn(`[PROVISIONING]: Using plain HTTP toward private host: ${pendingServerUrl}`);
         }
 
         const allowInsecureTLS =
