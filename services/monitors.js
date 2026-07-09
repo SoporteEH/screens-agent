@@ -5,8 +5,7 @@
 const { screen } = require('electron');
 const { log } = require('../utils/logConfig');
 const { startNetworkMonitoring } = require('./network');
-const { reconcileDisplays } = require('./displaySlots');
-const { loadLastState } = require('./state');
+const { buildDisplayMap, loadLastState } = require('./state');
 
 let screenChangeTimeout;
 
@@ -15,7 +14,6 @@ const initializeMonitors = (context) => {
         const {
             hardwareIdToDisplayMap,
             managedWindows,
-            identifyWindows,
             handleShowUrl,
             socket,
             registerDevice,
@@ -26,62 +24,42 @@ const initializeMonitors = (context) => {
         log.info(`[DISPLAY]: Change detected (${reason})`);
 
         screenChangeTimeout = setTimeout(async () => {
-            log.info('[DISPLAY]: Reconciling display slots.');
+            log.info('[DISPLAY]: Updating display map.');
 
-            // Branch on the computed slot diff, never on `reason`: a cable
-            // flicker can collapse removed+added into one debounced run.
-            const result = await reconcileDisplays(hardwareIdToDisplayMap);
-            const currentIds = result.boundSlotIds;
+            const previousIds = Array.from(hardwareIdToDisplayMap.keys());
+            await buildDisplayMap(hardwareIdToDisplayMap);
+            const currentIds = Array.from(hardwareIdToDisplayMap.keys());
 
-            for (const id of result.newlyUnbound) {
-                log.info(
-                    `[DISPLAY]: Slot ${id} disconnected. Closing its window (saved state is kept).`
-                );
-                const win = managedWindows.get(id);
-                if (win && !win.isDestroyed()) win.close();
-                managedWindows.delete(id);
-
-                const identifyWin = identifyWindows?.get(id);
-                if (identifyWin && !identifyWin.isDestroyed()) identifyWin.destroy();
-                identifyWindows?.delete(id);
+            if (reason === 'removed') {
+                const orphanedIds = previousIds.filter((id) => !currentIds.includes(id));
+                for (const id of orphanedIds) {
+                    const win = managedWindows.get(id);
+                    if (win && !win.isDestroyed()) {
+                        log.info(`[DISPLAY]: Closing orphaned window: ${id}`);
+                        win.close();
+                    }
+                    managedWindows.delete(id);
+                }
             }
 
-            if (result.newlyBound.length > 0) {
-                log.info(`[DISPLAY]: Slots reconnected: ${result.newlyBound.join(', ')}`);
-                const { loadConfig } = require('../utils/configManager');
-                const config = loadConfig();
-                const serverUrl =
-                    config.serverUrl || require('../config/constants').getServerUrl();
-                const lastState = loadLastState();
-
-                for (const id of result.newlyBound) {
-                    const screenData = lastState[id];
-                    setTimeout(() => {
-                        if (screenData?.url) {
-                            log.info(`[DISPLAY]: Restoring slot ${id}: ${screenData.url}`);
-                            handleShowUrl({
-                                action: 'show_url',
-                                screenIndex: id,
-                                url: screenData.url,
-                                credentials: screenData.credentials || null,
-                                refreshInterval: screenData.refreshInterval || 0,
-                                silent: true,
-                            });
-                        } else if (serverUrl && config.deviceId) {
-                            // No local state (e.g. content pinned while the monitor
-                            // was off): the player wrapper picks it up from the server.
-                            const playerUrl = `${serverUrl}/player/${config.deviceId}/${id}`;
-                            log.info(`[DISPLAY]: Loading player URL for slot ${id}`);
-                            handleShowUrl({
-                                action: 'show_url',
-                                screenIndex: id,
-                                url: playerUrl,
-                                contentName: `Player ${id}`,
-                                silent: true,
-                            });
+            if (reason === 'added') {
+                const newIds = currentIds.filter((id) => !previousIds.includes(id));
+                if (newIds.length > 0) {
+                    log.info(`[DISPLAY]: New displays: ${newIds.join(', ')}`);
+                    const lastState = loadLastState();
+                    for (const id of newIds) {
+                        if (lastState[id]) {
+                            log.info(`[DISPLAY]: Restoring ${id}: ${lastState[id].url}`);
+                            setTimeout(() => {
+                                handleShowUrl({
+                                    action: 'show_url',
+                                    screenIndex: id,
+                                    url: lastState[id].url,
+                                    credentials: lastState[id].credentials || null,
+                                });
+                            }, 500);
                         }
-                        context.screenModes?.set(String(id), 'live');
-                    }, 500);
+                    }
                 }
             }
 

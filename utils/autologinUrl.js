@@ -18,16 +18,4 @@ function isAutologinUrl(url) {
     return AUTOLOGIN_DOMAIN_SUFFIXES.some((suffix) => host.endsWith(suffix));
 }
 
-// True when both URLs share a host (or one is a subdomain of the other).
-function isSameSite(urlA, urlB) {
-    let a, b;
-    try {
-        a = new URL(urlA).hostname.toLowerCase();
-        b = new URL(urlB).hostname.toLowerCase();
-    } catch {
-        return false;
-    }
-    return a === b || a.endsWith('.' + b) || b.endsWith('.' + a);
-}
-
-module.exports = { isAutologinUrl, isSameSite };
+module.exports = { isAutologinUrl };

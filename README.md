@@ -1,171 +1,424 @@
 # ScreensWeb Agent
 
-![Electron](https://img.shields.io/badge/electron-41-blue)
-![Node](https://img.shields.io/badge/node-22%2B-green)
-![Platform](https://img.shields.io/badge/platform-Windows-blue)
-
-Desktop player (Electron) for **ScreensWeb**. Runs on each venue PC, connects to the backend over
-WebSocket, and shows content full-screen in kiosk mode across up to 4 monitors. Auto-updates from
-GitHub Releases.
+Desktop application for Windows-based digital signage systems. Connects to the ScreensWeb backend via WebSockets and manages content display across multiple physical screens.
 
 ## Table of Contents
 
-- [What it is](#what-it-is)
+- [Overview](#overview)
+- [Features](#features)
 - [Architecture](#architecture)
+- [Technology Stack](#technology-stack)
 - [Requirements](#requirements)
-- [Quick start (dev)](#quick-start-dev)
-- [Common commands](#common-commands)
+- [Installation](#installation)
 - [Configuration](#configuration)
-- [Resilience](#resilience)
-- [Security](#security)
-- [Auto-update](#auto-update)
-- [Project structure](#project-structure)
+- [Development](#development)
+- [Build and Distribution](#build-and-distribution)
+- [Auto-Update System](#auto-update-system)
+- [Project Structure](#project-structure)
 - [Troubleshooting](#troubleshooting)
 
-## What it is
+## Overview
 
-One of the three ScreensWeb pieces (`screens-api`, `screens-front`, `screens-agent`). The agent:
+The ScreensWeb Agent is installed on venue PCs to display dynamic content on one or more screens. It maintains a persistent WebSocket connection to the central platform and executes remote commands in real-time.
 
-- Keeps a persistent WebSocket connection to the backend and runs its commands in real time
-  (`show_url`, `close_screen`, `refresh_screen`, `identify_screen`, `force_update`, `reboot_device`).
-- Detects and manages up to 4 physical displays, shown full-screen in kiosk mode.
-- Falls back to a local carousel on network/server failure — screens never go black.
-- Syncs local assets for offline playback and auto-updates itself.
+**Core Responsibilities:**
+- Establish and maintain WebSocket connection to ScreensWeb backend
+- Receive and execute commands (display URL, show local assets, close content, identify screens)
+- Detect and manage multiple physical displays (up to 4 per device)
+- Display content in full-screen kiosk mode
+- Handle connection and network failures with automatic recovery — screens must never show black
+- Sync local asset files for offline playback
+- Auto-update from GitHub Releases using electron-updater
+
+## Features
+
+**Multi-Monitor Support**
+- Automatic detection of physical displays
+- Predictable screen IDs (1, 2, 3, 4) ordered left-to-right by position
+- Independent content management per screen
+- Position-based state persistence across restarts
+
+**Offline/Recovery Logic**
+
+The agent handles 4 critical network failure cases, always keeping screens showing something:
+
+| Case | Situation | Behavior |
+|------|-----------|----------|
+| 1A | Server down, screen shows external URL | Keep playing (no change) |
+| 1B | Server down, screen shows internal URL | Switch to local carousel after 4s |
+| 2 | Internet lost entirely | All screens switch to local carousel |
+| 3 | Internet restored, server still down | Restore external URLs; keep carousel for internal URLs |
+| 4 | Server restored | Socket reconnects, reload player URLs |
+
+Network is monitored adaptively:
+- **Stable** (all OK): check every 15 seconds
+- **Degraded** (something down): check every 5 seconds
+
+**Socket Circuit Breaker**
+
+The WebSocket connection uses exponential backoff with a circuit breaker to avoid hammering the server during extended outages (thundering herd problem):
+
+| Consecutive failures | Retry interval |
+|---|---|
+| 1–5 | 3s → 9s → 27s... |
+| 8 | ~2 min |
+| 10+ (circuit OPEN) | ~5 min + jitter |
+
+- The agent **never stops retrying** — there is no user to restart it
+- Jitter (±50%) spreads retries across all agents so they don't hit the server simultaneously
+- On successful reconnect the counter resets and the circuit closes (`[CIRCUIT BREAKER]: CLOSED` in logs)
+
+**Security**
+- Configuration encrypted using a key derived from the device's hardware ID (via `node-machine-id`)
+- Third-party credentials (e.g. Sportradar, Luckia) stored encrypted in `state.json` using AES-256-GCM
+- JWT-based authentication (RS256)
+- Command validation with Zod schemas
+- Chromium hardening: `nodeIntegration: false`, `contextIsolation: true`, `webSecurity: true`
+- Renderer process limit: 10 (supports up to 4 screens + control window + identify overlays)
+
+**Asset Management**
+- Local asset synchronization from central platform
+- Validation on download: file extension allowlist + MD5 checksum verification
+- Storage cap: 750MB by default (configurable via `maxStorageMB` in agent config)
+- Automatic cleanup of obsolete files
+
+**Stability (24/7 Operation)**
+- HTTP cache cleared every 4 hours
+- DOM storage (localStorage/sessionStorage) cleared every 4 hours
+- Memory monitored hourly per renderer: auto-reload if a renderer exceeds 800MB
+- `state.json` writes serialized through a mutex to prevent corruption under concurrent commands
+- Single-instance lock prevents multiple agent processes
 
 ## Architecture
 
 ```
-ScreensWeb Backend (API + Socket.IO)
-        │ WebSocket (WSS/WS)
-ScreensWeb Agent (Electron)
-  ├── Main: connection, commands, network monitoring, state
-  └── Renderers: content windows, identify overlay, provisioning UI
-        │ display output
-Physical monitors
+┌─────────────────────────────┐
+│  ScreensWeb Backend         │
+│  (API + Socket.IO Server)   │
+└──────────────┬──────────────┘
+               │ WebSocket (WSS/WS)
+┌──────────────▼──────────────┐
+│     ScreensWeb Agent        │
+│     (Electron App)          │
+├─────────────────────────────┤
+│  Main Process               │
+│  - Connection Management    │
+│  - Command Handling         │
+│  - Network Monitoring       │
+│  - State Persistence        │
+├─────────────────────────────┤
+│  Renderer Processes         │
+│  - Content Windows          │
+│  - Identify Overlay         │
+│  - Provisioning UI          │
+└──────────────┬──────────────┘
+               │ Display Output
+┌──────────────▼──────────────┐
+│    Physical Monitors        │
+└─────────────────────────────┘
 ```
+
+## Technology Stack
+
+**Core:**
+- Electron 41.x
+- Node.js 22+
+- Socket.IO Client 4.x
+
+**Build & Distribution:**
+- electron-builder
+- electron-updater 6.x
+- GitHub Actions
+
+**Storage & Security:**
+- electron-store 8.1.0 (CommonJS compatible)
+- node-machine-id (hardware-derived encryption key)
+- JWT authentication (RS256)
+- Zod schema validation
+
+**Development:**
+- electron-log for logging
+- dotenv for environment configuration
 
 ## Requirements
 
-- **Windows 10/11** (64-bit)
-- **Node.js 22+** and **npm 10+** (dev only; this repo uses npm, not pnpm)
-- Network access to the ScreensWeb backend
+**Production (End User):**
+- Windows 10/11 (64-bit)
+- Network connectivity to ScreensWeb backend
 
-## Quick start (dev)
+**Development:**
+- Windows 10/11
+- Node.js 22+
+- npm 10+
+- Git
+
+## Installation
+
+### Development Setup
 
 ```bash
-git clone <repository>
+git clone <repository-url>
 cd screens-agent
 npm install
-echo "SERVER_URL=http://localhost:3000" > .env
-npm start
 ```
 
-First run launches **provisioning mode** (shows the device ID to link in the panel); once
-configured it starts in normal mode and connects automatically. Hot reload is not supported
-(restart the app). Logs: `%APPDATA%\ScreensWeb\logs\`.
+### Production Installation
 
-For end users: download the latest `.exe` from GitHub Releases and run it (installs, adds a
-desktop shortcut, auto-starts with Windows, and opens provisioning on first run).
-
-## Common commands
-
-| Command | What it does |
-|---|---|
-| `npm start` | Run the agent in development |
-| `npm run build:prod` | Build the Windows installer (`dist/ScreensWebAgent-Setup-x.y.z.exe` + `latest.yml`) |
+Download the latest `.exe` installer from GitHub Releases and run it. The agent will:
+1. Install to `C:\Program Files\ScreensWeb Agent\`
+2. Create desktop shortcut
+3. Configure auto-start with Windows
+4. Launch provisioning mode on first run
 
 ## Configuration
 
-The backend URL is the only required setting: `.env` `SERVER_URL` in dev; baked at build time
-(`package.json` `extraMetadata` / GitHub Secrets) in production.
+The agent requires the backend server URL for operation.
 
-Runtime config is stored **encrypted** (AES-256-GCM, key derived from the device hardware ID) at
-`%APPDATA%\ScreensWeb\config.json` — holds `deviceId`, `agentToken`, `serverUrl`, `maxStorageMB`.
-Delete it to return to provisioning mode.
+### Development Configuration
 
-| Setting | Default | Where |
-|---|---|---|
-| `maxStorageMB` | `500` | config — local asset storage cap |
-| `SOCKET_RECONNECT_DELAY_MS` | `3000` | `config/constants.js` — base reconnect delay |
-| `SOCKET_RECONNECT_DELAY_MAX_MS` | `300000` | `config/constants.js` — max delay (circuit open) |
-| `CIRCUIT_BREAKER_THRESHOLD` | `10` | `config/constants.js` — failures before circuit opens |
+Create a `.env` file in the root directory:
 
-## Resilience
+```env
+SERVER_URL=http://localhost:3000
+```
 
-**Offline recovery** — screens always show something:
+### Production Configuration
 
-| Case | Situation | Behavior |
-|---|---|---|
-| 1A | Server down, external URL on screen | Keep playing |
-| 1B | Server down, internal URL on screen | Local carousel after 4s |
-| 2 | Internet lost | All screens → local carousel |
-| 3 | Internet back, server still down | Restore external URLs; carousel for internal |
-| 4 | Server back | Reconnect socket, reload URLs |
+For production builds, the `SERVER_URL` is injected during the build process via `package.json` `extraMetadata` or GitHub Secrets.
 
-Network is checked every 15s when stable, 5s when degraded.
+### Configuration Storage
 
-**Circuit breaker** — reconnection uses exponential backoff with ±50% jitter; the agent never
-stops retrying. After 10 consecutive failures the circuit opens (`[CIRCUIT BREAKER]: OPEN`),
-capping retries at ~5 min until a success closes it.
+The agent stores its configuration encrypted in `electron-store`:
+- **Location:** `%APPDATA%\ScreensWeb\config.json`
+- **Encryption:** AES-256-GCM key derived from device hardware ID
+- **Content:** `deviceId`, `agentToken`, `serverUrl`, `maxStorageMB` (optional)
+- **Reset:** Delete this file to return to provisioning mode
 
-| Consecutive failures | Retry interval |
-|---|---|
-| 1–5 | 3s → 9s → 27s… |
-| 8 | ~2 min |
-| 10+ (open) | ~5 min + jitter |
+### Configurable Parameters
 
-## Security
+| Key | Default | Description |
+|-----|---------|-------------|
+| `maxStorageMB` | `750` | Maximum total size of local asset storage in MB |
 
-- Config and third-party credentials (Sportradar, Luckia) encrypted with AES-256-GCM using a
-  hardware-derived key.
-- JWT auth (RS256); commands validated with Zod schemas.
-- Chromium hardening: `nodeIntegration: false`, `contextIsolation: true`, `webSecurity: true`.
-- Single-instance lock; renderer memory auto-reload above 800MB; caches cleared every 4h.
+Socket reconnection constants (in `config/constants.js`):
 
-## Auto-update
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `SOCKET_RECONNECT_DELAY_MS` | `3000` | Base reconnection delay |
+| `SOCKET_RECONNECT_DELAY_MAX_MS` | `300000` | Max delay when circuit is open (5 min) |
+| `CIRCUIT_BREAKER_THRESHOLD` | `10` | Consecutive failures before circuit opens |
 
-`electron-updater` pulls from GitHub Releases. On startup the agent waits a random 15–60s (to
-avoid a thundering herd), reads its channel file, downloads in the background, and installs
-silently.
+---
 
-| Channel | File | Audience |
-|---|---|---|
-| `latest` | `latest.yml` | All devices (default) |
-| `beta` | `beta.yml` | Canary devices |
+## Development
 
-- A device's channel lives in its encrypted config and is switched remotely with
-  `{ "action": "set_channel", "channel": "beta" }` (or `"latest"`).
-- **Release**: bump `package.json` version and push a tag (`vX.Y.Z`, or `vX.Y.Z-beta.N` for
-  beta). CI builds, runs a smoke test that boots the binary, and only publishes if it passes.
-- **Rollback**: `allowDowngrade` is on — publish/point the channel file to an older version and
-  agents move back on the next check.
+Start the agent in development mode:
 
-## Structure
+```bash
+npm start
+```
+
+**Expected Behavior:**
+- **First Run:** Launches in Provisioning Mode, displays device ID for linking
+- **Configured:** Launches in Normal Mode, connects to backend automatically
+
+**Development Tools:**
+- DevTools enabled in development mode
+- Hot reload not supported (requires app restart)
+- Logs written to console and file (`%APPDATA%\ScreensWeb\logs\`)
+
+## Build and Distribution
+
+Generate the Windows installer:
+
+```bash
+npm run build:prod
+```
+
+**Output:**
+- `dist/ScreensWebAgent-Setup-1.x.x.exe` - NSIS installer
+- `dist/latest.yml` - Update metadata for electron-updater
+- `dist/win-unpacked/` - Unpacked application files
+
+## Auto-Update System
+
+The agent uses `electron-updater` for seamless updates.
+
+### Release Process (Developer)
+
+1. Update version in `package.json`:
+   ```json
+   {
+     "version": "1.1.33"
+   }
+   ```
+
+2. Commit and create a git tag:
+   ```bash
+   git add package.json
+   git commit -m "Bump version to 1.1.33"
+   git tag v1.1.33
+   git push origin main --tags
+   ```
+
+3. GitHub Actions automatically:
+   - Builds the application **without publishing** (`--publish never`)
+   - **Runs a smoke test** that boots the packaged binary and waits for the
+     `[INIT]: ScreensWeb Agent starting` marker (see [CI Smoke Test](#ci-smoke-test))
+   - Only if the smoke test passes: rebuilds with `--publish always`, generates
+     the installer + `latest.yml`, and creates the GitHub Release with artifacts
+
+### Update Process (Agent)
+
+1. Agent checks for updates at startup (random delay 15–60s to avoid thundering herd with 350 devices)
+2. Detects new version from its channel file (`latest.yml` or `beta.yml`)
+3. Downloads installer in background
+4. Installs silently and restarts
+
+### CI Smoke Test
+
+The historical crashes (`Cannot find module ...`) were broken builds that
+reached production. The release pipeline now gates every build:
+
+```
+build (--publish never) ──▶ scripts/smoke-test.js ──▶ build (--publish always)
+                              │  boots win-unpacked        (only if test passed)
+                              │  waits for [INIT] marker
+                              ▼
+                         exit 1 = release blocked
+```
+
+Because the marker is logged in `main.js` **after** every heavy service
+`require`, a missing transitive dependency throws before it prints — so the
+smoke test fails and the broken build is never published. The smoke test runs
+only on Windows (the production fleet); Linux builds publish unchanged.
+
+### Release Channels (Staged Rollout)
+
+Two channels let a new version be validated on a handful of devices before the
+whole fleet gets it — **no extra server required**, just GitHub Releases.
+
+| Channel | File | Audience | `allowPrerelease` |
+|---------|------|----------|-------------------|
+| `latest` | `latest.yml` | All devices (default) | `false` |
+| `beta` | `beta.yml` | ~10 canary devices | `true` |
+
+A device's channel is stored encrypted in its config (`updateChannel`) and
+changed remotely with the `set_channel` command:
+
+```json
+{ "action": "set_channel", "channel": "beta" }   // or "latest"
+```
+
+The agent persists it, re-points `electron-updater`, and re-checks immediately.
+
+**Staged release workflow:**
+
+1. **Ship to beta** — bump version to a prerelease and tag it:
+   ```bash
+   # package.json -> "version": "1.2.0-beta.1"
+   git tag v1.2.0-beta.1 && git push origin main --tags
+   ```
+   CI builds, smoke-tests, publishes a **prerelease** with `beta.yml`.
+   Only `beta` devices update; production keeps reading `latest.yml`.
+
+2. **Validate** the canary devices (24h recommended).
+
+3. **Promote to everyone** — bump to the final version and tag it:
+   ```bash
+   # package.json -> "version": "1.2.0"
+   git tag v1.2.0 && git push origin main --tags
+   ```
+   CI publishes `latest.yml`; the whole fleet updates.
+
+> Beta devices stay on the `beta` channel and lead each cycle. To pull one fully
+> back to stable, send `set_channel` with `"channel": "latest"`.
+
+**Rollback:** `allowDowngrade` is enabled, so editing the relevant channel file
+(or publishing an older version to it) makes agents move back down on the next
+check. Move only the affected channel to limit blast radius.
+
+## Project Structure
 
 ```
 screens-agent/
-├── config/constants.js     # URLs, timeouts, paths
-├── handlers/               # commands, ipc, provisioning
-├── services/               # socket, network, assets, auth, updater, state, monitors, tray...
-├── utils/                  # configManager (encrypted store), logConfig
-├── css/ js/                # control panel UI
-├── main.js                 # main process orchestrator
-├── preload.js              # renderer bridge
-├── *.html                  # control, fallback, identify, provision
-└── package.json
+├── config/
+│   └── constants.js           # Centralized configuration (URLs, timeouts, paths)
+├── handlers/
+│   ├── commands.js            # Remote command handlers (show_url, close_screen, etc.)
+│   ├── ipc.js                 # IPC message handlers between main and renderer
+│   └── provisioning.js        # Device provisioning flow
+├── services/
+│   ├── agentModes.js          # Normal mode vs provisioning mode startup logic
+│   ├── assets.js              # Local asset synchronization with validation
+│   ├── auth.js                # JWT token refresh loop
+│   ├── device.js              # Device registration and system commands
+│   ├── gpu.js                 # GPU configuration and crash handling
+│   ├── localCarousel.js       # Offline carousel builder from local assets
+│   ├── monitors.js            # Screen and network monitor initialization
+│   ├── network.js             # Adaptive network connectivity monitoring
+│   ├── playerCache.js         # Offline cache of player HTML
+│   ├── socket.js              # WebSocket connection management
+│   ├── state.js               # Screen state persistence (state.json, mutex)
+│   ├── tray.js                # System tray icon and menu
+│   └── updater.js             # Auto-update orchestration
+├── utils/
+│   ├── configManager.js       # electron-store wrapper with per-device encryption
+│   └── logConfig.js           # Logging configuration
+├── css/
+│   ├── theme.css              # Global design tokens (colors, radius, shadow, motion)
+│   └── control.css            # Control panel styles
+├── js/
+│   └── control.js             # Control panel renderer logic
+├── icons/                     # Application icons
+├── main.js                    # Main process orchestrator and context
+├── preload.js                 # Preload script for renderer security
+├── identify-preload.js        # Preload for screen identification overlay
+├── control.html               # Control panel UI (shell — loads css/ and js/)
+├── fallback.html              # Offline fallback page
+├── identify.html              # Screen identification overlay
+├── provision.html             # Provisioning mode UI
+├── package.json               # Project metadata and Electron config
+└── README.md                  # This file
 ```
+
+### Architecture Layers
+
+| Layer | Responsibility |
+|-------|----------------|
+| **main.js** | Application orchestration, global context, network event handlers |
+| **services/** | Independent modules with single responsibility |
+| **handlers/** | Command execution and user flows |
+| **config/** | Centralized constants and configuration |
+| **utils/** | Reusable utilities (config storage, logging) |
 
 ## Troubleshooting
 
-Logs: `%APPDATA%\ScreensWeb\logs\main.log`.
+**Check logs:** `%APPDATA%\ScreensWeb\logs\main.log`
 
-- **Won't start**: another instance running (single-instance lock), or corrupted config → delete
-  `%APPDATA%\ScreensWeb\config.json`.
-  
-Reset (Windows shell):
+**Common causes:**
+- Another instance already running (single-instance lock)
+- Corrupted config file → Delete `%APPDATA%\ScreensWeb\config.json`
+- Missing dependencies → Reinstall agent
 
+**Wrong screen count:**
+- Restart agent after connecting monitors
+- Ensure "Extend these displays" mode in Windows display settings
+
+### Reset Agent
+
+**Full reset (returns to provisioning mode):**
 ```cmd
-rmdir /s "%APPDATA%\ScreensWeb"                  :: full reset → provisioning mode
-del "%APPDATA%\ScreensWeb\state.json"            :: clear screen state only
-rmdir /s "%APPDATA%\ScreensWeb\content"          :: clear local assets (re-download next sync)
+rmdir /s "%APPDATA%\ScreensWeb"
+```
+
+**Clear only state (keeps config and credentials):**
+```cmd
+del "%APPDATA%\ScreensWeb\state.json"
+```
+
+**Clear only local assets (forces re-download on next sync):**
+```cmd
+rmdir /s "%APPDATA%\ScreensWeb\content"
+rmdir /s "%APPDATA%\ScreensWeb\playlist-assets"
 ```

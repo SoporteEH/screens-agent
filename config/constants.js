@@ -19,8 +19,8 @@ if (!SERVER_URL) {
 const CONFIG_DIR = path.join(app.getPath('userData'), 'ScreensWeb');
 const CONFIG_FILE_PATH = path.join(CONFIG_DIR, 'config.json');
 const STATE_FILE_PATH = path.join(CONFIG_DIR, 'state.json');
-const DISPLAYS_FILE_PATH = path.join(CONFIG_DIR, 'displays.json');
 const CONTENT_DIR = path.join(CONFIG_DIR, 'content');
+const PLAYLIST_ASSETS_DIR = path.join(CONFIG_DIR, 'playlist-assets');
 
 const AGENT_REFRESH_URL = SERVER_URL ? `${SERVER_URL}/api/auth/agent-refresh` : '';
 const SYNC_API_URL = SERVER_URL ? `${SERVER_URL}/api/users/me/local-assets` : '';
@@ -61,8 +61,8 @@ module.exports = {
     CONFIG_DIR,
     CONFIG_FILE_PATH,
     STATE_FILE_PATH,
-    DISPLAYS_FILE_PATH,
     CONTENT_DIR,
+    PLAYLIST_ASSETS_DIR,
     AGENT_REFRESH_URL,
     SYNC_API_URL,
     CONSTANTS,

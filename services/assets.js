@@ -6,11 +6,16 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { log } = require('../utils/logConfig');
-const { SYNC_API_URL, CONTENT_DIR, SERVER_URL } = require('../config/constants');
+const {
+    SYNC_API_URL,
+    CONTENT_DIR,
+    PLAYLIST_ASSETS_DIR,
+    SERVER_URL,
+} = require('../config/constants');
 const { loadConfig } = require('../utils/configManager');
 const { getHttpClient } = require('../utils/httpClient');
 
-const DEFAULT_MAX_STORAGE_MB = 500;
+const DEFAULT_MAX_STORAGE_MB = 750;
 
 function getMaxStorageBytes() {
     const config = loadConfig();
@@ -77,10 +82,10 @@ async function syncDir(assets, targetDir, remotePath) {
 
     const filesToDownload = assets.filter((a) => !localFiles.includes(a.serverFilename));
 
-    // Scan the content dir once and track the size incrementally per download,
-    // instead of re-walking the whole directory (sync readdir+stat) per file.
+    // Scan both asset dirs once and track the size incrementally per download,
+    // instead of re-walking the directories (sync readdir+stat) per file.
     const maxBytes = getMaxStorageBytes();
-    let currentSize = getDirSizeBytes(CONTENT_DIR);
+    let currentSize = getDirSizeBytes(CONTENT_DIR) + getDirSizeBytes(PLAYLIST_ASSETS_DIR);
 
     for (const asset of filesToDownload) {
         // Validate file extension
@@ -149,10 +154,12 @@ async function syncLocalAssets(agentToken) {
         });
         const assets = res.data;
         const generalAssets = assets.filter((a) => a.assetType !== 'playlist');
+        const playlistAssets = assets.filter((a) => a.assetType === 'playlist');
 
-        log.info(`[SYNC]: ${generalAssets.length} general assets`);
+        log.info(`[SYNC]: ${generalAssets.length} general assets, ${playlistAssets.length} playlist assets`);
 
         await syncDir(generalAssets, CONTENT_DIR, '/local-assets/');
+        await syncDir(playlistAssets, PLAYLIST_ASSETS_DIR, '/playlist-assets/');
 
         log.info('[SYNC]: Synchronization completed.');
         return true;

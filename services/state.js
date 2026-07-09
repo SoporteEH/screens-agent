@@ -3,10 +3,27 @@
  * Manages display mapping and state persistence
  */
 
+const { screen } = require('electron');
 const fs = require('fs');
 const { log } = require('../utils/logConfig');
 const { STATE_FILE_PATH } = require('../config/constants');
 const { encryptCredentials, decryptCredentials } = require('../utils/configManager');
+
+// Builds display map ordered by position
+async function buildDisplayMap(hardwareIdToDisplayMap) {
+    hardwareIdToDisplayMap.clear();
+    const displays = screen.getAllDisplays();
+
+    // Orders displays by X position (left to right)
+    displays.sort((a, b) => a.bounds.x - b.bounds.x);
+
+    displays.forEach((display, index) => {
+        const simpleId = String(index + 1);
+        hardwareIdToDisplayMap.set(simpleId, display);
+    });
+
+    log.info('[DISPLAY_MAP]: Display map updated:', Array.from(hardwareIdToDisplayMap.keys()));
+}
 
 // Loads last state from JSON file
 // Credentials are stored encrypted; plain-object credentials (legacy) are decrypted in-memory
@@ -110,21 +127,20 @@ function migrateStateEncryption() {
 }
 
 /**
- * Clears state for screen slots that no longer exist in the persistent slot
- * map. A slot whose monitor is merely disconnected is still a valid slot, so
- * its saved content is kept and restored when the monitor comes back.
+ * Clears state for displays that no longer exist.
  * Operates on raw (encrypted) state to avoid writing credentials in plaintext.
- * @param {string[]} validSlotIds - ids from the persistent slot store
+ * @param {Map} hardwareIdToDisplayMap
  */
-function cleanOrphanedState(validSlotIds) {
+function cleanOrphanedState(hardwareIdToDisplayMap) {
     const state = loadRawState();
+    const validIds = Array.from(hardwareIdToDisplayMap.keys());
     const cleanedState = {};
 
     for (const [id, entry] of Object.entries(state)) {
-        if (validSlotIds.includes(id)) {
+        if (validIds.includes(id)) {
             cleanedState[id] = entry;
         } else {
-            log.info(`[STATE]: Clearing orphaned entry for removed slot: ${id}`);
+            log.info(`[STATE]: Clearing orphaned entry for non-existent display: ${id}`);
         }
     }
 
@@ -136,17 +152,6 @@ function cleanOrphanedState(validSlotIds) {
 
     // Return decrypted state for callers that need credential values
     return loadLastState();
-}
-
-// Wipes all saved screen state. Used by the admin "reset screens" action right
-// before the slot map is re-seeded from scratch.
-function clearAllState() {
-    try {
-        fs.writeFileSync(STATE_FILE_PATH, JSON.stringify({}));
-        log.info('[STATE]: All screen state cleared.');
-    } catch (error) {
-        log.error('[STATE]: Error clearing state file:', error);
-    }
 }
 
 /**
@@ -259,10 +264,7 @@ const path = require('path');
  */
 function restoreLastState(hardwareIdToDisplayMap, handleShowUrlCallback) {
     log.info('[STATE]: Initiating state restoration...');
-    // Purge only entries whose slot was removed from the persistent slot map —
-    // never entries for slots that are just disconnected right now.
-    const { loadSlots } = require('./displaySlots');
-    const lastState = cleanOrphanedState(Object.keys(loadSlots()));
+    const lastState = cleanOrphanedState(hardwareIdToDisplayMap);
 
     if (Object.keys(lastState).length === 0) {
         log.info('[STATE]: No previous state found to restore (file empty or non-existent).');
@@ -384,9 +386,9 @@ function restoreAllContentImmediately(
 }
 
 module.exports = {
+    buildDisplayMap,
     loadLastState,
     cleanOrphanedState,
-    clearAllState,
     migrateStateEncryption,
     setupAutoRefresh,
     saveCurrentState,

@@ -7,7 +7,6 @@ const { exec } = require('child_process');
 const { log } = require('../utils/logConfig');
 const { app } = require('electron');
 const { loadLastState } = require('./state');
-const { getAllSlots } = require('./displaySlots');
 const { loadConfig } = require('../utils/configManager');
 
 function getMachineId() {
@@ -23,32 +22,16 @@ function registerDevice(socket, deviceId, hardwareIdToDisplayMap) {
     if (!socket?.connected) return;
 
     const lastState = loadLastState();
-
-    // Report every known slot, connected or not, so a dark monitor keeps its
-    // number and content server-side instead of being dropped.
-    const slots = getAllSlots();
-    const slotIds =
-        Object.keys(slots).length > 0
-            ? Object.keys(slots).sort((a, b) => Number(a) - Number(b))
-            : Array.from(hardwareIdToDisplayMap.keys());
-
-    const screenInfo = slotIds.map((slotId) => {
-        const display = hardwareIdToDisplayMap.get(slotId);
-        const slot = slots[slotId] || {};
-        return {
-            id: slotId,
-            size: display
-                ? {
-                      width: Math.round(display.size.width * display.scaleFactor),
-                      height: Math.round(display.size.height * display.scaleFactor),
-                  }
-                : // Last known resolution; positive fallback keeps old-API zod happy.
-                  { width: slot.width || 1920, height: slot.height || 1080 },
-            currentUrl: lastState[slotId]?.url || '',
-            connected: !!display,
-            label: slot.label || '',
-        };
-    });
+    const screenInfo = Array.from(hardwareIdToDisplayMap.entries()).map(
+        ([hardwareId, display]) => ({
+            id: hardwareId,
+            size: {
+                width: Math.round(display.size.width * display.scaleFactor),
+                height: Math.round(display.size.height * display.scaleFactor),
+            },
+            currentUrl: lastState[hardwareId]?.url || '',
+        })
+    );
 
     const updateChannel = loadConfig().updateChannel === 'beta' ? 'beta' : 'latest';
 

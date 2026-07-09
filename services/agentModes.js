@@ -1,8 +1,7 @@
 const { log } = require('../utils/logConfig');
 const { loadConfig } = require('../utils/configManager');
 const { startTokenRefreshLoop } = require('./auth');
-const { loadLastState } = require('./state');
-const { reconcileDisplays } = require('./displaySlots');
+const { buildDisplayMap, loadLastState } = require('./state');
 const { checkForUpdates } = require('./updater');
 const { initializeMonitors } = require('./monitors');
 const { pingServer } = require('./network');
@@ -28,7 +27,7 @@ const startNormalMode = async (context) => {
     log.info(`[NORMAL]: Device ID: ${config.deviceId}`);
 
     startTokenRefreshLoop(config.agentToken, setAgentToken);
-    await reconcileDisplays(hardwareIdToDisplayMap);
+    await buildDisplayMap(hardwareIdToDisplayMap);
 
     const serverUrl = config.serverUrl || require('../config/constants').getServerUrl();
 
@@ -40,12 +39,14 @@ const startNormalMode = async (context) => {
 
         log.info(`[NORMAL]: Server available: ${serverAvailable}`);
 
+        const { isAutologinUrl } = require('../utils/autologinUrl');
+
         screens.forEach((screenIndex, i) => {
             const screenData = savedState[String(screenIndex)];
             setTimeout(() => {
-                if (screenData?.url && screenData.credentials) {
+                if (isAutologinUrl(screenData?.url) && screenData.credentials) {
                     log.info(
-                        `[PLAYER]: Screen ${screenIndex} has autologin content, restoring directly: ${screenData.url}`
+                        `[PLAYER]: Screen ${screenIndex} has autologin URL, restoring directly: ${screenData.url}`
                     );
                     handleShowUrl({
                         action: 'show_url',

@@ -13,6 +13,7 @@ try {
     log.error('Fatal: Failed to initialize auto-updater:', updaterError);
 }
 
+// GLOBAL STATE
 const context = {
     deviceId: null,
     agentToken: null,
@@ -53,12 +54,14 @@ async function bootstrap() {
         const deviceService = require('./services/device');
         const assetsService = require('./services/assets');
 
+        // SINGLE INSTANCE LOCK
         const gotTheLock = app.requestSingleInstanceLock();
         if (!gotTheLock) {
             app.quit();
             return;
         }
 
+        // HARDWARE & MEMORY CONFIG
         configureGpu();
         configureMemory();
         registerGpuCrashHandlers();
@@ -67,6 +70,7 @@ async function bootstrap() {
             `[INIT]: ScreensWeb Agent starting on platform: ${process.platform} (Version: ${constants.AGENT_VERSION})`
         );
 
+        // AUTO-START CONFIG
         deviceService.setupAutostart();
 
         const broadcastAppStatus = () => {
@@ -84,12 +88,15 @@ async function bootstrap() {
             deviceName: getDeviceName(),
         }));
 
-        // isOnline is a plain boolean; expose a getter for consumers needing a function ref.
+        // COMMAND HANDLER INITIALIZATION
+        // isOnline is a boolean flag (kept in sync via socket connect/disconnect handlers).
+        // Expose a getter for consumers that need a function reference without
         context.getIsOnline = () => context.isOnline;
         context.saveCurrentState = stateService.saveCurrentState;
         context.handleShowUrl = (cmd, att) => commandHandlers.handleShowUrl(cmd, att);
         commandHandlers.initializeHandlers(context);
 
+        // ENRICH CONTEXT WITH ACTIONS
         context.CONSTANTS = constants.CONSTANTS;
         context.setDeviceId = (id) => {
             context.deviceId = id;
@@ -120,6 +127,7 @@ async function bootstrap() {
                 commandHandlers.createContentWindow
             );
 
+        // SOCKET CONNECTION WRAPPER
         context.connectSocket = (token) => {
             context.socket = socketService.connectToSocketServer(token, {
                 onConnect: () => {
@@ -151,11 +159,12 @@ async function bootstrap() {
                             context.fallbackTimers.forEach((t) => clearTimeout(t));
                             context.fallbackTimers.clear();
 
+                            const { isAutologinUrl } = require('./utils/autologinUrl');
                             context.managedWindows.forEach((win, screenId) => {
                                 if (!win || win.isDestroyed()) return;
                                 const screenIdStr = String(screenId);
                                 const screenData = savedState[screenIdStr];
-                                if (screenData?.url && screenData.credentials) {
+                                if (isAutologinUrl(screenData?.url) && screenData.credentials) {
                                     log.info(
                                         `[SOCKET]: Reconnected. Re-applying autologin for screen ${screenId}: ${screenData.url}`
                                     );
@@ -213,35 +222,6 @@ async function bootstrap() {
                     log.info('[SOCKET]: Device info received:', device.name);
                     const { setDeviceName, getDeviceName } = require('./services/identity');
                     setDeviceName(device.name);
-
-                    // Sync the admin-configured screen count: persist it for
-                    // offline-targeted commands and prune local slots above it.
-                    try {
-                        const expectedScreens = Number.isInteger(device.expectedScreens)
-                            ? device.expectedScreens
-                            : null;
-                        saveConfig({ expectedScreens });
-                        if (expectedScreens) {
-                            const { applyExpectedScreens } = require('./services/displaySlots');
-                            const removed = applyExpectedScreens(
-                                expectedScreens,
-                                Array.from(context.hardwareIdToDisplayMap.keys())
-                            );
-                            for (const slotId of removed) {
-                                stateService.saveCurrentState(
-                                    slotId,
-                                    null,
-                                    null,
-                                    0,
-                                    context.autoRefreshTimers,
-                                    context.managedWindows
-                                );
-                            }
-                        }
-                    } catch (e) {
-                        log.error('[SOCKET]: Error applying expectedScreens:', e);
-                    }
-
                     broadcastAppStatus();
                 },
                 onForceReprovision: () => {
@@ -260,90 +240,10 @@ async function bootstrap() {
                     app.relaunch();
                     app.exit(0);
                 },
-                onResetScreens: async () => {
-                    log.warn('[SOCKET]: Reset-screens received. Re-seeding slots from connected monitors.');
-                    try {
-                        const { clearSlots, reconcileDisplays } = require('./services/displaySlots');
-
-                        // Snapshot current slot->display and content so each monitor's
-                        // content can follow it (by display.id) into its new slot number.
-                        const oldMap = new Map(context.hardwareIdToDisplayMap);
-                        const oldState = stateService.loadLastState();
-                        const contentByDisplayId = new Map();
-                        for (const [slotId, display] of oldMap) {
-                            const entry = oldState[slotId];
-                            if (entry?.url) contentByDisplayId.set(display.id, entry);
-                        }
-
-                        // Tear down everything keyed by the old slot ids.
-                        context.managedWindows.forEach((win) => {
-                            if (win && !win.isDestroyed()) win.close();
-                        });
-                        context.managedWindows.clear();
-                        context.identifyWindows.forEach((win) => {
-                            if (win && !win.isDestroyed()) win.destroy();
-                        });
-                        context.identifyWindows.clear();
-                        context.autoRefreshTimers.forEach((t) => clearInterval(t));
-                        context.autoRefreshTimers.clear();
-                        context.retryManager.forEach((r) => clearTimeout(r.timerId));
-                        context.retryManager.clear();
-                        context.fallbackTimers.forEach((t) => clearTimeout(t));
-                        context.fallbackTimers.clear();
-                        context.screenModes.clear();
-
-                        // Wipe the persisted maps, then re-seed contiguous 1..K by position.
-                        clearSlots();
-                        stateService.clearAllState();
-                        await reconcileDisplays(context.hardwareIdToDisplayMap);
-
-                        // Re-map each monitor's content onto its new slot id.
-                        const restores = [];
-                        for (const [newSlotId, display] of context.hardwareIdToDisplayMap) {
-                            const entry = contentByDisplayId.get(display.id);
-                            if (entry?.url) restores.push({ newSlotId, entry });
-                        }
-
-                        // Persist first so registerDevice reports the correct currentUrl.
-                        await Promise.all(
-                            restores.map(({ newSlotId, entry }) =>
-                                stateService.saveCurrentState(
-                                    newSlotId,
-                                    entry.url,
-                                    entry.credentials || null,
-                                    entry.refreshInterval || 0,
-                                    context.autoRefreshTimers,
-                                    context.managedWindows
-                                )
-                            )
-                        );
-
-                        if (context.socket?.connected) context.registerDevice();
-
-                        restores.forEach(({ newSlotId, entry }, i) => {
-                            context.screenModes.set(String(newSlotId), 'live');
-                            setTimeout(() => {
-                                commandHandlers.handleShowUrl({
-                                    action: 'show_url',
-                                    screenIndex: newSlotId,
-                                    url: entry.url,
-                                    credentials: entry.credentials || null,
-                                    refreshInterval: entry.refreshInterval || 0,
-                                    silent: true,
-                                });
-                            }, 500 * i);
-                        });
-
-                        log.info(
-                            `[SOCKET]: Reset complete. Slots: [${Array.from(context.hardwareIdToDisplayMap.keys()).join(', ')}]`
-                        );
-                    } catch (e) {
-                        log.error('[SOCKET]: Error during reset-screens:', e);
-                    }
-                },
             });
         };
 
+        // NETWORK HANDLERS
         context.onNetworkOffline = (reason = 'UNKNOWN') => {
             log.info(`[NETWORK]: OFFLINE state detected. Reason: ${reason}`);
             context.isOnline = false;
@@ -410,8 +310,9 @@ async function bootstrap() {
                             );
                         }
                     } else {
-                        // External URL: internet is back but the server is still down
-                        // (screen was in carousel from a prior outage).
+                        // External URL
+                        // The screen was in carousel due to a previous internet outage.
+                        // Iternet is available but server is down.
                         if (currentMode === 'offline') {
                             if (currentUrl) {
                                 log.info(
@@ -547,6 +448,7 @@ async function bootstrap() {
             }
         };
 
+        // START APP
         app.whenReady().then(async () => {
             // One-time migration: re-encrypt any plaintext credentials a previous
             // agent version may have left in state.json. Runs before any state read.
@@ -608,6 +510,7 @@ async function bootstrap() {
             }
         });
 
+        // LIFECYCLE
         app.on('before-quit', () => {
             if (context.socket?.clearCircuitBreaker) {
                 context.socket.clearCircuitBreaker();
@@ -654,6 +557,7 @@ function showErrorWindow(error) {
     );
 }
 
+// GLOBAL ERROR HANDLERS
 process.on('uncaughtException', (err) => {
     log.error('[PROCESS]: Uncaught Exception', err);
 });

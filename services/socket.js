@@ -92,11 +92,11 @@ function connectToSocketServer(token, handlers) {
         log.error(`[SOCKET]: Reconnection error: ${err.message}`);
     });
 
+    // DOMAIN EVENTS
     socket.on('command', (cmd) => handlers.onCommand?.(cmd));
     socket.on('device-info', (device) => handlers.onDeviceInfo?.(device));
     socket.on('assets-updated', () => handlers.onAssetsUpdated?.());
     socket.on('force-reprovision', () => handlers.onForceReprovision?.());
-    socket.on('reset-screens', () => handlers.onResetScreens?.());
 
     socket.clearCircuitBreaker = () => {
         if (circuitBreakerTimer) {

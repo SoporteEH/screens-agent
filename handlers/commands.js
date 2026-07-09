@@ -256,38 +256,6 @@ function handleShowUrl(command, _currentAttempt = 0) {
 
     const targetDisplay = context.hardwareIdToDisplayMap.get(screenIndex);
     if (!targetDisplay) {
-        // Known slot with its monitor off: park the content as desired state so
-        // it is applied automatically when the monitor reconnects.
-        const { hasSlot, ensureSlot } = require('../services/displaySlots');
-        const { loadConfig } = require('../utils/configManager');
-        const expectedScreens = Number(loadConfig().expectedScreens) || 0;
-        const slotNumber = Number(screenIndex);
-        const isKnownSlot =
-            hasSlot(screenIndex) ||
-            (Number.isInteger(slotNumber) && slotNumber >= 1 && slotNumber <= expectedScreens);
-        const isPlayerWrapperCmd = trimmedUrl.includes('/player/');
-
-        if (isKnownSlot && !isPlayerWrapperCmd && context.saveCurrentState) {
-            ensureSlot(screenIndex);
-            context.saveCurrentState(
-                screenIndex,
-                url,
-                credentials,
-                refreshInterval || 0,
-                context.autoRefreshTimers,
-                context.managedWindows
-            );
-            log.info(
-                `[COMMAND]: Screen ${screenIndex} is disconnected. Content saved for reconnect: ${url}`
-            );
-            sendCommandFeedback(
-                command,
-                'saved_offline',
-                `Pantalla ${screenIndex} desconectada. El contenido se aplicará al reconectar.`
-            );
-            return;
-        }
-
         sendCommandFeedback(
             command,
             'error',
@@ -328,11 +296,10 @@ function handleShowUrl(command, _currentAttempt = 0) {
     const serverUrl = config.serverUrl || getServerUrl();
     const isPlayerMode = !!serverUrl && config.deviceId;
 
-    // Autologin content bypasses the player iframe so injection can reach the
-    // login form. Presence of credentials is the signal; host list is a fallback.
+    // Bypass player mode for autologin
     const { isAutologinUrl: checkIsAutologinUrl } = require('../utils/autologinUrl');
 
-    if (isPlayerMode && !credentials && !checkIsAutologinUrl(url)) {
+    if (isPlayerMode && !checkIsAutologinUrl(url)) {
         const playerUrl = `${serverUrl}/player/${config.deviceId}/${screenIndex}`;
 
         log.info(`[COMMAND]: Player Mode active. Forcing window reset for transition to '${url}'.`);
@@ -398,7 +365,8 @@ function handleShowUrl(command, _currentAttempt = 0) {
         win.webContents.removeAllListeners('did-navigate-in-page');
         win.webContents.removeAllListeners('did-navigate');
 
-        const { isAutologinUrl: checkIsTargetUrl, isSameSite } = require('../utils/autologinUrl');
+        // SportradarTV autologin logic
+        const { isAutologinUrl: checkIsTargetUrl } = require('../utils/autologinUrl');
 
         if (!!credentials) {
             const injectionScript = `
@@ -451,9 +419,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
 
             let lastLoggedUrl = null;
             const injectIfTarget = (sourceUrl) => {
-                const isTarget =
-                    isSameSite(sourceUrl, trimmedUrl) || checkIsTargetUrl(sourceUrl);
-                if (!win.isDestroyed() && isTarget) {
+                if (!win.isDestroyed() && checkIsTargetUrl(sourceUrl)) {
                     const shouldLog = lastLoggedUrl !== sourceUrl;
                     if (shouldLog) {
                         log.info(`[AUTOLOGIN]: Injecting into ${sourceUrl}`);
