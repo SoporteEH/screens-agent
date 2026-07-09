@@ -1,0 +1,143 @@
+{
+  "name": "local-agent",
+  "version": "1.1.58",
+  "private": true,
+  "description": "ScreensWeb Agent",
+  "main": "main.js",
+  "scripts": {
+    "preinstall": "node -e \"const ua=process.env.npm_config_user_agent||'';if(!ua.startsWith('npm/')){console.error('\\n[screens-agent] This project must be installed with npm, NOT pnpm/yarn (electron-builder + electron postinstall require npm). Run: npm install\\n');process.exit(1)}\"",
+    "start": "electron . --js-flags=\"--expose-gc\"",
+    "inject:b": "set AGENT_THEME=B&& node scripts/inject-config.js",
+    "inject:default": "set AGENT_THEME=default&& node scripts/inject-config.js",
+    "start:b": "npm run inject:b && npm start",
+    "start:default": "npm run inject:default && npm start",
+    "build": "electron-builder",
+    "build:prod": "node scripts/inject-config.js && electron-builder",
+    "format": "prettier --write \"**/*.js\"",
+    "format:check": "prettier --check \"**/*.js\"",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "keywords": [],
+  "author": "SoporteEH",
+  "license": "ISC",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "axios": "^1.6.0",
+    "dotenv": "^17.4.2",
+    "electron-log": "^5.4.4",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.3",
+    "form-data": "^4.0.5",
+    "jwt-decode": "^4.0.0",
+    "node-machine-id": "^1.1.12",
+    "socket.io-client": "^4.8.1",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0"
+  },
+  "devDependencies": {
+    "electron": "^41.7.0",
+    "electron-builder": "^26.8.1",
+    "eslint": "^10.4.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "prettier": "^3.8.3"
+  },
+  "build": {
+    "appId": "com.screens.web.agent",
+    "productName": "ScreensWeb Agent",
+    "copyright": "Copyright © 2026 SoporteEH",
+    "asar": true,
+    "compression": "maximum",
+    "files": [
+      "main.js",
+      "config/**/*",
+      "services/**/*",
+      "handlers/**/*",
+      "utils/**/*",
+      "icons/**/*",
+      "css/**/*",
+      "js/**/*",
+      "*.html",
+      "preload.js",
+      "identify-preload.js",
+      "package.json",
+      "!mainOld.js"
+    ],
+    "executableName": "screens-web-agent",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis-web",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icons/icon.ico",
+      "artifactName": "ScreensWebAgent-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "differentialPackage": true,
+      "deleteAppDataOnUninstall": true,
+      "include": "installer-script.nsh"
+    },
+    "nsisWeb": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "artifactName": "ScreensWebAgent-installer.${ext}",
+      "appPackageUrl": "https://github.com/SoporteEH/ScreensWeb-agent/releases/latest/download/",
+      "menuCategory": false
+    },
+    "linux": {
+      "executableName": "screens-web-agent",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "armv7l",
+            "arm64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64",
+            "armv7l",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "Utility",
+      "maintainer": "SoporteEH <soporte@screensweb.com>",
+      "synopsis": "ScreensWeb Agent for Digital Signage",
+      "description": "Cross-platform agent for ScreensWeb digital signage platform, optimized for Raspberry Pi and Windows."
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "SoporteEH",
+      "repo": "ScreensWeb-agent"
+    }
+  },
+  "config": {
+    "serverUrl": ""
+  }
+}
