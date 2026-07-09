@@ -3,8 +3,6 @@ const { log } = require('./utils/logConfig');
 const path = require('path');
 const fs = require('fs');
 
-app.commandLine.appendSwitch('js-flags', '--expose-gc');
-
 try {
     const { configureUpdater, checkForUpdates } = require('./services/updater');
     configureUpdater();
@@ -25,6 +23,7 @@ const context = {
     autoRefreshTimers: new Map(),
     fallbackTimers: new Map(),
     screenModes: new Map(),
+    lastDisconnectAt: 0,
 };
 
 async function bootstrap() {
@@ -34,6 +33,7 @@ async function bootstrap() {
         const {
             configureGpu,
             configureMemory,
+            logGpuDiagnostics,
             registerGpuCrashHandlers,
         } = require('./services/gpu');
         const { registerIpcHandlers } = require('./handlers/ipc');
@@ -130,6 +130,7 @@ async function bootstrap() {
                 },
                 onDisconnect: (reason) => {
                     context.isOnline = false;
+                    context.lastDisconnectAt = Date.now();
                     broadcastAppStatus();
                     context.onNetworkOffline('SOCKET_DISCONNECT');
                 },
@@ -139,8 +140,17 @@ async function bootstrap() {
                     context.registerDevice();
                     assetsService.syncLocalAssets(context.agentToken);
 
+                    // Short blips must not reload screens that are already live on the
+                    // right URL — every reload re-renders the page and flickers.
+                    const outageMs = context.lastDisconnectAt
+                        ? Date.now() - context.lastDisconnectAt
+                        : Infinity;
+                    const isShortBlip =
+                        outageMs < constants.CONSTANTS.RECONNECT_RELOAD_THRESHOLD_MS;
+
                     // Reload player URLs on all screens
                     const { loadConfig } = require('./utils/configManager');
+                    const { isSameSite } = require('./utils/autologinUrl');
                     const onlineConfig = loadConfig();
                     const serverUrl = onlineConfig.serverUrl || constants.getServerUrl();
 
@@ -155,25 +165,39 @@ async function bootstrap() {
                                 if (!win || win.isDestroyed()) return;
                                 const screenIdStr = String(screenId);
                                 const screenData = savedState[screenIdStr];
+                                const isLive = context.screenModes.get(screenIdStr) === 'live';
+                                const currentUrl = win.webContents.getURL();
                                 if (screenData?.url && screenData.credentials) {
-                                    log.info(
-                                        `[SOCKET]: Reconnected. Re-applying autologin for screen ${screenId}: ${screenData.url}`
-                                    );
-                                    commandHandlers.handleShowUrl({
-                                        action: 'show_url',
-                                        screenIndex: screenId,
-                                        url: screenData.url,
-                                        credentials: screenData.credentials,
-                                        refreshInterval: screenData.refreshInterval || 0,
-                                    });
+                                    if (isShortBlip && isLive && isSameSite(currentUrl, screenData.url)) {
+                                        log.info(
+                                            `[SOCKET]: Short blip (${outageMs}ms). Keeping autologin screen ${screenId} as-is.`
+                                        );
+                                    } else {
+                                        log.info(
+                                            `[SOCKET]: Reconnected. Re-applying autologin for screen ${screenId}: ${screenData.url}`
+                                        );
+                                        commandHandlers.handleShowUrl({
+                                            action: 'show_url',
+                                            screenIndex: screenId,
+                                            url: screenData.url,
+                                            credentials: screenData.credentials,
+                                            refreshInterval: screenData.refreshInterval || 0,
+                                        });
+                                    }
                                 } else {
                                     const playerUrl = `${serverUrl}/player/${onlineConfig.deviceId}/${screenId}`;
-                                    log.info(
-                                        `[SOCKET]: Reconnected. Reloading player URL for screen ${screenId}`
-                                    );
-                                    win.loadURL(playerUrl).catch((e) =>
-                                        log.error(`[SOCKET]: Error reloading win ${screenId}:`, e)
-                                    );
+                                    if (isShortBlip && isLive && currentUrl.startsWith(playerUrl)) {
+                                        log.info(
+                                            `[SOCKET]: Short blip (${outageMs}ms). Keeping player screen ${screenId} as-is.`
+                                        );
+                                    } else {
+                                        log.info(
+                                            `[SOCKET]: Reconnected. Reloading player URL for screen ${screenId}`
+                                        );
+                                        win.loadURL(playerUrl).catch((e) =>
+                                            log.error(`[SOCKET]: Error reloading win ${screenId}:`, e)
+                                        );
+                                    }
                                 }
                                 context.screenModes.set(screenIdStr, 'live');
                             });
@@ -548,6 +572,8 @@ async function bootstrap() {
         };
 
         app.whenReady().then(async () => {
+            logGpuDiagnostics();
+
             // One-time migration: re-encrypt any plaintext credentials a previous
             // agent version may have left in state.json. Runs before any state read.
             stateService.migrateStateEncryption();

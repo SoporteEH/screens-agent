@@ -11,6 +11,9 @@ const path = require('path');
 let isCheckingForUpdate = false;
 let checksumRetries = 0;
 
+const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+let updateCheckTimer = null;
+
 // In a packaged build, updates always run. In dev (electron .) there is no update
 // metadata, so forcing the dev update config just makes electron-updater spam
 // "ENOENT dev-app-update.yml". Allow dev update-testing only when the developer
@@ -135,7 +138,7 @@ async function checkForUpdates() {
             } else {
                 log.error('[UPDATER]: Max checksum retries reached. Suspending updates for 12 hours.');
                 checksumRetries = 0;
-                // Block the 10-minute interval check by faking isCheckingForUpdate
+                // Block the periodic interval check by faking isCheckingForUpdate
                 isCheckingForUpdate = true;
                 setTimeout(() => {
                     isCheckingForUpdate = false;
@@ -171,14 +174,16 @@ async function checkForUpdates() {
         setUpdateState('error', { message: 'Error checking for updates' });
     });
 
-    setInterval(
-        () => {
+    // checkForUpdates() runs more than once (boot, delayed check, force_update):
+    // only the first call may start the periodic timer.
+    if (!updateCheckTimer) {
+        log.info('[UPDATER]: Periodic update check started (every 60 min).');
+        updateCheckTimer = setInterval(() => {
             if (!isCheckingForUpdate) {
                 autoUpdater.checkForUpdates().catch(() => { });
             }
-        },
-        10 * 60 * 1000
-    );
+        }, UPDATE_CHECK_INTERVAL_MS);
+    }
 }
 
 function isUpdating() {

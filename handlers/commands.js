@@ -202,7 +202,8 @@ function createContentWindow(display, urlToLoad, command) {
         }
     );
 
-    const windowSession = win.webContents.session;
+    // The session is shared by every screen: clearing cache/storage here would
+    // wipe all screens' cookies and the HTTP cache on each content change.
     win.on('closed', () => {
         if (context.managedWindows.get(screenIndex) === win) {
             context.managedWindows.delete(screenIndex);
@@ -210,10 +211,6 @@ function createContentWindow(display, urlToLoad, command) {
         if (context.retryManager.has(screenIndex)) {
             clearTimeout(context.retryManager.get(screenIndex).timerId);
             context.retryManager.delete(screenIndex);
-        }
-        if (windowSession) {
-            windowSession.clearCache().catch(() => { });
-            windowSession.clearStorageData().catch(() => { });
         }
     });
 

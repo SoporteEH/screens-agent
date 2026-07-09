@@ -150,10 +150,9 @@ const startNormalMode = async (context) => {
 
     setInterval(() => {
         if (managedWindows.size === 0) return;
-        log.info('[OPTIMIZATION]: Clearing HTTP cache and DOM storage.');
+        log.info('[OPTIMIZATION]: Clearing DOM storage.');
         managedWindows.forEach((win) => {
             if (win?.isDestroyed()) return;
-            win.webContents.session.clearCache().catch(() => { });
             win.webContents
                 .executeJavaScript('try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}')
                 .catch(() => { });

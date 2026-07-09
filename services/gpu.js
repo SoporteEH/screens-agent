@@ -50,6 +50,13 @@ function configureGpu() {
 
     log.info('[GPU]: Using hardware acceleration.');
 
+    // A/B knob for problem boxes: keep acceleration but let Chromium's
+    // blocklist decide instead of forcing raster/decode on old iGPUs.
+    if (process.env.GPU_SAFE_MODE === 'true') {
+        log.info('[GPU]: Safe mode — skipping forced GPU switches.');
+        return;
+    }
+
     app.commandLine.appendSwitch('enable-gpu-rasterization');
     app.commandLine.appendSwitch('enable-accelerated-video-decode');
     app.commandLine.appendSwitch('enable-zero-copy');
@@ -69,11 +76,14 @@ function configureMemory() {
         maxOldSpace = 512; // Mid-range (2GB RAM)
     }
 
-    app.commandLine.appendSwitch('js-flags', `--max-old-space-size=${maxOldSpace} --max-semi-space-size=2`);
+    app.commandLine.appendSwitch('js-flags', `--max-old-space-size=${maxOldSpace} --max-semi-space-size=8`);
     app.commandLine.appendSwitch('renderer-process-limit', '10');
-    app.commandLine.appendSwitch('disk-cache-size', '5242880');
-    app.commandLine.appendSwitch('media-cache-size', '5242880');
-    app.commandLine.appendSwitch('disable-http-cache');
+    // Kiosk tradeoff for 4GB boxes: player pages hold no secrets and content is
+    // admin-curated, so shared renderers + in-process iframes are acceptable.
+    app.commandLine.appendSwitch('process-per-site');
+    app.commandLine.appendSwitch('disable-site-isolation-trials');
+    app.commandLine.appendSwitch('disk-cache-size', '157286400'); // 150MB
+    app.commandLine.appendSwitch('media-cache-size', '52428800'); // 50MB
     app.commandLine.appendSwitch(
         'disable-features',
         'MediaRouter,AudioServiceOutOfProcess,CalculateNativeWinOcclusion,HardwareMediaKeyHandling'
@@ -85,7 +95,38 @@ function configureMemory() {
     app.commandLine.appendSwitch('disable-notifications');
     app.commandLine.appendSwitch('disable-domain-reliability');
 
+    // Opt-in: sites honoring prefers-reduced-motion tone down decorative animations
+    if (process.env.REDUCED_MOTION === 'true') {
+        app.commandLine.appendSwitch('force-prefers-reduced-motion');
+    }
+
     log.info(`[MEMORY]: Optimization applied (Max Old Space: ${maxOldSpace}MB). Total RAM: ${Math.round(totalMemMb)}MB`);
+}
+
+// Call after app.whenReady: shows per-box whether compositing/video decode are
+// hardware and which adapter Chromium picked (dual-GPU boxes copy every frame
+// across adapters — the fix is operational, but this log pinpoints it).
+function logGpuDiagnostics() {
+    try {
+        const features = app.getGPUFeatureStatus();
+        log.info(
+            `[GPU]: Features — compositing: ${features.gpu_compositing}, ` +
+            `video_decode: ${features.video_decode}, rasterization: ${features.rasterization}, ` +
+            `webgl: ${features.webgl}`
+        );
+    } catch (e) {
+        log.warn('[GPU]: Could not read feature status:', e.message);
+    }
+
+    app.getGPUInfo('basic')
+        .then((info) => {
+            const gpus = (info?.gpuDevice || []).map(
+                (d) =>
+                    `vendor=0x${(d.vendorId || 0).toString(16)} device=0x${(d.deviceId || 0).toString(16)}${d.active ? ' (active)' : ''}`
+            );
+            log.info(`[GPU]: Adapters: ${gpus.join(' | ') || 'unknown'}`);
+        })
+        .catch((e) => log.warn('[GPU]: Could not read GPU info:', e.message));
 }
 
 function registerGpuCrashHandlers() {
@@ -108,5 +149,6 @@ module.exports = {
     resetGpuState,
     configureGpu,
     configureMemory,
+    logGpuDiagnostics,
     registerGpuCrashHandlers,
 };

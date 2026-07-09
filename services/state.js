@@ -155,7 +155,8 @@ function clearAllState() {
  * @param {number} intervalSeconds - interval in seconds (e.g. 600 = 10 min)
  */
 function setupAutoRefresh(screenIndex, intervalSeconds, managedWindows, autoRefreshTimers) {
-    const intervalMs = intervalSeconds * 1000;
+    // Jitter spreads reloads so multiple screens never reload at the same instant
+    const intervalMs = intervalSeconds * 1000 + Math.floor(Math.random() * 15000);
     const intervalMin = Math.round(intervalSeconds / 60);
 
     log.info(

@@ -39,6 +39,7 @@ const CONSTANTS = {
     SOCKET_RECONNECT_DELAY_MAX_MS: 5 * 60 * 1000, // Max delay in circuit-breaker OPEN state (5 min)
     CIRCUIT_BREAKER_THRESHOLD: 10,               // Consecutive failures before circuit opens
     FALLBACK_DELAY_MS: 4000,                     // 4s delay before fallback
+    RECONNECT_RELOAD_THRESHOLD_MS: 2 * 60 * 1000, // Skip live-screen reloads for socket blips shorter than this
 };
 
 let AGENT_VERSION = 'Unknown';

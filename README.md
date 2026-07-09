@@ -86,6 +86,9 @@ Delete it to return to provisioning mode.
 | Setting | Default | Where |
 |---|---|---|
 | `maxStorageMB` | `500` | config — local asset storage cap |
+| `DISABLE_GPU` | unset | env — disable hardware acceleration entirely |
+| `GPU_SAFE_MODE` | unset | env — keep acceleration but skip forced GPU switches (Chromium blocklist decides) |
+| `REDUCED_MOTION` | unset | env — force `prefers-reduced-motion` in content pages |
 | `SOCKET_RECONNECT_DELAY_MS` | `3000` | `config/constants.js` — base reconnect delay |
 | `SOCKET_RECONNECT_DELAY_MAX_MS` | `300000` | `config/constants.js` — max delay (circuit open) |
 | `CIRCUIT_BREAKER_THRESHOLD` | `10` | `config/constants.js` — failures before circuit opens |
