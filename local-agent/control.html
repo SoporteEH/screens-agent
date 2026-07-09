@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screens Control</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="styles/control.css">
+</head>
+
+<body>
+    <div id="boot-overlay" class="boot-overlay">
+        <div class="boot-logo">
+            <span class="material-icons" style="font-size: 32px; color: white;"></span>
+        </div>
+        <div class="boot-text">Iniciando Screens</div>
+        <div class="boot-subtext" id="boot-status">Sincronizando sistemas...</div>
+        <div class="boot-spinner"></div>
+    </div>
+
+    <div class="title-bar">
+        <div class="title-bar-left">
+            <div class="title-bar-logo">
+                <span class="material-icons">monitor</span>
+            </div>
+            <span class="title-bar-text">Screens</span>
+            <span class="title-bar-version" id="agent-version"></span>
+        </div>
+
+        <span id="station-name-display" class="station-tag" title="Nombre del salon">Salon</span>
+
+        <div class="title-bar-controls">
+            <div class="title-bar-button" id="btn-minimize">
+                <span class="material-icons">minimize</span>
+            </div>
+            <div class="title-bar-button close" id="btn-window-close">
+                <span class="material-icons">close</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="screens-panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <span class="material-icons">desktop_windows</span>
+                    Pantallas Conectadas
+                </div>
+                <div class="panel-header-actions">
+                    <button class="btn btn-secondary" onclick="identifyAllScreens()"
+                        title="Identificar todas las pantallas"
+                        style="width: auto; height: 30px; padding: 0 12px; font-size: 11px; gap: 6px; min-height: 0;">
+                        <span class="material-icons" style="font-size: 16px;">visibility</span>
+                        IDENTIFICAR PANTALLAS
+                    </button>
+                    <span class="screens-count" id="screens-count">0</span>
+                </div>
+            </div>
+            <div class="screens-list" id="screens-list"></div>
+        </div>
+
+        <div class="controls-panel">
+            <div class="card">
+                <div id="gpu-diagnostic-container">
+                    <div class="gpu-badge" id="gpu-badge">
+                        <span class="material-icons gpu-icon" id="gpu-icon">memory</span>
+                        <div class="gpu-info-text">
+                            <span class="gpu-name" id="gpu-name"
+                                style="color:#fff; font-weight:600; display:block; font-size:11px;">
+                                GPU: <span id="gpu-info"></span>
+                            </span>
+                        </div>
+                        <span class="material-icons refresh-gpu-btn" onclick="updateGpuStatus(true)"
+                            title="Escanear hardware gpu">
+                            refresh
+                        </span>
+                    </div>
+                </div>
+                <div class="agent-actions" style="display: flex; flex-direction: column; gap: 10px;">
+                    <button class="btn btn-secondary" id="btn-restart">
+                        <span class="material-icons">restart_alt</span>
+                        Reiniciar App
+                    </button>
+                    <button class="btn btn-secondary" id="btn-update">
+                        <span class="material-icons">system_update</span>
+                        Buscar Actualización
+                    </button>
+                    <button class="btn btn-secondary" id="btn-logs">
+                        <span class="material-icons">description</span>
+                        Logs del Sistema
+                    </button>
+                    <hr style="border:0; border-top:1px solid #444;">
+                    <button class="btn btn-danger" id="btn-quit">
+                        <span class="material-icons">power_settings_new</span>
+                        Cerrar Aplicación
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="notification" class="notification"></div>
+    <div id="modal-overlay" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-title" id="modal-title"></div>
+            <div class="modal-message" id="modal-message"></div>
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-cancel" id="modal-cancel">Cancelar</button>
+                <button class="modal-btn modal-btn-confirm" id="modal-confirm">Aceptar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Setup Modal -->
+    <div id="setup-modal" class="modal-overlay" style="z-index: 2000;">
+        <div class="modal" style="max-width: 400px; text-align: center;">
+            <div class="modal-header"
+                style="margin-bottom:15px; border-bottom:1px solid var(--color-border); padding-bottom:10px;">
+                <h3 id="setup-modal-title" style="color:var(--color-primary);">Configuración Inicial</h3>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="setup-station-name" class="setup-input" placeholder="Nombre del Local"
+                    maxlength="30">
+            </div>
+            <div class="modal-footer" style="margin-top:20px; display: flex; gap: 10px;">
+                <button id="btn-cancel-setup" class="modal-btn-cancel hidden"
+                    style="flex: 1; height:44px; border-radius:8px; cursor:pointer;">Cancelar</button>
+                <button id="btn-save-setup" class="modal-btn-confirm"
+                    style="flex: 2; height:44px; border-radius:8px; border:none; cursor:pointer; font-weight:600;">Completar
+                    Instalación</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="control-renderer.js"></script>
+</body>
+
+</html>

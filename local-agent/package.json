@@ -1,0 +1,67 @@
+{
+  "name": "screens",
+  "version": "1.0.1",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron . --js-flags=\"--expose-gc\"",
+    "build": "electron-builder",
+    "build:prod": "electron-builder",
+    "test": "jest --verbose",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "electron-log": "^5.1.5",
+    "electron-store": "^8.1.0",
+    "node-machine-id": "^1.1.12",
+    "systeminformation": "^5.30.5"
+  },
+  "devDependencies": {
+    "electron": "^38.2.1",
+    "electron-builder": "^26.4.0",
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.12"
+  },
+  "build": {
+    "appId": "com.screens.agent",
+    "productName": "Screens",
+    "copyright": "Copyright © 2026 SoporteEH",
+    "asar": true,
+    "compression": "maximum",
+    "files": [
+      "main.js",
+      "config/**/*",
+      "services/**/*",
+      "handlers/**/*",
+      "utils/**/*",
+      "icons/**/*",
+      "*.html",
+      "preload.js",
+      "identify-preload.js",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "icons/icon.ico",
+      "artifactName": "Screens-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "differentialPackage": true,
+      "deleteAppDataOnUninstall": true,
+      "include": "installer-script.nsh"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "SoporteEH",
+      "repo": "ScreensWeb-agent"
+    }
+  }
+}

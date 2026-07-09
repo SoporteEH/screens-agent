@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Identificar Pantalla</title>
+    <link rel="stylesheet" href="styles/indetify.css">
+</head>
+<body>
+<h1 id="identifier"></h1>
+<script>
+    window.electronAPI.onSetIdentifier((text) => {
+        document.getElementById('identifier').innerText = text;
+    });
+</script>
+</body>
+</html>
