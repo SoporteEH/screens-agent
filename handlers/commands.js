@@ -51,6 +51,7 @@ function sendCommandFeedback(command, status, message) {
     }
 }
 
+// Schedules retry with exponential backoff
 const MAX_RETRY_DELAY_MS = 2 * 60 * 1000;
 
 function scheduleRetry(command) {
@@ -73,6 +74,9 @@ function scheduleRetry(command) {
     context.retryManager.set(screenIndex, { attempt, timerId });
 }
 
+/**
+ * Creates a content window optimized for digital signage.
+ */
 function createContentWindow(display, urlToLoad, command) {
     const { screenIndex, url: originalUrl, contentName } = command;
     const fallbackPath = `file://${path.join(__dirname, '../fallback.html')}`;
@@ -216,6 +220,9 @@ function createContentWindow(display, urlToLoad, command) {
     return win;
 }
 
+/**
+ * Handles 'show_url' command.
+ */
 function handleShowUrl(command, _currentAttempt = 0) {
     const { screenIndex, url, credentials, contentName, refreshInterval } = command;
 

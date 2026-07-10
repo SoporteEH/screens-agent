@@ -1,4 +1,7 @@
-// JWT token refresh + mTLS cert renewal
+/**
+ * Authentication Service - JWT Token Refresh + mTLS cert renewal
+ */
+
 const { jwtDecode } = require('jwt-decode');
 const { log } = require('../utils/logConfig');
 const { loadConfig, saveConfig } = require('../utils/configManager');
@@ -32,6 +35,7 @@ async function renewCertIfNeeded() {
     if (!config.certPem || !config.agentToken) return;
 
     try {
+        // Parse cert expiry from PEM using built-in crypto
         const { X509Certificate } = require('crypto');
         const cert = new X509Certificate(config.certPem);
         const expiresAt = new Date(cert.validTo);
@@ -75,6 +79,7 @@ function startTokenRefreshLoop(agentToken, onTokenRefreshed) {
                 }
             }
 
+            // Check if mTLS cert needs renewal (30 days before expiry)
             await renewCertIfNeeded();
         } catch (e) {
             log.error('[AUTH]: Error in token verification loop:', e);

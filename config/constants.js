@@ -26,18 +26,18 @@ const AGENT_REFRESH_URL = SERVER_URL ? `${SERVER_URL}/api/auth/agent-refresh` : 
 const SYNC_API_URL = SERVER_URL ? `${SERVER_URL}/api/users/me/local-assets` : '';
 
 const CONSTANTS = {
-    HEARTBEAT_INTERVAL_MS: 60 * 1000,
-    TOKEN_CHECK_INTERVAL_MS: 4 * 60 * 60 * 1000,
-    UPDATE_CHECK_MIN_DELAY_MS: 15000,             // jitter so a fleet booting together doesn't hit GitHub at once
-    UPDATE_CHECK_MAX_DELAY_MS: 60000,
-    SCREEN_DEBOUNCE_MS: 500,
-    RETRY_BACKOFF_BASE_MS: 30 * 1000,
-    GC_INTERVAL_MS: 4 * 60 * 60 * 1000,
-    SOCKET_RECONNECT_DELAY_MS: 3 * 1000,
+    HEARTBEAT_INTERVAL_MS: 60 * 1000,             // Heartbeat 60s
+    TOKEN_CHECK_INTERVAL_MS: 4 * 60 * 60 * 1000,  // Verify token 4h
+    UPDATE_CHECK_MIN_DELAY_MS: 15000,             // Minimum delay before checking for updates
+    UPDATE_CHECK_MAX_DELAY_MS: 60000,             // Maximum delay before checking for updates
+    SCREEN_DEBOUNCE_MS: 500,                      // Debounce for screen changes
+    RETRY_BACKOFF_BASE_MS: 30 * 1000,             // Exponential backoff base
+    GC_INTERVAL_MS: 4 * 60 * 60 * 1000,           // Garbage collection 4h
+    SOCKET_RECONNECT_DELAY_MS: 3 * 1000,          // Base delay between reconnection attempts
     SOCKET_RECONNECT_DELAY_MAX_MS: 5 * 60 * 1000, // socket.io reconnectionDelayMax
-    CIRCUIT_BREAKER_THRESHOLD: 10,
-    FALLBACK_DELAY_MS: 4000,
-    RECONNECT_RELOAD_THRESHOLD_MS: 2 * 60 * 1000, // shorter blips skip reload — avoids visible flicker
+    CIRCUIT_BREAKER_THRESHOLD: 10,                // Consecutive failures before circuit opens
+    FALLBACK_DELAY_MS: 4000,                      // 4s delay before fallback
+    RECONNECT_RELOAD_THRESHOLD_MS: 2 * 60 * 1000, // Skip live-screen reloads for socket blips shorter than this
 };
 
 let AGENT_VERSION = 'Unknown';
@@ -48,6 +48,7 @@ try {
     console.error('[CONFIG]: Failed to read version from package.json');
 }
 
+// Helper to get updated server URL
 function getServerUrl() {
     const freshConfig = loadConfig();
     return freshConfig.serverUrl || SERVER_URL;
