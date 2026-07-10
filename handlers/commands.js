@@ -216,9 +216,6 @@ function createContentWindow(display, urlToLoad, command) {
     return win;
 }
 
-/**
- * Handles 'show_url' command.
- */
 function handleShowUrl(command, _currentAttempt = 0) {
     const { screenIndex, url, credentials, contentName, refreshInterval } = command;
 
