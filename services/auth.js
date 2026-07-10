@@ -1,13 +1,10 @@
-/**
- * Authentication Service - JWT Token Refresh + mTLS cert renewal
- */
-
+// JWT token refresh + mTLS cert renewal
 const { jwtDecode } = require('jwt-decode');
 const { log } = require('../utils/logConfig');
 const { loadConfig, saveConfig } = require('../utils/configManager');
 const { getHttpClient, resetHttpClient } = require('../utils/httpClient');
+const { CONSTANTS } = require('../config/constants');
 
-const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 async function refreshAgentToken(currentAgentToken) {
@@ -35,7 +32,6 @@ async function renewCertIfNeeded() {
     if (!config.certPem || !config.agentToken) return;
 
     try {
-        // Parse cert expiry from PEM using built-in crypto
         const { X509Certificate } = require('crypto');
         const cert = new X509Certificate(config.certPem);
         const expiresAt = new Date(cert.validTo);
@@ -58,7 +54,9 @@ async function renewCertIfNeeded() {
 }
 
 function startTokenRefreshLoop(agentToken, onTokenRefreshed) {
-    log.info('[AUTH]: Starting token verification loop (interval: 4h)');
+    log.info(
+        `[AUTH]: Starting token verification loop (interval: ${CONSTANTS.TOKEN_CHECK_INTERVAL_MS / 3600000}h)`
+    );
     let currentToken = agentToken;
 
     return setInterval(async () => {
@@ -77,12 +75,11 @@ function startTokenRefreshLoop(agentToken, onTokenRefreshed) {
                 }
             }
 
-            // Check if mTLS cert needs renewal (30 days before expiry)
             await renewCertIfNeeded();
         } catch (e) {
             log.error('[AUTH]: Error in token verification loop:', e);
         }
-    }, FOUR_HOURS_MS);
+    }, CONSTANTS.TOKEN_CHECK_INTERVAL_MS);
 }
 
 module.exports = {

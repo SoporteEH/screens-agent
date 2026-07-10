@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { log } = require('../utils/logConfig');
 const axios = require('axios');
-const { CONTENT_DIR, getServerUrl } = require('../config/constants');
+const { CONTENT_DIR, getServerUrl, CONSTANTS } = require('../config/constants');
 const { cachePlayerHTML, cacheContentURL } = require('../services/playerCache');
 const { isAutologinUrl } = require('../utils/autologinUrl');
 
@@ -23,11 +23,11 @@ function isNavigationAllowed(targetUrl, currentUrl) {
     }
     try {
         if (currentUrl && new URL(currentUrl).origin === target.origin) return true;
-    } catch { /* ignore */ }
+    } catch { }
     try {
         const serverUrl = getServerUrl();
         if (serverUrl && new URL(serverUrl).origin === target.origin) return true;
-    } catch { /* ignore */ }
+    } catch { }
     return false;
 }
 
@@ -51,14 +51,16 @@ function sendCommandFeedback(command, status, message) {
     }
 }
 
-// Schedules retry with exponential backoff
 const MAX_RETRY_DELAY_MS = 2 * 60 * 1000;
 
 function scheduleRetry(command) {
     const { screenIndex } = command;
     const attempt = (context.retryManager.get(screenIndex)?.attempt || 0) + 1;
 
-    const delayMs = Math.min(Math.pow(2, attempt - 1) * 30 * 1000, MAX_RETRY_DELAY_MS);
+    const delayMs = Math.min(
+        Math.pow(2, attempt - 1) * CONSTANTS.RETRY_BACKOFF_BASE_MS,
+        MAX_RETRY_DELAY_MS
+    );
     log.info(
         `[RETRY]: Scheduling retry #${attempt} for screen ${screenIndex} in ${delayMs / 1000} seconds.`
     );
@@ -71,9 +73,6 @@ function scheduleRetry(command) {
     context.retryManager.set(screenIndex, { attempt, timerId });
 }
 
-/**
- * Creates a content window optimized for digital signage.
- */
 function createContentWindow(display, urlToLoad, command) {
     const { screenIndex, url: originalUrl, contentName } = command;
     const fallbackPath = `file://${path.join(__dirname, '../fallback.html')}`;
@@ -96,8 +95,6 @@ function createContentWindow(display, urlToLoad, command) {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            // No preload here, so the OS-level Chromium sandbox can be fully enabled
-            // for remote content — this is the window most exposed to third-party pages.
             sandbox: true,
             nodeIntegrationInSubFrames: false,
             webSecurity: true,

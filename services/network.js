@@ -84,13 +84,6 @@ function pingInternet() {
 
 /**
  * Adaptive polling network monitor.
- *
- * Intervals:
- *   STABLE   (everything OK)  → 15 seconds
- *   DEGRADED (something down) → 5 seconds
- *
- * Uses recursive setTimeout, when ping timeouts (up to 9s) exceed the poll interval.
- * Never backs off to 0 attempts — recovery is always possible.
  */
 
 const STABLE_INTERVAL_MS = 15_000;
@@ -146,10 +139,8 @@ function startNetworkMonitoring(handlers) {
         }
     }
 
-    // Small initial delay to let the app finish bootstrapping
     setTimeout(runCheck, 1000);
 
-    // Return cleanup function (called on app quit)
     return () => { stopped = true; };
 }
 

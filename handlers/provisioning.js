@@ -76,9 +76,6 @@ function startProvisioningMode() {
         const isHttps = pendingServerUrl.startsWith('https://');
 
         // Packaged builds must provision over HTTPS with a validated cert: first contact
-        // exchanges the device token + private key + CA, so an http:// or cert-bypassed
-        // channel is a key-theft risk. Plain http is tolerated only toward loopback or
-        // RFC1918 LAN hosts (on-premise servers without TLS); public hosts stay HTTPS-only.
         if (app.isPackaged && !isHttps && !isPrivateHost(pendingServerUrl)) {
             log.error(`[PROVISIONING]: Rejected non-HTTPS server URL in packaged build: ${pendingServerUrl}`);
             provisionWindow.webContents.send('provision-status', {
