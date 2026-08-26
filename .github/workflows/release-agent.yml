@@ -17,8 +17,6 @@ jobs:
       contents: write
 
     steps:
-      # SERVER_URL is baked into every binary, so a LAN/HTTP value must never reach a
-      # stable release. Beta tags stay open for testing against a local backend.
       - name: Validate SERVER_URL
         shell: bash
         env:
@@ -55,6 +53,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Check version matches tag
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag is $GITHUB_REF_NAME but package.json is $version. They must match — tag v$version, or set the version to ${GITHUB_REF_NAME#v}."
+            exit 1
+          fi
+          case "$version" in
+            *-beta*)
+              echo "RELEASE_TYPE=prerelease" >> "$GITHUB_ENV"
+              echo "RELEASE_CHANNEL=beta" >> "$GITHUB_ENV"
+              ;;
+            *)
+              echo "RELEASE_TYPE=release" >> "$GITHUB_ENV"
+              echo "RELEASE_CHANNEL=latest" >> "$GITHUB_ENV"
+              ;;
+          esac
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -77,13 +94,7 @@ jobs:
 
       - name: Build and Release (Windows)
         if: matrix.os == 'windows-latest'
-        run: npx electron-builder --win --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Mark release as prerelease (beta tags)
-        if: matrix.os == 'windows-latest' && contains(github.ref_name, '-beta')
-        run: gh release edit "${{ github.ref_name }}" --prerelease --repo "${{ github.repository }}"
+        run: npx electron-builder --win --publish always -c.publish.releaseType=${{ env.RELEASE_TYPE }} -c.publish.channel=${{ env.RELEASE_CHANNEL }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -99,6 +110,6 @@ jobs:
 
       - name: Build and Release (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: npx electron-builder --linux deb AppImage --arm64 --armv7l --x64 --publish always
+        run: npx electron-builder --linux deb AppImage --arm64 --armv7l --x64 --publish always -c.publish.releaseType=${{ env.RELEASE_TYPE }} -c.publish.channel=${{ env.RELEASE_CHANNEL }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
