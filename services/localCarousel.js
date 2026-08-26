@@ -5,10 +5,6 @@ const { CONTENT_DIR, CONFIG_DIR } = require('../config/constants');
 
 const CAROUSEL_HTML_PATH = path.join(CONFIG_DIR, 'offline-carousel.html');
 
-/**
- * Builds an offline HTML file that acts as a carousel
- */
-
 function buildLocalCarouselUrl() {
     try {
         if (!fs.existsSync(CONTENT_DIR)) {

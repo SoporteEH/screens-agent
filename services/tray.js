@@ -1,7 +1,3 @@
-/**
- * Tray Service - System tray icon
- */
-
 const { Tray, Menu, app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { log } = require('../utils/logConfig');

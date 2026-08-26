@@ -1,18 +1,12 @@
-/**
- * - Separate files: general (all), error (warn+error)
- * - Daily rotation with 10MB max size per file
- * - 90-day retention with automatic cleanup
- * - Remote error forwarding to server API
- */
-
+// general-*.log (all levels) + error-*.log (warn/error); daily rotation, 30d
+// retention; warn/error is also forwarded to the server API.
 const winston = require('winston');
 const DailyRotateFile = require('winston-daily-rotate-file');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
-// app.getPath('logs') requires the Electron app object to be initialized.
-// Defer resolution to avoid "Cannot read properties of undefined" on early require.
+// app.getPath('logs') needs Electron's app initialized; fall back if required too early.
 function resolveLogDir() {
     try {
         const { app } = require('electron');
@@ -76,7 +70,6 @@ const errorTransport = new DailyRotateFile({
     format: winston.format.combine(warnAndAbove, fileFormat),
 });
 
-// Remote transport: forwards warn/error to server API
 class ServerLogTransport extends winston.Transport {
     constructor(opts) {
         super({ ...opts, level: 'warn' });
@@ -121,7 +114,7 @@ const winstonLogger = winston.createLogger({
     ],
 });
 
-// Proxy to support multi-arg calls: log.error('msg:', errorObj)
+// Supports multi-arg calls: log.error('msg:', errorObj)
 function formatArgs(args) {
     return args
         .map((a) => {
@@ -169,7 +162,6 @@ const updaterLog = {
     },
 };
 
-// Helpers
 function getLogDir() {
     return LOG_DIR;
 }
@@ -178,9 +170,7 @@ function getGeneralLogPath() {
     return path.join(LOG_DIR, 'general.log');
 }
 
-/**
- * Gets all log files for zipping.
- */
+// Used by GetLogs to build the log zip.
 function getAllLogPaths() {
     try {
         const files = fs.readdirSync(LOG_DIR);
@@ -195,10 +185,6 @@ function getAllLogPaths() {
     }
 }
 
-/**
- * Cleanup logs older than 90 days.
- * Winston File transport handles maxsize but not maxAge by itself without DailyRotateFile.
- */
 function cleanupOldLogs() {
     try {
         const now = Date.now();

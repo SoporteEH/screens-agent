@@ -1,7 +1,3 @@
-/**
- * Device Service - System identity and commands
- */
-
 const { machineIdSync } = require('node-machine-id');
 const { exec } = require('child_process');
 const { log } = require('../utils/logConfig');
@@ -24,8 +20,7 @@ function registerDevice(socket, deviceId, hardwareIdToDisplayMap) {
 
     const lastState = loadLastState();
 
-    // Report every known slot, connected or not, so a dark monitor keeps its
-    // number and content server-side instead of being dropped.
+    // Reports every known slot (connected or not) so a dark monitor keeps its slot server-side.
     const slots = getAllSlots();
     const slotIds =
         Object.keys(slots).length > 0
@@ -68,7 +63,6 @@ function handleRebootDevice() {
     if (platform === 'win32') {
         command = 'shutdown /r /t 0';
     } else if (platform === 'darwin' || platform === 'linux') {
-        // Try sudo reboot first, then systemctl as fallback
         command = 'sudo reboot || systemctl reboot';
     } else {
         log.error(`[DEVICE]: Platform ${platform} not supported for reboot.`);

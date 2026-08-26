@@ -1,14 +1,9 @@
-/**
- * Config Manager — electron-store wrapper with per-device encryption
- * Each device derives its encryption key from the hardware ID (via node-machine-id).
- */
-
 const Store = require('electron-store');
 const crypto = require('crypto');
 const { log } = require('./logConfig');
 
 const LEGACY_KEY = 'screensweb-agent-secure-key';
-const SENSITIVE_FIELDS = ['agentToken', 'certPem', 'keyPem'];
+const SENSITIVE_FIELDS = ['agentToken'];
 
 let _usingFallbackKey = false;
 let _hardwareKey;
@@ -24,17 +19,16 @@ function getHardwareKey() {
     return _hardwareKey;
 }
 
-/** Initializes the config store.*/
 function initStore() {
     const hwKey = getHardwareKey();
 
     if (!hwKey) {
-        log.error('[CONFIG]: Hardware ID unavailable. Sensitive credentials (agentToken, certPem, keyPem) will NOT be persisted — device requires re-provisioning after each restart.');
+        log.error('[CONFIG]: Hardware ID unavailable. The agent token will NOT be persisted — device requires re-provisioning after each restart.');
         _usingFallbackKey = true;
         return new Store({ name: 'config', encryptionKey: LEGACY_KEY, clearInvalidConfig: true });
     }
 
-    // Try hardware key (non-destructive: clearInvalidConfig: false)
+    // Non-destructive probe (clearInvalidConfig: false)
     try {
         const hwStore = new Store({ name: 'config', encryptionKey: hwKey, clearInvalidConfig: false });
         const data = hwStore.store;
@@ -46,7 +40,6 @@ function initStore() {
 
     }
 
-    // Attempt to read config written with the legacy key
     let legacyData = null;
     try {
         const legacyStore = new Store({
@@ -62,7 +55,6 @@ function initStore() {
         
     }
 
-    // Create final store with hardware key and migrate data if any
     const finalStore = new Store({ name: 'config', encryptionKey: hwKey, clearInvalidConfig: true });
 
     if (legacyData) {
@@ -113,25 +105,18 @@ function deleteConfig() {
     }
 }
 
-/**
- * Derives a 32-byte AES key from the hardware key string.
- * Returns null if no hardware key is available.
- */
 function getAesKey() {
     const hwKey = getHardwareKey();
     if (!hwKey) return null;
     return crypto.createHash('sha256').update(hwKey).digest(); // 32 bytes
 }
 
-/**
- * Encrypts a credentials object using AES-256-GCM with the device hardware key.
- */
 function encryptCredentials(credentials) {
     if (!credentials) return null;
     const key = getAesKey();
     if (!key) return null;
     try {
-        const iv = crypto.randomBytes(12); // 96-bit IV for GCM
+        const iv = crypto.randomBytes(12);
         const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
         const plaintext = JSON.stringify(credentials);
         const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
@@ -143,9 +128,6 @@ function encryptCredentials(credentials) {
     }
 }
 
-/**
- * Decrypts a credentials string produced by encryptCredentials().
- */
 function decryptCredentials(encrypted) {
     if (!encrypted || typeof encrypted !== 'string') return null;
     const key = getAesKey();

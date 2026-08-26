@@ -51,7 +51,6 @@ function sendCommandFeedback(command, status, message) {
     }
 }
 
-// Schedules retry with exponential backoff
 const MAX_RETRY_DELAY_MS = 2 * 60 * 1000;
 
 function scheduleRetry(command) {
@@ -74,9 +73,6 @@ function scheduleRetry(command) {
     context.retryManager.set(screenIndex, { attempt, timerId });
 }
 
-/**
- * Creates a content window optimized for digital signage.
- */
 function createContentWindow(display, urlToLoad, command) {
     const { screenIndex, url: originalUrl, contentName } = command;
     const fallbackPath = `file://${path.join(__dirname, '../fallback.html')}`;
@@ -152,7 +148,7 @@ function createContentWindow(display, urlToLoad, command) {
         }
     });
 
-    // Visibility fallback
+    // Fallback if 'ready-to-show' never fires
     setTimeout(() => {
         if (!win.isDestroyed()) {
             win.show();
@@ -203,8 +199,7 @@ function createContentWindow(display, urlToLoad, command) {
         }
     );
 
-    // The session is shared by every screen: clearing cache/storage here would
-    // wipe all screens' cookies and the HTTP cache on each content change.
+    // Session is shared across screens — don't clear cache/storage here, it'd wipe every screen's cookies.
     win.on('closed', () => {
         if (context.managedWindows.get(screenIndex) === win) {
             context.managedWindows.delete(screenIndex);
@@ -220,9 +215,6 @@ function createContentWindow(display, urlToLoad, command) {
     return win;
 }
 
-/**
- * Handles 'show_url' command.
- */
 function handleShowUrl(command, _currentAttempt = 0) {
     const { screenIndex, url, credentials, contentName, refreshInterval } = command;
 
@@ -254,8 +246,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
 
     const targetDisplay = context.hardwareIdToDisplayMap.get(screenIndex);
     if (!targetDisplay) {
-        // Known slot with its monitor off: park the content as desired state so
-        // it is applied automatically when the monitor reconnects.
+        // Monitor is off: park as desired state, applied automatically on reconnect.
         const { hasSlot, ensureSlot } = require('../services/displaySlots');
         const { loadConfig } = require('../utils/configManager');
         const expectedScreens = Number(loadConfig().expectedScreens) || 0;
@@ -319,15 +310,13 @@ function handleShowUrl(command, _currentAttempt = 0) {
 
     let finalUrl = url;
 
-    // Player mode check
     const { loadConfig } = require('../utils/configManager');
     const { getServerUrl } = require('../config/constants');
     const config = loadConfig();
     const serverUrl = config.serverUrl || getServerUrl();
     const isPlayerMode = !!serverUrl && config.deviceId;
 
-    // Autologin content bypasses the player iframe so injection can reach the
-    // login form. Presence of credentials is the signal; host list is a fallback.
+    // Autologin bypasses the player iframe (injection needs the login form); credentials signal it, host list is fallback.
     const { isAutologinUrl: checkIsAutologinUrl } = require('../utils/autologinUrl');
 
     if (isPlayerMode && !credentials && !checkIsAutologinUrl(url)) {
@@ -352,7 +341,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
                     }
                 }, 300);
             });
-            // Safety timeout
+            // Force-close if 'ready-to-show' never fires
             setTimeout(() => {
                 if (oldWin && !oldWin.isDestroyed()) oldWin.close();
             }, 5000);
@@ -386,7 +375,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
                     }
                 }, 300);
             });
-            // Safety timeout
+            // Force-close if 'ready-to-show' never fires
             setTimeout(() => {
                 if (oldWin && !oldWin.isDestroyed()) oldWin.close();
             }, 5000);
@@ -463,17 +452,14 @@ function handleShowUrl(command, _currentAttempt = 0) {
                 }
             };
 
-            // On initial load
             win.webContents.on('did-finish-load', () => {
                 injectIfTarget(win.webContents.getURL());
             });
 
-            // On SPA navigation
             win.webContents.on('did-navigate-in-page', (event, navUrl) => {
                 injectIfTarget(navUrl);
             });
 
-            // On full navigation
             win.webContents.on('did-navigate', (event, navUrl) => {
                 lastLoggedUrl = null;
                 injectIfTarget(navUrl);
@@ -504,7 +490,6 @@ function handleShowUrl(command, _currentAttempt = 0) {
     }
 }
 
-// Handle 'close_screen'
 function handleCloseScreen(command) {
     const { screenIndex } = command;
     try {
@@ -538,7 +523,6 @@ function handleCloseScreen(command) {
     }
 }
 
-// Handle 'refresh_screen'
 function handleRefreshScreen(command) {
     const { screenIndex } = command;
     try {
@@ -562,7 +546,6 @@ function handleRefreshScreen(command) {
     }
 }
 
-// Handle 'identify_screen'
 function handleIdentifyScreen(command) {
     const { screenIndex, identifierText } = command;
     const targetDisplay = context.hardwareIdToDisplayMap.get(screenIndex);

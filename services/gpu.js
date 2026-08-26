@@ -1,7 +1,3 @@
-/**
- * GPU Management Service
- */
-
 const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -50,8 +46,7 @@ function configureGpu() {
 
     log.info('[GPU]: Using hardware acceleration.');
 
-    // A/B knob for problem boxes: keep acceleration but let Chromium's
-    // blocklist decide instead of forcing raster/decode on old iGPUs.
+    // A/B knob: keep acceleration but let Chromium's blocklist decide instead of forcing raster/decode on old iGPUs.
     if (process.env.GPU_SAFE_MODE === 'true') {
         log.info('[GPU]: Safe mode — skipping forced GPU switches.');
         return;
@@ -68,7 +63,6 @@ function configureMemory() {
     const os = require('os');
     const totalMemMb = os.totalmem() / (1024 * 1024);
 
-    // Dynamic memory allocation based on system resources
     let maxOldSpace = 384; // Default for low-end devices (e.g. Raspberry Pi 3)
     if (totalMemMb > 3500) {
         maxOldSpace = 1024; // High-end devices (4GB+ RAM)
@@ -78,8 +72,7 @@ function configureMemory() {
 
     app.commandLine.appendSwitch('js-flags', `--max-old-space-size=${maxOldSpace} --max-semi-space-size=8`);
     app.commandLine.appendSwitch('renderer-process-limit', '10');
-    // Kiosk tradeoff for 4GB boxes: player pages hold no secrets and content is
-    // admin-curated, so shared renderers + in-process iframes are acceptable.
+    // Site isolation off is safe here: player pages hold no secrets, content is admin-curated.
     app.commandLine.appendSwitch('process-per-site');
     app.commandLine.appendSwitch('disable-site-isolation-trials');
     app.commandLine.appendSwitch('disk-cache-size', '157286400'); // 150MB
@@ -103,9 +96,8 @@ function configureMemory() {
     log.info(`[MEMORY]: Optimization applied (Max Old Space: ${maxOldSpace}MB). Total RAM: ${Math.round(totalMemMb)}MB`);
 }
 
-// Call after app.whenReady: shows per-box whether compositing/video decode are
-// hardware and which adapter Chromium picked (dual-GPU boxes copy every frame
-// across adapters — the fix is operational, but this log pinpoints it).
+// Call after app.whenReady. Diagnostic aid for dual-GPU boxes that copy every
+// frame across adapters (fix is operational, not in code).
 function logGpuDiagnostics() {
     try {
         const features = app.getGPUFeatureStatus();

@@ -1,7 +1,3 @@
-/**
- * Display & Network Monitors
- */
-
 const { screen } = require('electron');
 const { log } = require('../utils/logConfig');
 const { startNetworkMonitoring } = require('./network');
@@ -28,8 +24,7 @@ const initializeMonitors = (context) => {
         screenChangeTimeout = setTimeout(async () => {
             log.info('[DISPLAY]: Reconciling display slots.');
 
-            // Branch on the computed slot diff, never on `reason`: a cable
-            // flicker can collapse removed+added into one debounced run.
+            // Branch on the computed diff, never `reason` — a cable flicker can collapse removed+added into one debounced run.
             const result = await reconcileDisplays(hardwareIdToDisplayMap);
             const currentIds = result.boundSlotIds;
 
@@ -68,8 +63,7 @@ const initializeMonitors = (context) => {
                                 silent: true,
                             });
                         } else if (serverUrl && config.deviceId) {
-                            // No local state (e.g. content pinned while the monitor
-                            // was off): the player wrapper picks it up from the server.
+                            // No local state (content was pinned while the monitor was off): player wrapper fetches it from the server.
                             const playerUrl = `${serverUrl}/player/${config.deviceId}/${id}`;
                             log.info(`[DISPLAY]: Loading player URL for slot ${id}`);
                             handleShowUrl({
@@ -85,7 +79,6 @@ const initializeMonitors = (context) => {
                 }
             }
 
-            // Ensure existing windows are correctly positioned
             for (const id of currentIds) {
                 const win = managedWindows.get(id);
                 if (win && !win.isDestroyed()) {
@@ -94,8 +87,7 @@ const initializeMonitors = (context) => {
                         const currentBounds = win.getBounds();
                         const targetBounds = display.bounds;
                         
-                        // Check if bounds mismatch
-                        if (currentBounds.x !== targetBounds.x || 
+                        if (currentBounds.x !== targetBounds.x ||
                             currentBounds.y !== targetBounds.y || 
                             currentBounds.width !== targetBounds.width || 
                             currentBounds.height !== targetBounds.height) {
@@ -104,7 +96,7 @@ const initializeMonitors = (context) => {
                             win.setBounds(targetBounds);
                         }
                         
-                        // Force window to show and focus
+                        // setAlwaysOnTop toggle forces focus without staying pinned on top (Windows trick).
                         if (!win.isVisible()) win.show();
                         win.setAlwaysOnTop(true, 'screen-saver');
                         win.setAlwaysOnTop(false);

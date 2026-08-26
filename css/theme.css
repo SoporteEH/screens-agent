@@ -1,4 +1,40 @@
+@font-face {
+  font-family: 'Geist';
+  src: url('fonts/Geist-Variable.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Material Icons';
+  src: url('fonts/material-icons.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+.material-icons {
+  font-family: 'Material Icons';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'liga';
+}
+
 :root {
+  --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
   --color-primary:       #cf6716;
   --color-primary-hover: #e67e22;
   --color-secondary:     #5e381f;
@@ -20,7 +56,7 @@
   --color-border:       rgba(255, 255, 255, 0.10);
   --color-border-strong: rgba(255, 255, 255, 0.16);
 
-  --color-success:        #22c55e;
+  --color-success:        #20ad54;
   --color-success-bg:     rgba(34, 197, 94, 0.10);
   --color-success-border: rgba(34, 197, 94, 0.20);
   --color-success-text:   #1d9248;

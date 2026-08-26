@@ -1,22 +1,6 @@
-/**
- * Display Slots Service
- *
- * Persistent mapping between physical monitors and fixed screen slots
- * ("1", "2", ...). A slot keeps its number for the life of the device: a
- * monitor turning off or disconnecting never renumbers the remaining screens,
- * and its saved content is restored when it comes back.
- *
- * Slot identity is reconciled in three passes:
- *   1. Electron `display.id` (stable within a session, usually across reboots).
- *   2. Monitor label + physical resolution, only when unambiguous.
- *   3. Last known position (bounds) — covers wholesale display.id churn after
- *      reboots/driver updates and lets a replacement monitor inherit the slot
- *      of the one it replaces.
- * Displays that still don't match any free slot get a brand-new number.
- * Slots are never deleted automatically; only applyExpectedScreens() prunes
- * tail slots when the admin lowers the device's screen count.
- */
-
+// Slots ("1","2",...) persist across disconnects/reboots and never renumber.
+// Matched in order: display.id, then label+resolution, then last known position;
+// unmatched displays get a new slot. Only applyExpectedScreens() prunes slots.
 const { screen } = require('electron');
 const fs = require('fs');
 const { log } = require('../utils/logConfig');
@@ -51,8 +35,7 @@ function getAllSlots() {
     return loadSlots();
 }
 
-// Wipes the persisted slot map so the next reconcile re-seeds contiguous 1..K
-// from the currently-connected monitors (admin "reset screens" action).
+// Wipes the slot map; next reconcile re-seeds contiguous 1..K from connected monitors.
 function clearSlots() {
     try {
         if (fs.existsSync(DISPLAYS_FILE_PATH)) fs.unlinkSync(DISPLAYS_FILE_PATH);
@@ -66,8 +49,7 @@ function hasSlot(slotId) {
     return Object.prototype.hasOwnProperty.call(loadSlots(), String(slotId));
 }
 
-// Creates an empty (unbound) slot so content can be parked on a screen that is
-// currently disconnected. No-op if the slot already exists.
+// Empty/unbound slot for parking content on a disconnected screen; no-op if it exists.
 function ensureSlot(slotId) {
     const slots = loadSlots();
     const id = String(slotId);
@@ -122,9 +104,8 @@ function sortedDisplays() {
         .sort((a, b) => a.bounds.x - b.bounds.x || a.bounds.y - b.bounds.y);
 }
 
-// First run: replicate the legacy positional mapping (left-to-right = 1..N) so
-// existing state.json keys keep pointing at the same physical monitors, and
-// reserve slots for any state entry whose monitor is currently off.
+// First run: seeds left-to-right as 1..N (keeps legacy state.json keys aligned)
+// and reserves slots for any state entry whose monitor is off.
 function seedSlots(displays) {
     const slots = {};
     displays.forEach((display, index) => {
@@ -139,8 +120,7 @@ function seedSlots(displays) {
     return slots;
 }
 
-// Among free slots, prefer the one whose last known position is closest to the
-// display; slots without positional info fall back to the lowest number.
+// Prefers the free slot with the closest last-known position; falls back to lowest number.
 function pickSlotForDisplay(display, freeSlotIds, slots) {
     let best = null;
     let bestDist = Infinity;
@@ -161,14 +141,8 @@ function pickSlotForDisplay(display, freeSlotIds, slots) {
     return numeric.length > 0 ? numeric[0] : null;
 }
 
-/**
- * Reconciles the currently attached displays against the persisted slot map
- * and rebuilds `hardwareIdToDisplayMap` in place (only bound slots get an
- * entry, so the map can have numbering gaps like "1", "3").
- *
- * @returns {{ boundSlotIds: string[], unboundSlotIds: string[],
- *             newlyBound: string[], newlyUnbound: string[] }}
- */
+// Rebuilds hardwareIdToDisplayMap in place; only bound slots get an entry
+// (gaps like "1","3" are expected).
 async function reconcileDisplays(hardwareIdToDisplayMap) {
     const previousBound = Array.from(hardwareIdToDisplayMap.keys());
     const displays = sortedDisplays();
@@ -275,11 +249,8 @@ async function reconcileDisplays(hardwareIdToDisplayMap) {
     return { boundSlotIds, unboundSlotIds, newlyBound, newlyUnbound };
 }
 
-/**
- * Applies the admin-configured screen count: deletes slots above the limit
- * that are not currently bound to a display. Returns the removed slot ids so
- * the caller can purge their state.json entries.
- */
+// Deletes unbound slots above expectedScreens; returns removed ids so the caller
+// can purge state.json.
 function applyExpectedScreens(expectedScreens, boundSlotIds) {
     if (!Number.isInteger(expectedScreens) || expectedScreens < 1) return [];
 

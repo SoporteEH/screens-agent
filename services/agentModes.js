@@ -133,7 +133,6 @@ const startNormalMode = async (context) => {
             }, 500 * i);
         });
     } else {
-        // Fallback: legacy restore
         log.info('[NORMAL]: No server URL, using legacy content restore');
         restoreAllContent();
     }
@@ -159,7 +158,6 @@ const startNormalMode = async (context) => {
         });
     }, CONSTANTS.GC_INTERVAL_MS);
 
-    // Memory monitoring: reload renderer if it exceeds 800MB
     setInterval(() => {
         const metrics = app.getAppMetrics();
         for (const [screenId, win] of managedWindows) {

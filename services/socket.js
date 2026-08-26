@@ -1,14 +1,11 @@
 const { io } = require('socket.io-client');
 const { log, heartbeatLog } = require('../utils/logConfig');
 const { SERVER_URL, CONSTANTS } = require('../config/constants');
-const { getHttpsAgent } = require('../utils/httpClient');
 
 function connectToSocketServer(token, handlers) {
     let consecutiveFailures = 0;
-    let circuitBreakerState = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
+    let circuitBreakerState = 'CLOSED';
     let circuitBreakerTimer = null;
-
-    const isHttps = SERVER_URL && SERVER_URL.startsWith('https://');
 
     const socket = io(SERVER_URL, {
         reconnection: true,
@@ -18,10 +15,8 @@ function connectToSocketServer(token, handlers) {
         randomizationFactor: 0.5,
         timeout: 20000,
         auth: { token },
-        ...(isHttps ? { agent: getHttpsAgent() } : {}),
     });
 
-    // CIRCUIT BREAKER: CLOSED
     socket.on('connect', () => {
         if (circuitBreakerState !== 'CLOSED') {
             log.info(
@@ -57,7 +52,6 @@ function connectToSocketServer(token, handlers) {
         log.debug(`[SOCKET]: Reconnecting attempt #${n}...`);
     });
 
-    // CIRCUIT BREAKER: OPEN/HALF-OPEN state management
     socket.on('connect_error', (err) => {
         consecutiveFailures++;
 
@@ -108,10 +102,6 @@ function connectToSocketServer(token, handlers) {
     return socket;
 }
 
-/**
- * Emits a heartbeat to the server with the current list of active screen IDs.
- * No-ops if the socket is not connected.
- */
 function sendHeartbeat(socket, screenIds) {
     if (!socket?.connected) return;
     socket.emit('heartbeat', { screenIds });

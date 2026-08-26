@@ -140,15 +140,13 @@ async function bootstrap() {
                     context.registerDevice();
                     assetsService.syncLocalAssets(context.agentToken);
 
-                    // Short blips must not reload screens that are already live on the
-                    // right URL — every reload re-renders the page and flickers.
+                    // Short blips shouldn't reload screens already live on the right URL — avoids flicker.
                     const outageMs = context.lastDisconnectAt
                         ? Date.now() - context.lastDisconnectAt
                         : Infinity;
                     const isShortBlip =
                         outageMs < constants.CONSTANTS.RECONNECT_RELOAD_THRESHOLD_MS;
 
-                    // Reload player URLs on all screens
                     const { loadConfig } = require('./utils/configManager');
                     const { isSameSite } = require('./utils/autologinUrl');
                     const onlineConfig = loadConfig();
@@ -157,7 +155,6 @@ async function bootstrap() {
                     if (serverUrl && onlineConfig.deviceId) {
                         const savedState = stateService.loadLastState();
                         setTimeout(() => {
-                            // Clear all fallback timers before restoring
                             context.fallbackTimers.forEach((t) => clearTimeout(t));
                             context.fallbackTimers.clear();
 
@@ -224,8 +221,7 @@ async function bootstrap() {
                         force_update: require('./services/updater').handleForceUpdate,
                         set_channel: (cmd) => {
                             require('./services/updater').handleSetChannel(cmd);
-                            // Report the new channel to the server right away so the
-                            // admin panel reflects it without waiting for a reconnect.
+                            // Reports the new channel immediately so the admin panel doesn't wait for a reconnect.
                             context.registerDevice?.();
                         },
                         get_logs: commandHandlers.handleGetLogs,
@@ -238,8 +234,7 @@ async function bootstrap() {
                     const { setDeviceName, getDeviceName } = require('./services/identity');
                     setDeviceName(device.name);
 
-                    // Sync the admin-configured screen count: persist it for
-                    // offline-targeted commands and prune local slots above it.
+                    // Persists admin-configured screen count (for offline-targeted commands) and prunes slots above it.
                     try {
                         const expectedScreens = Number.isInteger(device.expectedScreens)
                             ? device.expectedScreens
@@ -289,8 +284,7 @@ async function bootstrap() {
                     try {
                         const { clearSlots, reconcileDisplays } = require('./services/displaySlots');
 
-                        // Snapshot current slot->display and content so each monitor's
-                        // content can follow it (by display.id) into its new slot number.
+                        // Snapshot slot->display and content so each monitor's content follows it (by display.id) into its new slot.
                         const oldMap = new Map(context.hardwareIdToDisplayMap);
                         const oldState = stateService.loadLastState();
                         const contentByDisplayId = new Map();
@@ -299,7 +293,6 @@ async function bootstrap() {
                             if (entry?.url) contentByDisplayId.set(display.id, entry);
                         }
 
-                        // Tear down everything keyed by the old slot ids.
                         context.managedWindows.forEach((win) => {
                             if (win && !win.isDestroyed()) win.close();
                         });
@@ -321,7 +314,6 @@ async function bootstrap() {
                         stateService.clearAllState();
                         await reconcileDisplays(context.hardwareIdToDisplayMap);
 
-                        // Re-map each monitor's content onto its new slot id.
                         const restores = [];
                         for (const [newSlotId, display] of context.hardwareIdToDisplayMap) {
                             const entry = contentByDisplayId.get(display.id);
@@ -399,10 +391,8 @@ async function bootstrap() {
                     `[NETWORK]: Screen ${screenIdStr} — URL: "${currentUrl}", mode: ${currentMode}, dependent: ${isDependent}, reason: ${reason}`
                 );
 
-                // Case 1 Server down
                 if (reason === 'NO_SERVER') {
                     if (isDependent) {
-                        // Only act if the screen is currently in live mode
                         if (currentMode !== 'offline') {
                             log.info(
                                 `[NETWORK]: Server down. Scheduling carousel fallback for screen ${screenIdStr} in ${constants.CONSTANTS.FALLBACK_DELAY_MS}ms`
@@ -434,8 +424,7 @@ async function bootstrap() {
                             );
                         }
                     } else {
-                        // External URL: internet is back but the server is still down
-                        // (screen was in carousel from a prior outage).
+                        // External URL: internet's back but server's still down (screen was in carousel from a prior outage).
                         if (currentMode === 'offline') {
                             if (currentUrl) {
                                 log.info(
@@ -464,10 +453,8 @@ async function bootstrap() {
                     return;
                 }
 
-                // Case 2 No internet
+                // Unlike NO_SERVER, any URL (external or internal) needs internet.
                 if (reason === 'NO_INTERNET') {
-                    // Any URL (external or internal) requires internet
-                    // Only act if the screen is not already in carousel
                     if (currentMode !== 'offline') {
                         log.info(
                             `[NETWORK]: No internet. Scheduling carousel fallback for screen ${screenIdStr} in ${constants.CONSTANTS.FALLBACK_DELAY_MS / 1000}s`
@@ -535,8 +522,7 @@ async function bootstrap() {
                     });
                 }, 2000);
 
-                // Recreate any auto-refresh timers that may have been lost while offline.
-                // This path bypasses handleShowUrl so timers aren't set up automatically.
+                // Recreates auto-refresh timers lost while offline — this path bypasses handleShowUrl, which normally sets them up.
                 setTimeout(() => {
                     const lastState = stateService.loadLastState();
                     for (const [screenId, screenData] of Object.entries(lastState)) {
@@ -574,8 +560,7 @@ async function bootstrap() {
         app.whenReady().then(async () => {
             logGpuDiagnostics();
 
-            // One-time migration: re-encrypt any plaintext credentials a previous
-            // agent version may have left in state.json. Runs before any state read.
+            // Must run before any state read.
             stateService.migrateStateEncryption();
 
             createTray(constants.getServerUrl(), constants.AGENT_VERSION);
@@ -595,7 +580,6 @@ async function bootstrap() {
                     `[INIT]: CLI Provisioning detected. Server: ${serverUrl}. Device ID: ${deviceId}`
                 );
 
-                // If token is missing or not a JWT (doesn't have 2 dots), attempt to fetch real JWT from server
                 if (!agentToken || agentToken.split('.').length !== 3) {
                     log.info(
                         '[INIT]: Provided token is missing or invalid. Attempting to fetch real JWT from server...'
@@ -604,15 +588,9 @@ async function bootstrap() {
                         const axios = require('axios');
                         const response = await axios.post(
                             `${serverUrl}/api/auth/agent-token`,
-                            { deviceId, nonce: provisionNonce },
-                            { httpsAgent: require('./utils/httpClient').getHttpsAgent() }
+                            { deviceId, nonce: provisionNonce }
                         );
-                        const data = response.data;
-                        agentToken = data.token;
-                        // Also persist cert if returned
-                        if (data.certPem && data.keyPem) {
-                            saveConfig({ certPem: data.certPem, keyPem: data.keyPem });
-                        }
+                        agentToken = response.data.token;
                         log.info('[INIT]: Successfully retrieved JWT from server via CLI.');
                     } catch (e) {
                         log.error('[INIT]: Error fetching agent-token:', e.message);

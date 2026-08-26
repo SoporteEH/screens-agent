@@ -5,8 +5,8 @@
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
 
 Desktop player (Electron) for **ScreensWeb**. Runs on each venue PC, connects to the backend over
-WebSocket, and shows content full-screen in kiosk mode across up to 4 monitors. Auto-updates from
-GitHub Releases.
+the site's OpenVPN tunnel, and shows content full-screen in kiosk mode on every attached monitor.
+Auto-updates from GitHub Releases.
 
 ## Table of Contents
 
@@ -27,8 +27,11 @@ GitHub Releases.
 One of the three ScreensWeb pieces (`screens-api`, `screens-front`, `screens-agent`). The agent:
 
 - Keeps a persistent WebSocket connection to the backend and runs its commands in real time
-  (`show_url`, `close_screen`, `refresh_screen`, `identify_screen`, `force_update`, `reboot_device`).
-- Detects and manages up to 4 physical displays, shown full-screen in kiosk mode.
+  (`show_url`, `close_screen`, `refresh_screen`, `identify_screen`, `force_update`,
+  `reboot_device`, `set_channel`, `get_logs`).
+- Detects and manages the attached physical displays, shown full-screen in kiosk mode. Slots
+  are keyed `"1".."N"` by id, not by array position: a monitor that is switched off keeps its
+  slot marked `Disconnected` instead of shifting its neighbours.
 - Falls back to a local carousel on network/server failure — screens never go black.
 - Syncs local assets for offline playback and auto-updates itself.
 
@@ -60,9 +63,13 @@ echo "SERVER_URL=http://localhost:3000" > .env
 npm start
 ```
 
-First run launches **provisioning mode** (shows the device ID to link in the panel); once
-configured it starts in normal mode and connects automatically. Hot reload is not supported
-(restart the app). Logs: `%APPDATA%\ScreensWeb\logs\`.
+First run launches **provisioning mode**. It shows the device ID and asks for the server URL
+plus a **setup code** — a single-use nonce an admin generates in the panel (Devices → Generate
+nonce, valid 15 min). Without it the handshake is refused: the device ID alone is not enough
+to obtain a token.
+
+Once configured the agent starts in normal mode and connects automatically. Hot reload is not
+supported (restart the app). Logs: `%APPDATA%\ScreensWeb\logs\`.
 
 For end users: download the latest `.exe` from GitHub Releases and run it (installs, adds a
 desktop shortcut, auto-starts with Windows, and opens provisioning on first run).
@@ -119,9 +126,13 @@ capping retries at ~5 min until a success closes it.
 
 ## Security
 
-- Config and third-party credentials (Sportradar, Luckia) encrypted with AES-256-GCM using a
-  hardware-derived key.
-- JWT auth (RS256); commands validated with Zod schemas.
+- Config and autologin site credentials encrypted with AES-256-GCM using a hardware-derived key.
+- **Transport** is the site's OpenVPN tunnel, whose certificate is issued by Luckia's PKI and
+  installed by a technician. The agent neither presents nor validates a client certificate:
+  this application does no mTLS of its own.
+- **Identity** is a device JWT (RS256, 180-day life, refreshed once fewer than 90 days remain).
+  An admin can revoke a single device: the live socket is cut immediately and the agent is told
+  to re-provision. Commands are validated with Zod schemas.
 - Chromium hardening: `nodeIntegration: false`, `contextIsolation: true`, `webSecurity: true`.
 - Single-instance lock; renderer memory auto-reload above 800MB; caches cleared every 4h.
 

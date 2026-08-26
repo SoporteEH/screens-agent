@@ -1,6 +1,3 @@
-/**
- * Theme definition
- */
 const agentThemes = {
     default: {
         '--color-primary': '#cf6716',

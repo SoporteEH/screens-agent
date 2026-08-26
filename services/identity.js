@@ -1,8 +1,3 @@
-/**
- * Identity Service
- * Stores and manages the device's descriptive name and ID.
- */
-
 let deviceName = 'PC CUOTAS';
 let deviceId = null;
 

@@ -8,7 +8,7 @@
 }
 
 body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: var(--font-sans);
     background: var(--color-bg-base);
     color: var(--color-text-primary);
     height: 100vh;

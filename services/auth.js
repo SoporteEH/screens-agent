@@ -1,14 +1,11 @@
-/**
- * Authentication Service - JWT Token Refresh + mTLS cert renewal
- */
-
 const { jwtDecode } = require('jwt-decode');
 const { log } = require('../utils/logConfig');
 const { loadConfig, saveConfig } = require('../utils/configManager');
-const { getHttpClient, resetHttpClient } = require('../utils/httpClient');
+const { getHttpClient } = require('../utils/httpClient');
 const { CONSTANTS } = require('../config/constants');
 
-const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+// Refresh well ahead of expiry
+const REFRESH_WHEN_REMAINING_MS = 90 * 24 * 60 * 60 * 1000;
 
 async function refreshAgentToken(currentAgentToken) {
     log.info('[AUTH]: Refreshing agent token...');
@@ -30,33 +27,6 @@ async function refreshAgentToken(currentAgentToken) {
     }
 }
 
-async function renewCertIfNeeded() {
-    const config = loadConfig();
-    if (!config.certPem || !config.agentToken) return;
-
-    try {
-        // Parse cert expiry from PEM using built-in crypto
-        const { X509Certificate } = require('crypto');
-        const cert = new X509Certificate(config.certPem);
-        const expiresAt = new Date(cert.validTo);
-        const daysLeft = (expiresAt - Date.now()) / (1000 * 60 * 60 * 24);
-
-        if (daysLeft > 30) return;
-
-        log.info(`[AUTH]: Certificate expires in ${Math.floor(daysLeft)} days — renewing...`);
-        const client = getHttpClient();
-        const { data } = await client.post('/api/auth/agent-cert-renew', {}, {
-            headers: { Authorization: `Bearer ${config.agentToken}` },
-        });
-
-        saveConfig({ ...config, certPem: data.certPem, keyPem: data.keyPem });
-        resetHttpClient(); // force new https.Agent with renewed cert
-        log.info('[AUTH]: Certificate renewed successfully.');
-    } catch (err) {
-        log.error('[AUTH]: Certificate renewal failed:', err.message);
-    }
-}
-
 function startTokenRefreshLoop(agentToken, onTokenRefreshed) {
     log.info(
         `[AUTH]: Starting token verification loop (interval: ${CONSTANTS.TOKEN_CHECK_INTERVAL_MS / 3600000}h)`
@@ -68,19 +38,21 @@ function startTokenRefreshLoop(agentToken, onTokenRefreshed) {
             if (!currentToken) return;
 
             const decoded = jwtDecode(currentToken);
-            const expTimeMs = decoded.exp * 1000;
+            const remainingMs = decoded.exp * 1000 - Date.now();
 
-            if (expTimeMs - Date.now() < THIRTY_DAYS_MS) {
-                log.info('[AUTH]: Token near expiration, refreshing...');
+            if (remainingMs < REFRESH_WHEN_REMAINING_MS) {
+                if (remainingMs <= 0) {
+                    log.warn('[AUTH]: Token already expired, attempting recovery refresh...');
+                } else {
+                    log.info('[AUTH]: Token near expiration, refreshing...');
+                }
+
                 const newToken = await refreshAgentToken(currentToken);
                 if (newToken !== currentToken) {
                     currentToken = newToken;
                     onTokenRefreshed?.(newToken);
                 }
             }
-
-            // Check if mTLS cert needs renewal (30 days before expiry)
-            await renewCertIfNeeded();
         } catch (e) {
             log.error('[AUTH]: Error in token verification loop:', e);
         }
@@ -89,6 +61,5 @@ function startTokenRefreshLoop(agentToken, onTokenRefreshed) {
 
 module.exports = {
     refreshAgentToken,
-    renewCertIfNeeded,
     startTokenRefreshLoop,
 };

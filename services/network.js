@@ -1,8 +1,4 @@
-/**
- * Network Monitoring Service
- * Active detection: OS check + server ping
- */
-
+// Active detection: OS check + server ping.
 const { net } = require('electron');
 const { log } = require('../utils/logConfig');
 const { CONSTANTS, getServerUrl } = require('../config/constants');
@@ -10,7 +6,6 @@ const http = require('http');
 const https = require('https');
 const url = require('url');
 
-/** Ping to server check connection*/
 function pingServer() {
     return new Promise((resolve) => {
         const serverUrl = getServerUrl();
@@ -49,9 +44,6 @@ function pingServer() {
     });
 }
 
-/**
- * Ping an external host to verify real internet connectivity.
- */
 function pingInternet() {
     return new Promise((resolve) => {
         try {
@@ -81,10 +73,6 @@ function pingInternet() {
         }
     });
 }
-
-/**
- * Adaptive polling network monitor.
- */
 
 const STABLE_INTERVAL_MS = 15_000;
 const DEGRADED_INTERVAL_MS = 5_000;
@@ -130,7 +118,6 @@ function startNetworkMonitoring(handlers) {
             handlers.onCheckOnline?.();
         }
 
-        // Switch interval based on current connectivity state
         isDegraded = !allGood;
 
         if (!stopped) {

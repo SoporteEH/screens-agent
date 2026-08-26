@@ -1,7 +1,3 @@
-/**
- * Asset Sync Service
- */
-
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -77,13 +73,11 @@ async function syncDir(assets, targetDir, remotePath) {
 
     const filesToDownload = assets.filter((a) => !localFiles.includes(a.serverFilename));
 
-    // Scan the content dir once and track the size incrementally per download,
-    // instead of re-walking the whole directory (sync readdir+stat) per file.
+    // Track size incrementally instead of re-walking the dir per download.
     const maxBytes = getMaxStorageBytes();
     let currentSize = getDirSizeBytes(CONTENT_DIR);
 
     for (const asset of filesToDownload) {
-        // Validate file extension
         const ext = path.extname(asset.serverFilename).toLowerCase();
         if (!ALLOWED_EXTENSIONS.has(ext)) {
             log.warn(
@@ -114,7 +108,6 @@ async function syncDir(assets, targetDir, remotePath) {
                 fileStream.on('error', reject);
             });
 
-            // MD5 verification if the server provided a checksum
             if (asset.md5) {
                 const actualMd5 = md5OfFile(destPath);
                 if (actualMd5 !== asset.md5) {

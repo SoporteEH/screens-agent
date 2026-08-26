@@ -1,7 +1,3 @@
-/**
- * Injects SERVER_URL and AGENT_THEME into package.json
- */
-
 const fs = require('fs');
 const path = require('path');
 const agentThemes = require('../config/agentThemes');

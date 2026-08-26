@@ -1,7 +1,3 @@
-/**
- * Manages initial device registration
- */
-
 const { BrowserWindow, app, ipcMain } = require('electron');
 const path = require('path');
 
@@ -12,8 +8,6 @@ const { SERVER_URL } = require('../config/constants');
 const { saveConfig } = require('../utils/configManager');
 const { getMachineId } = require('../services/device');
 
-// Loopback or RFC1918/link-local hosts may provision over plain HTTP (on-premise
-// servers without TLS); anything else must use HTTPS in packaged builds.
 function isPrivateHost(serverUrl) {
     let hostname;
     try {
@@ -61,7 +55,6 @@ function startProvisioningMode() {
 
     provisionWindow.setMenu(null);
 
-    // Listen for URL + nonce from window
     ipcMain.on('set-server-url', (event, payload) => {
         if (socket) {
             socket.disconnect();
@@ -137,20 +130,16 @@ function startProvisioningMode() {
 
                 if (!response.ok) throw new Error('Error obtaining token from server');
 
-                const data = await response.json();
-                const { token, certPem, keyPem, serverCaCert } = data;
+                const { token } = await response.json();
 
                 saveConfig({
                     deviceId,
                     provisioned: true,
                     agentToken: token,
                     serverUrl: pendingServerUrl,
-                    certPem: certPem || null,
-                    keyPem: keyPem || null,
-                    serverCaCert: serverCaCert || null,
                 });
 
-                log.info('[PROVISIONING]: Configuracion guardada. Reiniciando...');
+                log.info('[PROVISIONING]: Configuration saved. Restarting...');
 
                 socket.disconnect();
                 app.relaunch();
@@ -165,7 +154,6 @@ function startProvisioningMode() {
         });
     });
 
-    // Basic handlers
     ipcMain.on('window-control', (event, action) => {
         if (!provisionWindow || provisionWindow.isDestroyed()) return;
         if (action === 'minimize') provisionWindow.minimize();

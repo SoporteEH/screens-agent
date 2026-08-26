@@ -46,8 +46,6 @@ function hasCachedPlayer(screenIndex) {
     return fs.existsSync(getCachePath(screenIndex));
 }
 
-// Content caching (playlists, views)
-
 function getContentCacheKey(url) {
     return crypto.createHash('md5').update(url).digest('hex');
 }
@@ -97,13 +95,12 @@ function getOfflineContentFilePath(url, serverUrl) {
 
 function isServerDependentUrl(url, serverUrl) {
     if (!url) return false;
-    // Views (playlists) ARE server dependent to render correctly
+    // Views (playlists) require the live server to render.
     if (url.includes('/view/')) return true;
-    // Player wrappers are NOT server dependent - cached locally
+    // Player wrapper is cached locally, not server dependent.
     if (url.includes('/player/')) return false;
-    // Other URLs starting with serverUrl are likely server dependent
     if (serverUrl && url.startsWith(serverUrl)) return true;
-    // Localhost/127.0.0.1 are considered server dependent (dev server)
+    // localhost/127.0.0.1 = dev server, treated as server dependent.
     if (/https?:\/\/(localhost|127\.0\.0\.1):\d+/.test(url)) return true;
     return false;
 }

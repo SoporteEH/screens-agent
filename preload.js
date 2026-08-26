@@ -1,7 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electron', {
-    // Identification
     onDeviceId: (callback) => ipcRenderer.on('device-id', (event, ...args) => callback(...args)),
 
     onAgentInfo: (callback) => ipcRenderer.on('agent-info', (event, ...args) => callback(...args)),

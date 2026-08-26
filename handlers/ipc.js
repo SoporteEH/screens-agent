@@ -35,7 +35,6 @@ const registerIpcHandlers = (getServerUrl, AGENT_VERSION, getStatus) => {
         return AGENT_VERSION;
     });
 
-    // Channel-correct update verdict from electron-updater, for the control panel.
     ipcMain.handle('get-update-state', () => getUpdateState());
 };
 

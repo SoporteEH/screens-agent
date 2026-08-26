@@ -1,7 +1,3 @@
-/**
- * Manages update checking, downloading, and installation.
- */
-
 const { autoUpdater } = require('electron-updater');
 const { log } = require('../utils/logConfig');
 const { app, BrowserWindow } = require('electron');
@@ -14,35 +10,26 @@ let checksumRetries = 0;
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 let updateCheckTimer = null;
 
-// In a packaged build, updates always run. In dev (electron .) there is no update
-// metadata, so forcing the dev update config just makes electron-updater spam
-// "ENOENT dev-app-update.yml". Allow dev update-testing only when the developer
-// has actually placed a dev-app-update.yml at the project root; otherwise skip.
+// Dev builds only run updates if dev-app-update.yml exists; otherwise electron-updater spams ENOENT.
 const DEV_UPDATE_CONFIG = path.join(__dirname, '..', 'dev-app-update.yml');
 function updatesEnabled() {
     return app.isPackaged || fs.existsSync(DEV_UPDATE_CONFIG);
 }
 
-// Latest update verdict from electron-updater for THIS device's channel
-// (latest.yml or beta.yml). The control panel reads this via the
-// 'get-update-state' IPC instead of doing its own version math, so the
-// indicator is always channel-correct and never misreads a -beta suffix.
+// Cached verdict for this device's channel; control panel reads it via 'get-update-state'
+// IPC so it never misreads a -beta suffix.
 let lastUpdateState = { state: 'checking', message: 'Comprobando versión…' };
 
 function getUpdateState() {
     return lastUpdateState;
 }
 
-// Records the verdict and pushes it to any open window in one place.
 function setUpdateState(state, extra = {}) {
     lastUpdateState = { state, ...extra };
     notifyAllWindows({ type: state, state, ...extra });
 }
 
-/**
- * Reads the device's update channel from config. Defaults to 'latest' (stable)
- * on any error so a config problem can never silently move a device to beta.
- */
+// Defaults to 'latest' on any error — a config problem must never silently move a device to beta.
 function getChannel() {
     try {
         const { loadConfig } = require('../utils/configManager');
@@ -52,10 +39,7 @@ function getChannel() {
     }
 }
 
-/**
- * Points electron-updater at the right channel file (latest.yml vs beta.yml).
- * Beta devices opt into prereleases; stable devices never see them.
- */
+// Beta channel opts into prereleases; stable never sees them.
 function applyChannel() {
     const channel = getChannel();
     autoUpdater.channel = channel;
@@ -69,8 +53,7 @@ function configureUpdater() {
         info: (msg) => {
             if (msg && !msg.includes('Checking for update')) log.info(msg);
         },
-        // disableWebInstaller=false is intentional (we ship the nsis-web installer),
-        // so electron-updater's deprecation warning about it is just noise.
+        // disableWebInstaller=false is intentional (nsis-web installer); suppress the deprecation noise.
         warn: (msg) => {
             if (msg && msg.includes('disableWebInstaller')) return;
             log.warn(msg);
@@ -138,7 +121,7 @@ async function checkForUpdates() {
             } else {
                 log.error('[UPDATER]: Max checksum retries reached. Suspending updates for 12 hours.');
                 checksumRetries = 0;
-                // Block the periodic interval check by faking isCheckingForUpdate
+                // Reuses isCheckingForUpdate as a suspend flag for 12h.
                 isCheckingForUpdate = true;
                 setTimeout(() => {
                     isCheckingForUpdate = false;
@@ -174,8 +157,7 @@ async function checkForUpdates() {
         setUpdateState('error', { message: 'Error checking for updates' });
     });
 
-    // checkForUpdates() runs more than once (boot, delayed check, force_update):
-    // only the first call may start the periodic timer.
+    // checkForUpdates() can run multiple times (boot/delayed/force); only the first starts the periodic timer.
     if (!updateCheckTimer) {
         log.info('[UPDATER]: Periodic update check started (every 60 min).');
         updateCheckTimer = setInterval(() => {
@@ -212,11 +194,7 @@ async function handleForceUpdate() {
     );
 }
 
-/**
- * Remote command: move this device between the 'latest' (stable) and 'beta'
- * (canary) update channels, then immediately re-check so beta devices pick up
- * the staged build without waiting for the next interval.
- */
+// Remote command: switch channel then re-check immediately so beta devices don't wait for the next interval.
 async function handleSetChannel(command) {
     const requested = command && command.channel;
     if (requested !== 'beta' && requested !== 'latest') {
