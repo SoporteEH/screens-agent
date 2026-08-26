@@ -242,9 +242,13 @@ async function reconcileDisplays(hardwareIdToDisplayMap) {
     const newlyBound = boundSlotIds.filter((id) => !previousBound.includes(id));
     const newlyUnbound = previousBound.filter((id) => !assigned.has(id));
 
-    log.info(
-        `[SLOTS]: Reconciled. Bound: [${boundSlotIds.join(', ')}], disconnected: [${unboundSlotIds.join(', ')}]`
-    );
+    // Reconcile runs on every display event; only an actual bind/unbind is worth a line.
+    const summary = `[SLOTS]: Reconciled. Bound: [${boundSlotIds.join(', ')}], disconnected: [${unboundSlotIds.join(', ')}]`;
+    if (newlyBound.length > 0 || newlyUnbound.length > 0) {
+        log.info(summary);
+    } else {
+        log.debug(summary);
+    }
 
     return { boundSlotIds, unboundSlotIds, newlyBound, newlyUnbound };
 }

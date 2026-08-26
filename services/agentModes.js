@@ -149,7 +149,7 @@ const startNormalMode = async (context) => {
 
     setInterval(() => {
         if (managedWindows.size === 0) return;
-        log.info('[OPTIMIZATION]: Clearing DOM storage.');
+        log.debug('[OPTIMIZATION]: Clearing DOM storage.');
         managedWindows.forEach((win) => {
             if (win?.isDestroyed()) return;
             win.webContents
@@ -167,7 +167,7 @@ const startNormalMode = async (context) => {
                 const metric = metrics.find(m => m.pid === pid);
                 if (!metric) continue;
                 const memMB = metric.memory.privateBytes / (1024 * 1024);
-                log.info(`[MEMORY]: Screen ${screenId}: ${memMB.toFixed(0)}MB`);
+                log.debug(`[MEMORY]: Screen ${screenId}: ${memMB.toFixed(0)}MB`);
                 if (memMB > 800) {
                     log.warn(`[MEMORY]: Screen ${screenId} exceeds 800MB — reloading renderer.`);
                     win.webContents.reload();

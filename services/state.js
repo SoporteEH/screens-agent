@@ -131,17 +131,18 @@ function setupAutoRefresh(screenIndex, intervalSeconds, managedWindows, autoRefr
     const intervalMs = intervalSeconds * 1000 + Math.floor(Math.random() * 15000);
     const intervalMin = Math.round(intervalSeconds / 60);
 
-    log.info(
+    log.debug(
         `[AUTO-REFRESH]: Setting up auto-refresh every ${intervalMin} minutes (${intervalSeconds}s) for screen ${screenIndex}`
     );
 
+    // Per-cycle logging: a short refreshInterval would otherwise dominate the log.
     const timerId = setInterval(() => {
         const win = managedWindows.get(screenIndex);
         if (win && !win.isDestroyed()) {
-            log.info(`[AUTO-REFRESH]: Reloading screen ${screenIndex} (every ${intervalMin}min)`);
+            log.debug(`[AUTO-REFRESH]: Reloading screen ${screenIndex} (every ${intervalMin}min)`);
             win.webContents.reload();
         } else {
-            log.info(`[AUTO-REFRESH]: Window ${screenIndex} not available, skipping reload cycle`);
+            log.debug(`[AUTO-REFRESH]: Window ${screenIndex} not available, skipping reload cycle`);
         }
     }, intervalMs);
 
@@ -188,7 +189,7 @@ function _saveCurrentState(
     if (autoRefreshTimers.has(screenIndex)) {
         clearInterval(autoRefreshTimers.get(screenIndex));
         autoRefreshTimers.delete(screenIndex);
-        log.info(`[AUTO-REFRESH]: Timer cleared for screen ${screenIndex}`);
+        log.debug(`[AUTO-REFRESH]: Timer cleared for screen ${screenIndex}`);
     }
 
     if (url) {
@@ -209,8 +210,8 @@ function _saveCurrentState(
 
     try {
         fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2));
-        log.info(
-            `[STATE]: State saved for screen ${screenIndex}: ${url || '(empty)'}${refreshInterval ? ` (auto-refresh: ${refreshInterval}min)` : ''}`
+        log.debug(
+            `[STATE]: State saved for screen ${screenIndex}: ${url || '(empty)'}${refreshInterval ? ` (auto-refresh: ${refreshInterval}s)` : ''}`
         );
     } catch (error) {
         log.error('[STATE]: Error saving state:', error);

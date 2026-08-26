@@ -1,5 +1,5 @@
 const { autoUpdater } = require('electron-updater');
-const { log } = require('../utils/logConfig');
+const { log, briefError } = require('../utils/logConfig');
 const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -50,15 +50,15 @@ function applyChannel() {
 
 function configureUpdater() {
     autoUpdater.logger = {
-        info: (msg) => {
-            if (msg && !msg.includes('Checking for update')) log.info(msg);
-        },
+        // The library narrates every check ("update is not available", staging ids); the
+        // listeners below already log the transitions that matter.
+        info: (msg) => log.debug(msg),
         // disableWebInstaller=false is intentional (nsis-web installer); suppress the deprecation noise.
         warn: (msg) => {
             if (msg && msg.includes('disableWebInstaller')) return;
-            log.warn(msg);
+            log.warn(briefError(msg));
         },
-        error: (msg) => log.error(msg),
+        error: (msg) => log.error(briefError(msg)),
         debug: (msg) => log.debug(msg)
     };
     autoUpdater.autoDownload = true;
@@ -107,7 +107,7 @@ async function checkForUpdates() {
     });
 
     autoUpdater.on('error', (err) => {
-        log.error('[UPDATER]: Update error:', err);
+        log.error('[UPDATER]:', briefError(err));
         isCheckingForUpdate = false;
         setUpdateState('error', { message: 'Error checking for updates' });
 
@@ -130,9 +130,15 @@ async function checkForUpdates() {
         }
     });
 
+    // The UI still gets every tick; only the file log is throttled to 25% steps.
+    let lastLoggedPercent = -1;
     autoUpdater.on('download-progress', (progressObj) => {
         const percent = Math.round(progressObj.percent);
-        log.info(`[UPDATER]: Downloading: ${percent}%`);
+        const step = Math.floor(percent / 25);
+        if (step > lastLoggedPercent) {
+            lastLoggedPercent = step;
+            log.info(`[UPDATER]: Downloading: ${percent}%`);
+        }
         setUpdateState('downloading', { message: `Downloading ${percent}%`, percent });
     });
 
@@ -151,11 +157,9 @@ async function checkForUpdates() {
     applyChannel();
 
     setUpdateState('checking', { message: 'Comprobando versión…' });
-    autoUpdater.checkForUpdates().catch((error) => {
-        log.error('[UPDATER]: Error checking for updates:', error);
-        isCheckingForUpdate = false;
-        setUpdateState('error', { message: 'Error checking for updates' });
-    });
+    // Rejection is already reported by the 'error' listener above; swallow it here so
+    // a single failure isn't logged twice.
+    autoUpdater.checkForUpdates().catch(() => {});
 
     // checkForUpdates() can run multiple times (boot/delayed/force); only the first starts the periodic timer.
     if (!updateCheckTimer) {
@@ -219,9 +223,7 @@ async function handleSetChannel(command) {
     }
 
     if (!isCheckingForUpdate) {
-        autoUpdater.checkForUpdates().catch((e) =>
-            log.error('[UPDATER]: set_channel re-check failed:', e)
-        );
+        autoUpdater.checkForUpdates().catch(() => {});
     }
 }
 

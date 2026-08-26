@@ -19,10 +19,11 @@ const initializeMonitors = (context) => {
         } = context;
 
         if (screenChangeTimeout) clearTimeout(screenChangeTimeout);
-        log.info(`[DISPLAY]: Change detected (${reason})`);
+        // Raw display events arrive in bursts; the reconcile result below is the real signal.
+        log.debug(`[DISPLAY]: Change detected (${reason})`);
 
         screenChangeTimeout = setTimeout(async () => {
-            log.info('[DISPLAY]: Reconciling display slots.');
+            log.debug('[DISPLAY]: Reconciling display slots.');
 
             // Branch on the computed diff, never `reason` — a cable flicker can collapse removed+added into one debounced run.
             const result = await reconcileDisplays(hardwareIdToDisplayMap);

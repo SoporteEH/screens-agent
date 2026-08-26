@@ -33,7 +33,7 @@ function loadCachedPlayerHTML(screenIndex) {
         const cachePath = getCachePath(screenIndex);
         if (fs.existsSync(cachePath)) {
             const html = fs.readFileSync(cachePath, 'utf8');
-            log.info(`[PLAYER-CACHE]: Loaded cached player HTML for screen ${screenIndex}`);
+            log.debug(`[PLAYER-CACHE]: Loaded cached player HTML for screen ${screenIndex}`);
             return html;
         }
     } catch (error) {
@@ -66,7 +66,7 @@ async function cacheContentURL(url, serverUrl) {
         if (typeof response.data !== 'string') return;
         const key = getContentCacheKey(url);
         fs.writeFileSync(path.join(CONTENT_CACHE_DIR, `${key}.html`), response.data, 'utf8');
-        log.info(`[CONTENT-CACHE]: Cached content for ${url}`);
+        log.debug(`[CONTENT-CACHE]: Cached content for ${url}`);
     } catch (error) {
         log.error(`[CONTENT-CACHE]: Error caching ${url}: ${error.message}`);
     }
@@ -85,7 +85,7 @@ function getOfflineContentFilePath(url, serverUrl) {
         }
         const offlinePath = path.join(CONTENT_CACHE_DIR, `offline-${key}.html`);
         fs.writeFileSync(offlinePath, html, 'utf8');
-        log.info(`[CONTENT-CACHE]: Prepared offline content for ${url}`);
+        log.debug(`[CONTENT-CACHE]: Prepared offline content for ${url}`);
         return offlinePath;
     } catch (error) {
         log.error(`[CONTENT-CACHE]: Error preparing offline content: ${error.message}`);

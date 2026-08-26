@@ -65,7 +65,7 @@ async function syncDir(assets, targetDir, remotePath) {
     for (const file of filesToDelete) {
         try {
             fs.unlinkSync(path.join(targetDir, file));
-            log.info(`[SYNC]: Deleted obsolete asset: ${file}`);
+            log.debug(`[SYNC]: Deleted obsolete asset: ${file}`);
         } catch (err) {
             log.error(`[SYNC]: Error deleting asset ${file}:`, err);
         }
@@ -93,7 +93,7 @@ async function syncDir(assets, targetDir, remotePath) {
             break;
         }
 
-        log.info(`[SYNC]: Downloading: ${asset.originalFilename}`);
+        log.debug(`[SYNC]: Downloading: ${asset.originalFilename}`);
         const url = `${SERVER_URL}${remotePath}${asset.serverFilename}`;
         const destPath = path.join(targetDir, asset.serverFilename);
 
@@ -124,7 +124,7 @@ async function syncDir(assets, targetDir, remotePath) {
             } catch (_) {
                 /* size tracking is best-effort; limit re-checked on next sync */
             }
-            log.info(`[SYNC]: Completed: ${asset.originalFilename}`);
+            log.debug(`[SYNC]: Completed: ${asset.originalFilename}`);
         } catch (err) {
             log.error(`[SYNC]: Error downloading ${asset.originalFilename}:`, err);
             if (fs.existsSync(destPath)) fs.unlinkSync(destPath);

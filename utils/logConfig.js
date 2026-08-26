@@ -1,12 +1,10 @@
-// general-*.log (all levels) + error-*.log (warn/error); daily rotation, 30d
-// retention; warn/error is also forwarded to the server API.
+// general-*.log + error-*.log (warn/error); daily rotation, 30d
 const winston = require('winston');
 const DailyRotateFile = require('winston-daily-rotate-file');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
-// app.getPath('logs') needs Electron's app initialized; fall back if required too early.
 function resolveLogDir() {
     try {
         const { app } = require('electron');
@@ -48,6 +46,8 @@ const warnAndAbove = winston.format((info) => {
     if (info.level === 'warn' || info.level === 'error') return info;
 })();
 
+const DEFAULT_FILE_LEVEL = 'info';
+
 const generalTransport = new DailyRotateFile({
     dirname: LOG_DIR,
     filename: 'general-%DATE%.log',
@@ -55,7 +55,7 @@ const generalTransport = new DailyRotateFile({
     maxSize: '7m',
     maxFiles: '30d',
     zippedArchive: true,
-    level: 'info',
+    level: DEFAULT_FILE_LEVEL,
     format: winston.format.combine(infoAndBelow, fileFormat),
 });
 
@@ -105,6 +105,7 @@ class ServerLogTransport extends winston.Transport {
 }
 
 const winstonLogger = winston.createLogger({
+    level: 'debug',
     format: fileFormat,
     transports: [
         generalTransport,
@@ -131,6 +132,28 @@ const log = {
     info: (...args) => winstonLogger.info(formatArgs(args)),
     debug: (...args) => winstonLogger.debug(formatArgs(args)),
 };
+
+// Lazy config read — configManager requires this module, so it can't be imported at load.
+function applyConfiguredLogLevel() {
+    let level = process.env.LOG_LEVEL;
+    if (!level) {
+        try {
+            level = require('./configManager').loadConfig().logLevel;
+        } catch (_) {}
+    }
+    if (level !== 'debug' && level !== 'info' && level !== 'warn') return DEFAULT_FILE_LEVEL;
+    generalTransport.level = level;
+    if (level !== DEFAULT_FILE_LEVEL) log.info(`[LOG]: File log level set to "${level}".`);
+    return level;
+}
+
+// Collapses HttpError-style multi-line dumps (headers, cookies) to their first line.
+function briefError(err) {
+    if (!err) return 'unknown error';
+    const first = String(err.message || err).split('\n')[0].trim();
+    const name = err.name && err.name !== 'Error' ? `${err.name}: ` : '';
+    return `${name}${first}`;
+}
 
 const heartbeatLog = {
     _counter: 0,
@@ -212,6 +235,8 @@ module.exports = {
     log,
     heartbeatLog,
     updaterLog,
+    applyConfiguredLogLevel,
+    briefError,
     getLogDir,
     getGeneralLogPath,
     getAllLogPaths,

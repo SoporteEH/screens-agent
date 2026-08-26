@@ -45,9 +45,10 @@ async function bootstrap() {
         const { getDeviceName } = require('./services/identity');
         const commandHandlers = require('./handlers/commands');
         const stateService = require('./services/state');
-        const { cleanupOldLogs } = require('./utils/logConfig');
+        const { cleanupOldLogs, applyConfiguredLogLevel } = require('./utils/logConfig');
 
         cleanupOldLogs();
+        applyConfiguredLogLevel();
 
         const socketService = require('./services/socket');
         const deviceService = require('./services/device');
@@ -211,7 +212,11 @@ async function bootstrap() {
                     }
                 },
                 onCommand: (command) => {
-                    log.info('[SOCKET]: Command received:', command);
+                    // Never log the raw command: show_url carries autologin credentials.
+                    log.info(
+                        `[SOCKET]: Command received: ${command.action}` +
+                            (command.screenIndex ? ` (screen ${command.screenIndex})` : '')
+                    );
                     const actions = {
                         show_url: commandHandlers.handleShowUrl,
                         close_screen: commandHandlers.handleCloseScreen,

@@ -47,7 +47,7 @@ function sendCommandFeedback(command, status, message) {
             status,
             message,
         });
-        log.info(`[FEEDBACK]: Sending feedback for commandId ${command.commandId}: ${status}`);
+        log.debug(`[FEEDBACK]: Sending feedback for commandId ${command.commandId}: ${status}`);
     }
 }
 

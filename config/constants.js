@@ -1,6 +1,7 @@
 
 const { app } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
@@ -21,6 +22,14 @@ const CONFIG_FILE_PATH = path.join(CONFIG_DIR, 'config.json');
 const STATE_FILE_PATH = path.join(CONFIG_DIR, 'state.json');
 const DISPLAYS_FILE_PATH = path.join(CONFIG_DIR, 'displays.json');
 const CONTENT_DIR = path.join(CONFIG_DIR, 'content');
+
+// Created here because state.js/displaySlots.js write into it directly on first boot,
+// before any consumer that mkdirs its own subdirectory has run.
+try {
+    fs.mkdirSync(CONFIG_DIR, { recursive: true });
+} catch (e) {
+    console.error('[CONFIG]: Failed to create config directory:', e.message);
+}
 
 const AGENT_REFRESH_URL = SERVER_URL ? `${SERVER_URL}/api/auth/agent-refresh` : '';
 const SYNC_API_URL = SERVER_URL ? `${SERVER_URL}/api/users/me/local-assets` : '';

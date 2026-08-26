@@ -5,7 +5,7 @@ const { handleForceUpdate, getUpdateState } = require('../services/updater');
 
 const registerIpcHandlers = (getServerUrl, AGENT_VERSION, getStatus) => {
     ipcMain.on('agent-action', (event, { action, data }) => {
-        log.info(`[IPC]: Action received: ${action}`);
+        log.debug(`[IPC]: Action received: ${action}`);
 
         switch (action) {
             case 'restart':
