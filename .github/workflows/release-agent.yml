@@ -41,7 +41,7 @@ jobs:
             if [ "$prerelease" = true ]; then
               echo "::warning::SERVER_URL points at $host over plain HTTP or a private range. Fine for this beta tag; agents built here only work on that network."
             elif [ "$ALLOW_PRIVATE_SERVER_URL" = "true" ]; then
-              echo "::warning::SERVER_URL points at $host, allowed by ALLOW_PRIVATE_SERVER_URL."
+              echo "::warning::Stable $GITHUB_REF_NAME built against $host because ALLOW_PRIVATE_SERVER_URL is set. Every agent installed from this release only works on that network — delete the variable before the first production release."
             else
               echo "::error::Refusing to cut stable $GITHUB_REF_NAME with SERVER_URL=$host — it is a private address or plain HTTP, and gets baked into every agent. Tag it as vX.Y.Z-beta.N to test, or set the ALLOW_PRIVATE_SERVER_URL variable to true if the production backend really lives inside the tunnel."
               exit 1
@@ -61,16 +61,6 @@ jobs:
             echo "::error::Tag is $GITHUB_REF_NAME but package.json is $version. They must match — tag v$version, or set the version to ${GITHUB_REF_NAME#v}."
             exit 1
           fi
-          case "$version" in
-            *-beta*)
-              echo "RELEASE_TYPE=prerelease" >> "$GITHUB_ENV"
-              echo "RELEASE_CHANNEL=beta" >> "$GITHUB_ENV"
-              ;;
-            *)
-              echo "RELEASE_TYPE=release" >> "$GITHUB_ENV"
-              echo "RELEASE_CHANNEL=latest" >> "$GITHUB_ENV"
-              ;;
-          esac
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -84,6 +74,11 @@ jobs:
       - name: Inject Configuration
         run: node scripts/inject-config.js
 
+      # Must run before any build: it decides beta.yml vs latest.yml and whether the
+      # release is a prerelease, both of which electron-builder gets wrong by default.
+      - name: Set publish channel from version
+        run: node scripts/set-release-channel.js
+
       - name: Build (Windows, no publish)
         if: matrix.os == 'windows-latest'
         run: npx electron-builder --win --publish never
@@ -94,7 +89,7 @@ jobs:
 
       - name: Build and Release (Windows)
         if: matrix.os == 'windows-latest'
-        run: npx electron-builder --win --publish always -c.publish.releaseType=${{ env.RELEASE_TYPE }} -c.publish.channel=${{ env.RELEASE_CHANNEL }}
+        run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -110,6 +105,6 @@ jobs:
 
       - name: Build and Release (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: npx electron-builder --linux deb AppImage --arm64 --armv7l --x64 --publish always -c.publish.releaseType=${{ env.RELEASE_TYPE }} -c.publish.channel=${{ env.RELEASE_CHANNEL }}
+        run: npx electron-builder --linux deb AppImage --arm64 --armv7l --x64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

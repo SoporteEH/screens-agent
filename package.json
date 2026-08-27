@@ -103,7 +103,6 @@
       "createStartMenuShortcut": true,
       "runAfterFinish": true,
       "artifactName": "ScreensWebAgent-installer.${ext}",
-      "appPackageUrl": "https://github.com/SoporteEH/screens-agent/releases/latest/download/",
       "menuCategory": false
     },
     "linux": {
