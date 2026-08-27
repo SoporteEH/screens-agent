@@ -138,7 +138,8 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl) {
         .offline-msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #888; text-align: center; z-index: 5; }
         .offline-msg h2 { font-size: 1.8rem; margin-bottom: 0.5rem; }
         .offline-msg p { font-size: 1rem; color: #666; margin-top: 0.3rem; }
-        .status-dot { position: fixed; bottom: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: #ee3232ff; z-index: 9999; display: none; }
+        .status-dot { position: fixed; bottom: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: #c52c2cff; z-index: 9999; display: none; }
+        .status-dot.server-down { background: #9ca3afff; }
     </style>
 </head>
 <body>
@@ -163,9 +164,16 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl) {
             frame.style.display = 'block';
             // Carousel inside iframe shows its own red dot — hide wrapper dot to avoid duplicates
         } else {
-            // No content at all: show message and red dot from wrapper
+            // No content at all: show message and the wrapper dot. This page only renders
+            // when the server is unreachable, so grey (network up) or red (no network).
             frame.style.display = 'none';
             offlineMsg.style.display = 'block';
+            if (navigator.onLine) {
+                statusDot.className = 'status-dot server-down';
+                statusDot.title = 'No connection to the server';
+            } else {
+                statusDot.title = 'No network';
+            }
             statusDot.style.display = 'block';
         }
 
