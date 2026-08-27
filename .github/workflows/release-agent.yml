@@ -74,8 +74,7 @@ jobs:
       - name: Inject Configuration
         run: node scripts/inject-config.js
 
-      # Must run before any build: it decides beta.yml vs latest.yml and whether the
-      # release is a prerelease, both of which electron-builder gets wrong by default.
+      # Run before any build / decides beta.yml vs latest.yml
       - name: Set publish channel from version
         run: node scripts/set-release-channel.js
 
@@ -86,6 +85,25 @@ jobs:
       - name: Smoke test the built binary
         if: matrix.os == 'windows-latest'
         run: node scripts/smoke-test.js
+
+      # Created up front
+      - name: Create release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag="v$version"
+          case "$version" in *-beta*) pre=true ;; *) pre=false ;; esac
+
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --prerelease=$pre
+          else
+            flags=""
+            [ "$pre" = true ] && flags="--prerelease"
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
+              --title "$version" --notes "$version" $flags
+          fi
 
       - name: Build and Release (Windows)
         if: matrix.os == 'windows-latest'
