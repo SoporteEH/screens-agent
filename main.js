@@ -24,6 +24,8 @@ const context = {
     fallbackTimers: new Map(),
     screenModes: new Map(),
     lastDisconnectAt: 0,
+    // ONLINE / NO_SERVER / NO_INTERNET. Starts optimistic, like the network monitor.
+    networkState: 'ONLINE',
 };
 
 async function bootstrap() {
@@ -365,6 +367,141 @@ async function bootstrap() {
             });
         };
 
+        const isBlankOrErrorUrl = (url) =>
+            !url || url === 'about:blank' || url.startsWith('chrome-error://');
+
+        // In player mode the window holds the wrapper, not the stored content URL, and
+        // only the wrapper dies with the server.
+        const getLoadedUrl = (win) => {
+            try {
+                return win.webContents.getURL() || '';
+            } catch {
+                return '';
+            }
+        };
+
+        // Lets a network flap skip screens that already show the right thing.
+        const offlineSignatures = new Map();
+
+        // Always the wrapper: it is the only page that can show the status dot.
+        const resolveOfflineTarget = (screenIdStr, reason) => {
+            const {
+                isServerDependentUrl,
+                getCachedPlayerFileUrl,
+            } = require('./services/playerCache');
+            const serverUrl = constants.getServerUrl();
+            const contentUrl = stateService.loadLastState()[screenIdStr]?.url || '';
+            // NO_INTERNET rules out external content too; the wrapper falls to the carousel.
+            const playable =
+                reason !== 'NO_INTERNET' &&
+                net.isOnline() &&
+                !!contentUrl &&
+                !isServerDependentUrl(contentUrl, serverUrl);
+            const embed = playable ? contentUrl : '';
+
+            return {
+                url: getCachedPlayerFileUrl(screenIdStr, embed, serverUrl, reason),
+                signature: `${reason}|${embed}`,
+            };
+        };
+
+        // Terminal state: a local file cannot fail to load.
+        context.loadOfflineCarousel = (screenId, win) => {
+            const { getCachedPlayerFileUrl } = require('./services/playerCache');
+            const screenIdStr = String(screenId);
+            const reason = context.networkState === 'NO_INTERNET' ? 'NO_INTERNET' : 'NO_SERVER';
+            log.info(`[NETWORK]: Screen ${screenIdStr} → local carousel.`);
+            win.loadURL(
+                getCachedPlayerFileUrl(screenIdStr, '', constants.getServerUrl(), reason)
+            ).catch((e) => log.error(`[NETWORK]: Carousel load error on screen ${screenIdStr}:`, e));
+            // Forced fallback: re-evaluate on the next network event.
+            offlineSignatures.delete(screenIdStr);
+            context.screenModes.set(screenIdStr, 'offline');
+        };
+
+        context.applyOfflineScreen = (screenId, win, reason = 'NO_SERVER') => {
+            const screenIdStr = String(screenId);
+            const target = resolveOfflineTarget(screenIdStr, reason);
+
+            log.info(`[NETWORK]: Screen ${screenIdStr} → offline wrapper (${target.signature})`);
+            win.loadURL(target.url).catch((e) =>
+                log.error(`[NETWORK]: Offline load error on screen ${screenIdStr}:`, e)
+            );
+            offlineSignatures.set(screenIdStr, target.signature);
+            context.screenModes.set(screenIdStr, 'offline');
+        };
+
+        context.applyOnlineScreen = (screenId, win) => {
+            const { loadConfig } = require('./utils/configManager');
+            const screenIdStr = String(screenId);
+            const onlineConfig = loadConfig();
+            const serverUrl = onlineConfig.serverUrl || constants.getServerUrl();
+            if (!serverUrl || !onlineConfig.deviceId) return false;
+
+            const screenData = stateService.loadLastState()[screenIdStr];
+            if (screenData?.url && screenData.credentials) {
+                log.info(`[NETWORK]: Re-applying autologin content for screen ${screenIdStr}`);
+                commandHandlers.handleShowUrl({
+                    action: 'show_url',
+                    screenIndex: screenIdStr,
+                    url: screenData.url,
+                    credentials: screenData.credentials,
+                    refreshInterval: screenData.refreshInterval || 0,
+                    silent: true,
+                });
+            } else {
+                log.info(`[NETWORK]: Reloading player URL for screen ${screenIdStr}`);
+                win.loadURL(`${serverUrl}/player/${onlineConfig.deviceId}/${screenIdStr}`).catch(
+                    (e) => log.error(`[NETWORK]: Recovery error screen ${screenIdStr}:`, e)
+                );
+            }
+            offlineSignatures.delete(screenIdStr);
+            context.screenModes.set(screenIdStr, 'live');
+            return true;
+        };
+
+        // Shared by the network handlers and the watchdog so the two cannot disagree.
+        context.inspectScreen = (screenId, win, online) => {
+            const { isServerDependentUrl } = require('./services/playerCache');
+            const { isAutologinUrl, isSameSite } = require('./utils/autologinUrl');
+            const { loadConfig } = require('./utils/configManager');
+            const screenIdStr = String(screenId);
+            const cfg = loadConfig();
+            const serverUrl = cfg.serverUrl || constants.getServerUrl();
+            const screenData = stateService.loadLastState()[screenIdStr] || {};
+            const contentUrl = screenData.url || '';
+            const loadedUrl = getLoadedUrl(win);
+
+            if (isBlankOrErrorUrl(loadedUrl)) {
+                return { ok: false, reason: 'blank or on an error page' };
+            }
+
+            if (!online) {
+                return isServerDependentUrl(loadedUrl, serverUrl)
+                    ? { ok: false, reason: 'stuck on a server page while the server is down' }
+                    : { ok: true };
+            }
+
+            // Autologin bypasses the wrapper by design (the injection needs the login form).
+            const bypassesWrapper = !!screenData.credentials || isAutologinUrl(contentUrl);
+            if (bypassesWrapper) {
+                return !contentUrl || isSameSite(loadedUrl, contentUrl)
+                    ? { ok: true }
+                    : { ok: false, reason: 'off its assigned content' };
+            }
+
+            if (!cfg.deviceId || !serverUrl) {
+                return !contentUrl || isSameSite(loadedUrl, contentUrl)
+                    ? { ok: true }
+                    : { ok: false, reason: 'off its assigned content' };
+            }
+
+            const playerUrl = `${serverUrl}/player/${cfg.deviceId}/${screenIdStr}`;
+            return loadedUrl.startsWith(playerUrl)
+                ? { ok: true }
+                : { ok: false, reason: 'off the player wrapper while online' };
+        };
+
         context.onNetworkOffline = (reason = 'UNKNOWN') => {
             log.info(`[NETWORK]: OFFLINE state detected. Reason: ${reason}`);
             context.isOnline = false;
@@ -372,125 +509,39 @@ async function bootstrap() {
 
             if (reason === 'SOCKET_DISCONNECT') return;
 
-            const {
-                isServerDependentUrl,
-                getCachedPlayerFileUrl,
-            } = require('./services/playerCache');
-            const serverUrl = constants.getServerUrl();
-            const lastState = stateService.loadLastState();
-
             context.managedWindows.forEach((win, screenId) => {
+                if (!win || win.isDestroyed()) return;
                 const screenIdStr = String(screenId);
-                const screenData = lastState[screenIdStr];
-                const currentUrl = screenData?.url || '';
 
                 if (context.fallbackTimers.has(screenIdStr)) {
                     clearTimeout(context.fallbackTimers.get(screenIdStr));
                     context.fallbackTimers.delete(screenIdStr);
                 }
 
-                const isDependent = isServerDependentUrl(currentUrl, serverUrl);
-                const currentMode = context.screenModes.get(screenIdStr) || 'live';
+                const loadedUrl = getLoadedUrl(win);
+                const target = resolveOfflineTarget(screenIdStr, reason);
+                // The wrapper path is stable, so compare what it was built with instead.
+                const alreadyThere =
+                    !isBlankOrErrorUrl(loadedUrl) &&
+                    loadedUrl.startsWith('file://') &&
+                    offlineSignatures.get(screenIdStr) === target.signature;
 
                 log.info(
-                    `[NETWORK]: Screen ${screenIdStr} — URL: "${currentUrl}", mode: ${currentMode}, dependent: ${isDependent}, reason: ${reason}`
+                    `[NETWORK]: Screen ${screenIdStr} — loaded: "${loadedUrl}", offline target: ${target.signature}`
                 );
 
-                if (reason === 'NO_SERVER') {
-                    if (isDependent) {
-                        if (currentMode !== 'offline') {
-                            log.info(
-                                `[NETWORK]: Server down. Scheduling carousel fallback for screen ${screenIdStr} in ${constants.CONSTANTS.FALLBACK_DELAY_MS}ms`
-                            );
-                            const timer = setTimeout(() => {
-                                if (win && !win.isDestroyed()) {
-                                    const offlineUrl = getCachedPlayerFileUrl(
-                                        screenIdStr,
-                                        currentUrl,
-                                        serverUrl
-                                    );
-                                    win.loadURL(offlineUrl).catch((e) =>
-                                        log.error(
-                                            `[NETWORK]: Fallback load error on screen ${screenIdStr}:`,
-                                            e
-                                        )
-                                    );
-                                    context.screenModes.set(screenIdStr, 'offline');
-                                    log.info(
-                                        `[NETWORK]: Carousel active on screen ${screenIdStr} (NO_SERVER)`
-                                    );
-                                }
-                                context.fallbackTimers.delete(screenIdStr);
-                            }, constants.CONSTANTS.FALLBACK_DELAY_MS);
-                            context.fallbackTimers.set(screenIdStr, timer);
-                        } else {
-                            log.info(
-                                `[NETWORK]: Screen ${screenIdStr} already in offline mode, no action needed.`
-                            );
-                        }
-                    } else {
-                        // External URL: internet's back but server's still down (screen was in carousel from a prior outage).
-                        if (currentMode === 'offline') {
-                            if (currentUrl) {
-                                log.info(
-                                    `[NETWORK]: Internet restored (server still down). Restoring external URL on screen ${screenIdStr}: "${currentUrl}"`
-                                );
-                                const timer = setTimeout(() => {
-                                    if (win && !win.isDestroyed()) {
-                                        win.loadURL(currentUrl).catch((e) =>
-                                            log.error(
-                                                `[NETWORK]: Error restoring external URL on screen ${screenIdStr}:`,
-                                                e
-                                            )
-                                        );
-                                        context.screenModes.set(screenIdStr, 'live');
-                                    }
-                                    context.fallbackTimers.delete(screenIdStr);
-                                }, 1000);
-                                context.fallbackTimers.set(screenIdStr, timer);
-                            }
-                        } else {
-                            log.info(
-                                `[NETWORK]: Server down. External URL on screen ${screenIdStr} ("${currentUrl}") maintaining playback.`
-                            );
-                        }
-                    }
+                if (alreadyThere) {
+                    log.info(`[NETWORK]: Screen ${screenIdStr} already correct, keeping playback.`);
                     return;
                 }
 
-                // Unlike NO_SERVER, any URL (external or internal) needs internet.
-                if (reason === 'NO_INTERNET') {
-                    if (currentMode !== 'offline') {
-                        log.info(
-                            `[NETWORK]: No internet. Scheduling carousel fallback for screen ${screenIdStr} in ${constants.CONSTANTS.FALLBACK_DELAY_MS / 1000}s`
-                        );
-                        const timer = setTimeout(() => {
-                            if (win && !win.isDestroyed()) {
-                                const offlineUrl = getCachedPlayerFileUrl(
-                                    screenIdStr,
-                                    null,
-                                    serverUrl
-                                );
-                                win.loadURL(offlineUrl).catch((e) =>
-                                    log.error(
-                                        `[NETWORK]: Fallback error on screen ${screenIdStr}:`,
-                                        e
-                                    )
-                                );
-                                context.screenModes.set(screenIdStr, 'offline');
-                                log.info(
-                                    `[NETWORK]: Carousel active on screen ${screenIdStr} (NO_INTERNET)`
-                                );
-                            }
-                            context.fallbackTimers.delete(screenIdStr);
-                        }, constants.CONSTANTS.FALLBACK_DELAY_MS);
-                        context.fallbackTimers.set(screenIdStr, timer);
-                    } else {
-                        log.info(
-                            `[NETWORK]: Screen ${screenIdStr} already in offline mode, no action needed.`
-                        );
+                const timer = setTimeout(() => {
+                    context.fallbackTimers.delete(screenIdStr);
+                    if (win && !win.isDestroyed()) {
+                        context.applyOfflineScreen(screenId, win, reason);
                     }
-                }
+                }, constants.CONSTANTS.FALLBACK_DELAY_MS);
+                context.fallbackTimers.set(screenIdStr, timer);
             });
         };
 
@@ -516,14 +567,7 @@ async function bootstrap() {
             if (serverUrl && onlineConfig.deviceId) {
                 setTimeout(() => {
                     context.managedWindows.forEach((win, screenId) => {
-                        if (win && !win.isDestroyed()) {
-                            const playerUrl = `${serverUrl}/player/${onlineConfig.deviceId}/${screenId}`;
-                            log.info(`[NETWORK]: Reloading player URL for screen ${screenId}`);
-                            win.loadURL(playerUrl).catch((e) =>
-                                log.error(`Recovery error screen ${screenId}:`, e)
-                            );
-                            context.screenModes.set(String(screenId), 'live');
-                        }
+                        if (win && !win.isDestroyed()) context.applyOnlineScreen(screenId, win);
                     });
                 }, 2000);
 

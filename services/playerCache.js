@@ -19,6 +19,7 @@ function getCachePath(screenIndex) {
     return path.join(PLAYER_CACHE_DIR, `player-${screenIndex}.html`);
 }
 
+// Timestamp marker, not the page: records that this screen rendered the player once.
 function cachePlayerHTML(screenIndex) {
     try {
         ensureDir(PLAYER_CACHE_DIR);
@@ -26,20 +27,6 @@ function cachePlayerHTML(screenIndex) {
     } catch (error) {
         log.error(`[PLAYER-CACHE]: Error marking player cache for screen ${screenIndex}:`, error);
     }
-}
-
-function loadCachedPlayerHTML(screenIndex) {
-    try {
-        const cachePath = getCachePath(screenIndex);
-        if (fs.existsSync(cachePath)) {
-            const html = fs.readFileSync(cachePath, 'utf8');
-            log.debug(`[PLAYER-CACHE]: Loaded cached player HTML for screen ${screenIndex}`);
-            return html;
-        }
-    } catch (error) {
-        log.error(`[PLAYER-CACHE]: Error loading cached HTML for screen ${screenIndex}:`, error);
-    }
-    return null;
 }
 
 function hasCachedPlayer(screenIndex) {
@@ -93,19 +80,18 @@ function getOfflineContentFilePath(url, serverUrl) {
     return null;
 }
 
+// The wrapper is API-served with no local copy, so it is server dependent too.
 function isServerDependentUrl(url, serverUrl) {
     if (!url) return false;
     // Views (playlists) require the live server to render.
     if (url.includes('/view/')) return true;
-    // Player wrapper is cached locally, not server dependent.
-    if (url.includes('/player/')) return false;
     if (serverUrl && url.startsWith(serverUrl)) return true;
     // localhost/127.0.0.1 = dev server, treated as server dependent.
     if (/https?:\/\/(localhost|127\.0\.0\.1):\d+/.test(url)) return true;
     return false;
 }
 
-function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl) {
+function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl, reason = 'NO_SERVER') {
     let iframeUrl = null;
     let usingCache = false;
 
@@ -124,6 +110,7 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl) {
     }
 
     const statusText = usingCache ? 'Playing local' : 'No valid content';
+    const dotState = reason === 'NO_INTERNET' ? 'offline' : 'server-down';
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -138,8 +125,9 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl) {
         .offline-msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #888; text-align: center; z-index: 5; }
         .offline-msg h2 { font-size: 1.8rem; margin-bottom: 0.5rem; }
         .offline-msg p { font-size: 1rem; color: #666; margin-top: 0.3rem; }
-        .status-dot { position: fixed; bottom: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: #c52c2cff; z-index: 9999; display: none; }
-        .status-dot.server-down { background: #9ca3afff; }
+        .status-dot { position: fixed; bottom: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: #9ca3af; z-index: 9999; }
+        .status-dot.server-down { background: #9ca3af; }
+        .status-dot.offline { background: #b55353; }
     </style>
 </head>
 <body>
@@ -148,12 +136,22 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl) {
         <h2>${statusText}</h2>
         <p>Screen ${screenIndex}</p>
     </div>
-    <div class="status-dot" id="statusDot" title="Offline"></div>
+    <div class="status-dot" id="statusDot"></div>
     <script>
         var iframeUrl = ${JSON.stringify(iframeUrl)};
+        var dotState = ${JSON.stringify(dotState)};
         var frame = document.getElementById('contentFrame');
         var offlineMsg = document.getElementById('offlineMsg');
         var statusDot = document.getElementById('statusDot');
+
+        // The reason comes from a real ping: navigator.onLine may only escalate to red.
+        function paintDot(state) {
+            statusDot.className = 'status-dot ' + state;
+            statusDot.title = state === 'offline' ? 'No network' : 'No connection to the server';
+        }
+        paintDot(navigator.onLine ? dotState : 'offline');
+        window.addEventListener('offline', function() { paintDot('offline'); });
+        window.addEventListener('online', function() { paintDot(dotState); });
 
         if (iframeUrl) {
             frame.onload = function() {
@@ -162,19 +160,9 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl) {
             };
             frame.src = iframeUrl;
             frame.style.display = 'block';
-            // Carousel inside iframe shows its own red dot — hide wrapper dot to avoid duplicates
         } else {
-            // No content at all: show message and the wrapper dot. This page only renders
-            // when the server is unreachable, so grey (network up) or red (no network).
             frame.style.display = 'none';
             offlineMsg.style.display = 'block';
-            if (navigator.onLine) {
-                statusDot.className = 'status-dot server-down';
-                statusDot.title = 'No connection to the server';
-            } else {
-                statusDot.title = 'No network';
-            }
-            statusDot.style.display = 'block';
         }
 
         setInterval(function() { location.reload(); }, 60000); // 1 minute retry
@@ -183,17 +171,16 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl) {
 </html>`;
 }
 
-function getCachedPlayerFileUrl(screenIndex, currentUrl, serverUrl) {
+function getCachedPlayerFileUrl(screenIndex, currentUrl, serverUrl, reason = 'NO_SERVER') {
     ensureDir(PLAYER_CACHE_DIR);
-    const offlineHtml = buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl);
+    const offlineHtml = buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl, reason);
     const offlinePath = path.join(PLAYER_CACHE_DIR, `offline-${screenIndex}.html`);
     fs.writeFileSync(offlinePath, offlineHtml, 'utf8');
-    return `file://${offlinePath}`;
+    return `file://${offlinePath.replace(/\\/g, '/')}`;
 }
 
 module.exports = {
     cachePlayerHTML,
-    loadCachedPlayerHTML,
     hasCachedPlayer,
     buildOfflinePlayerHTML,
     getCachedPlayerFileUrl,

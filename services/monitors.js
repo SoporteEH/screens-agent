@@ -1,6 +1,7 @@
 const { screen } = require('electron');
 const { log } = require('../utils/logConfig');
 const { startNetworkMonitoring } = require('./network');
+const { startScreenWatchdog } = require('./screenWatchdog');
 const { reconcileDisplays } = require('./displaySlots');
 const { loadLastState } = require('./state');
 
@@ -114,15 +115,24 @@ const initializeMonitors = (context) => {
     screen.on('display-metrics-changed', () => onScreenChange('metrics-changed'));
 
     startNetworkMonitoring({
-        onOffline: (reason) => context.onNetworkOffline(reason),
-        onOnline: () => context.onNetworkOnline(),
+        onOffline: (reason) => {
+            context.networkState = reason;
+            context.onNetworkOffline(reason);
+        },
+        onOnline: () => {
+            context.networkState = 'ONLINE';
+            context.onNetworkOnline();
+        },
         onCheckOnline: () => {
+            context.networkState = 'ONLINE';
             if (context.socket && !context.socket.connected) {
                 log.info('[NETWORK]: Socket disconnected. Reconnecting...');
                 context.socket.connect();
             }
         },
     });
+
+    startScreenWatchdog(context);
 };
 
 module.exports = { initializeMonitors };

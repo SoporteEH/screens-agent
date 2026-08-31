@@ -74,34 +74,20 @@ const startNormalMode = async (context) => {
                     const hasInternet = net.isOnline();
                     const targetDisplay = hardwareIdToDisplayMap.get(screenIndex);
 
-                    if (
-                        currentUrl &&
-                        !isServerDependentUrl(currentUrl, serverUrl) &&
-                        hasInternet
-                    ) {
-                        log.info(
-                            `[PLAYER]: Server offline but external URL available for screen ${screenIndex}: ${currentUrl}`
-                        );
-                        if (targetDisplay) {
-                            createContentWindow(targetDisplay, currentUrl, {
-                                action: 'show_url',
-                                screenIndex,
-                                url: currentUrl,
-                                credentials: screenData.credentials || null,
-                                refreshInterval: screenData.refreshInterval || 0,
-                                contentName: `Screen ${screenIndex} (direct)`,
-                                silent: true,
-                            });
-                        }
-                        context.screenModes.set(String(screenIndex), 'live');
-                    } else if (hasCachedPlayer(screenIndex) || currentUrl) {
+                    if (hasCachedPlayer(screenIndex) || currentUrl) {
+                        // Wrapper even when the content is playable: only it shows the status dot.
+                        const playable =
+                            !!currentUrl &&
+                            hasInternet &&
+                            !isServerDependentUrl(currentUrl, serverUrl);
                         const offlineUrl = getCachedPlayerFileUrl(
                             screenIndex,
-                            currentUrl,
-                            serverUrl
+                            playable ? currentUrl : '',
+                            serverUrl,
+                            hasInternet ? 'NO_SERVER' : 'NO_INTERNET'
                         );
                         log.info(
-                            `[PLAYER]: Server offline. Loading carousel for screen ${screenIndex} (content: ${currentUrl || 'none'})`
+                            `[PLAYER]: Server offline. Screen ${screenIndex} → ${playable ? `external content: ${currentUrl}` : 'local carousel'}`
                         );
                         if (targetDisplay) {
                             createContentWindow(targetDisplay, offlineUrl, {

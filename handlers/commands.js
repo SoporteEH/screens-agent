@@ -4,7 +4,11 @@ const fs = require('fs');
 const { log } = require('../utils/logConfig');
 const axios = require('axios');
 const { CONTENT_DIR, getServerUrl, CONSTANTS } = require('../config/constants');
-const { cachePlayerHTML, cacheContentURL } = require('../services/playerCache');
+const {
+    cachePlayerHTML,
+    cacheContentURL,
+    isServerDependentUrl,
+} = require('../services/playerCache');
 const { isAutologinUrl } = require('../utils/autologinUrl');
 
 let context = {};
@@ -192,10 +196,30 @@ function createContentWindow(display, urlToLoad, command) {
             }
 
             const isNetworkError = errorCode <= -100 && errorCode >= -199;
-            if (!originalUrl.startsWith('local:') && isNetworkError) {
-                scheduleRetry(command);
+            if (originalUrl.startsWith('local:') || !isNetworkError) return;
+
+            // Retrying while offline just re-lands on an error page with no script to recover it.
+            if (context.networkState && context.networkState !== 'ONLINE') {
+                const reason =
+                    context.networkState === 'NO_INTERNET' ? 'NO_INTERNET' : 'NO_SERVER';
+
+                if (isServerDependentUrl(validatedURL, getServerUrl()) && context.applyOfflineScreen) {
+                    log.warn(
+                        `[RESILIENCE]: Server page failed on screen ${screenIndex}. Switching to offline content.`
+                    );
+                    context.applyOfflineScreen(screenIndex, win, reason);
+                    return;
+                }
+                if (context.loadOfflineCarousel) {
+                    log.warn(
+                        `[RESILIENCE]: Content unreachable on screen ${screenIndex}. Falling back to carousel.`
+                    );
+                    context.loadOfflineCarousel(screenIndex, win);
+                    return;
+                }
             }
 
+            scheduleRetry(command);
         }
     );
 

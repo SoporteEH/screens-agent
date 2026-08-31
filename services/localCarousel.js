@@ -44,17 +44,11 @@ function buildLocalCarouselUrl() {
             display: none;
         }
         .active { display: block; }
-        .offline-indicator {
-            position: fixed; bottom: 6px; right: 6px;
-            width: 7px; height: 7px; border-radius: 50%;
-            background: #ee3232ff;
-            z-index: 9999;
-        }
     </style>
 </head>
 <body>
+    <!-- Status dot lives in the wrapper that iframes this page. -->
     <div id="container" class="media-container"></div>
-    <div class="offline-indicator"></div>
 
     <script>
         const mediaUrls = ${JSON.stringify(mediaUrls)};
