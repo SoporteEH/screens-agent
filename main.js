@@ -215,6 +215,15 @@ async function bootstrap() {
                         log.error('[SOCKET]: Error applying expectedScreens:', e);
                     }
 
+                    try {
+                        const { applyRestartSchedule } = require('./services/restartScheduler');
+                        const restartSchedule = device.restartSchedule || { mode: 'off' };
+                        saveConfig({ restartSchedule });
+                        applyRestartSchedule(restartSchedule);
+                    } catch (e) {
+                        log.error('[SOCKET]: Error applying restartSchedule:', e);
+                    }
+
                     broadcastAppStatus();
                 },
                 onForceReprovision: () => {

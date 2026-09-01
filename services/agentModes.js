@@ -28,6 +28,8 @@ const startNormalMode = async (context) => {
     log.info(`[NORMAL]: Device ID: ${config.deviceId}`);
 
     startTokenRefreshLoop(config.agentToken, setAgentToken);
+    // From the stored copy: the schedule must hold before (and without) the server.
+    require('./restartScheduler').applyRestartSchedule(config.restartSchedule);
     await reconcileDisplays(hardwareIdToDisplayMap);
 
     const serverUrl = config.serverUrl || require('../config/constants').getServerUrl();
