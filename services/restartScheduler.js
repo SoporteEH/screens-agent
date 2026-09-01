@@ -4,12 +4,19 @@ const { app } = require('electron');
 const { log } = require('../utils/logConfig');
 
 const TICK_MS = 60 * 1000;
-// A daily restart lands the app back inside its own target minute; without this the
-// first tick after boot would match again and loop.
-const MIN_UPTIME_BEFORE_RESTART_MS = 5 * 60 * 1000;
 
 const startedAt = Date.now();
 let timer = null;
+let appliedKey = null;
+let lastFiredKey = null;
+
+function scheduleKey(schedule) {
+    return [
+        schedule?.mode || 'off',
+        schedule?.intervalHours ?? '',
+        schedule?.dailyTime ?? '',
+    ].join('|');
+}
 
 function parseDailyTime(value) {
     const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(value || ''));
@@ -25,6 +32,12 @@ function restartApp(reason) {
 // A tick beats one long timeout: it survives clock changes, DST and machine sleep,
 // any of which would leave a multi-hour timeout firing at the wrong moment.
 function applyRestartSchedule(schedule) {
+    const key = scheduleKey(schedule);
+    // device-info repeats on every reconnect, and re-arming would push the next tick
+    // 60s further out each time — on a flapping socket it would never fire at all.
+    if (key === appliedKey) return;
+    appliedKey = key;
+
     if (timer) {
         clearInterval(timer);
         timer = null;
@@ -58,11 +71,17 @@ function applyRestartSchedule(schedule) {
         }
         log.info(`[RESTART]: Scheduled daily at ${schedule.dailyTime}.`);
         timer = setInterval(() => {
-            if (Date.now() - startedAt < MIN_UPTIME_BEFORE_RESTART_MS) return;
             const now = new Date();
-            if (now.getHours() === target.hours && now.getMinutes() === target.minutes) {
-                restartApp(`daily at ${schedule.dailyTime}`);
-            }
+            if (now.getHours() !== target.hours || now.getMinutes() !== target.minutes) return;
+
+            // The restart lands the app back inside its own target minute, but the first
+            // tick of the new process is 60s after boot and therefore already past it —
+            // so only a repeat within this process has to be guarded.
+            const fired = `${now.toDateString()} ${schedule.dailyTime}`;
+            if (lastFiredKey === fired) return;
+            lastFiredKey = fired;
+
+            restartApp(`daily at ${schedule.dailyTime}`);
         }, TICK_MS);
         return;
     }
