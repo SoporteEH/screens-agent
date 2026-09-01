@@ -164,6 +164,15 @@ function createContentWindow(display, urlToLoad, command) {
         }
     }, 1000);
 
+    // The wrapper is cross-origin with everything it embeds, so its own console is all
+    // it can report; forwarding it is what leaves a trace of a dark screen in the log.
+    win.webContents.on('console-message', (details) => {
+        if (!details?.message?.startsWith('[PLAYER]')) return;
+        const line = `[SCREEN ${screenIndex}]: ${details.message}`;
+        if (details.level === 'error' || details.level === 'warning') log.warn(line);
+        else log.info(line);
+    });
+
     win.webContents.on('did-finish-load', () => {
         const loadedUrl = win.webContents.getURL();
         if (loadedUrl.includes('/player/') && screenIndex) {
@@ -178,7 +187,16 @@ function createContentWindow(display, urlToLoad, command) {
     win.webContents.on(
         'did-fail-load',
         (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-            if (!isMainFrame) return;
+            if (!isMainFrame) {
+                // ERR_ABORTED is the double buffer discarding a frame, not a failure.
+                if (errorCode === -3) return;
+                // A black screen behind a healthy wrapper is only explained here: the
+                // frame's real error never reaches the page that embeds it.
+                log.warn(
+                    `[CONTENT]: Frame failed on screen ${screenIndex}: '${validatedURL}' — ${errorDescription} (${errorCode})`
+                );
+                return;
+            }
 
             log.error(
                 `[RESILIENCE]: Failed to load URL '${validatedURL}'. Reason: ${errorDescription}`

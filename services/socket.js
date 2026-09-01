@@ -2,10 +2,15 @@ const { io } = require('socket.io-client');
 const { log, heartbeatLog } = require('../utils/logConfig');
 const { SERVER_URL, CONSTANTS } = require('../config/constants');
 
+// Bounds how often an external trigger may abort the manager's backoff.
+const FORCE_RECONNECT_MIN_INTERVAL_MS = 10 * 1000;
+
 function connectToSocketServer(token, handlers) {
     let consecutiveFailures = 0;
     let circuitBreakerState = 'CLOSED';
     let circuitBreakerTimer = null;
+    let lastForcedAt = 0;
+    let hasConnected = false;
 
     const socket = io(SERVER_URL, {
         reconnection: true,
@@ -17,21 +22,30 @@ function connectToSocketServer(token, handlers) {
         auth: { token },
     });
 
+    const resetCircuitBreaker = () => {
+        if (circuitBreakerTimer) {
+            clearTimeout(circuitBreakerTimer);
+            circuitBreakerTimer = null;
+        }
+        circuitBreakerState = 'CLOSED';
+        consecutiveFailures = 0;
+    };
+
     socket.on('connect', () => {
         if (circuitBreakerState !== 'CLOSED') {
             log.info(
                 `[CIRCUIT BREAKER]: CLOSED — connection restored after ${consecutiveFailures} consecutive failures`
             );
-            circuitBreakerState = 'CLOSED';
         }
-        if (circuitBreakerTimer) {
-            clearTimeout(circuitBreakerTimer);
-            circuitBreakerTimer = null;
-        }
-        consecutiveFailures = 0;
+        resetCircuitBreaker();
 
         log.info('[SOCKET]: Connected.');
         if (handlers.onConnect) handlers.onConnect();
+
+        // A forced reconnect opens the manager by hand, which skips its 'reconnect'
+        // event. Deriving it from 'connect' covers both paths with one rule.
+        if (hasConnected && handlers.onReconnect) handlers.onReconnect();
+        hasConnected = true;
     });
 
     socket.on('disconnect', (reason) => {
@@ -43,19 +57,20 @@ function connectToSocketServer(token, handlers) {
         }
     });
 
-    socket.on('reconnect', (attemptNumber) => {
+    // Reconnection events live on the manager in socket.io-client v4; on the
+    // socket they silently never fire.
+    socket.io.on('reconnect', (attemptNumber) => {
         log.info(`[SOCKET]: Reconnected after ${attemptNumber} attempt(s)`);
-        if (handlers.onReconnect) handlers.onReconnect(attemptNumber);
     });
 
-    socket.on('reconnect_attempt', (n) => {
+    socket.io.on('reconnect_attempt', (n) => {
         log.debug(`[SOCKET]: Reconnecting attempt #${n}...`);
     });
 
     socket.on('connect_error', (err) => {
         consecutiveFailures++;
 
-        if (circuitBreakerState === 'CLOSED' && consecutiveFailures === CONSTANTS.CIRCUIT_BREAKER_THRESHOLD) {
+        if (circuitBreakerState !== 'OPEN' && consecutiveFailures >= CONSTANTS.CIRCUIT_BREAKER_THRESHOLD) {
             circuitBreakerState = 'OPEN';
             log.warn(
                 `[CIRCUIT BREAKER]: OPEN — ${consecutiveFailures} consecutive failures. ` +
@@ -82,7 +97,7 @@ function connectToSocketServer(token, handlers) {
         log.error(`[SOCKET]: Connection error: ${err.message}`);
     });
 
-    socket.on('reconnect_error', (err) => {
+    socket.io.on('reconnect_error', (err) => {
         log.error(`[SOCKET]: Reconnection error: ${err.message}`);
     });
 
@@ -92,11 +107,22 @@ function connectToSocketServer(token, handlers) {
     socket.on('force-reprovision', () => handlers.onForceReprovision?.());
     socket.on('reset-screens', () => handlers.onResetScreens?.());
 
-    socket.clearCircuitBreaker = () => {
-        if (circuitBreakerTimer) {
-            clearTimeout(circuitBreakerTimer);
-            circuitBreakerTimer = null;
-        }
+    socket.clearCircuitBreaker = resetCircuitBreaker;
+
+    // connect() is a no-op while the manager is already waiting out its backoff
+    // (it guards on _reconnecting), so a caller that just proved the server is up
+    // has to drop that wait first. disconnect() cancels it; connect() then dials now.
+    socket.forceReconnect = () => {
+        if (socket.connected) return false;
+
+        const now = Date.now();
+        if (now - lastForcedAt < FORCE_RECONNECT_MIN_INTERVAL_MS) return false;
+        lastForcedAt = now;
+
+        resetCircuitBreaker();
+        socket.disconnect();
+        socket.connect();
+        return true;
     };
 
     return socket;

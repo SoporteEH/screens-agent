@@ -43,10 +43,11 @@ const CONSTANTS = {
     RETRY_BACKOFF_BASE_MS: 30 * 1000,
     GC_INTERVAL_MS: 4 * 60 * 60 * 1000,
     SOCKET_RECONNECT_DELAY_MS: 3 * 1000,
-    SOCKET_RECONNECT_DELAY_MAX_MS: 5 * 60 * 1000,
+    // The network monitor pings /health every 5-15s and forces a reconnect, so the
+    // manager's own backoff only has to stay polite, not slow.
+    SOCKET_RECONNECT_DELAY_MAX_MS: 30 * 1000,
     CIRCUIT_BREAKER_THRESHOLD: 10,
     FALLBACK_DELAY_MS: 4000,
-    RECONNECT_RELOAD_THRESHOLD_MS: 2 * 60 * 1000, // Skip live-screen reloads for socket blips shorter than this
 };
 
 let AGENT_VERSION = 'Unknown';

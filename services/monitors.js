@@ -126,8 +126,9 @@ const initializeMonitors = (context) => {
         onCheckOnline: () => {
             context.networkState = 'ONLINE';
             if (context.socket && !context.socket.connected) {
-                log.info('[NETWORK]: Socket disconnected. Reconnecting...');
-                context.socket.connect();
+                if (context.socket.forceReconnect?.()) {
+                    log.info('[NETWORK]: Socket disconnected. Forcing reconnect...');
+                }
             }
         },
     });

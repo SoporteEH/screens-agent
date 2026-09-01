@@ -97,7 +97,7 @@ Delete it to return to provisioning mode.
 | `GPU_SAFE_MODE` | unset | env — keep acceleration but skip forced GPU switches (Chromium blocklist decides) |
 | `REDUCED_MOTION` | unset | env — force `prefers-reduced-motion` in content pages |
 | `SOCKET_RECONNECT_DELAY_MS` | `3000` | `config/constants.js` — base reconnect delay |
-| `SOCKET_RECONNECT_DELAY_MAX_MS` | `300000` | `config/constants.js` — max delay (circuit open) |
+| `SOCKET_RECONNECT_DELAY_MAX_MS` | `30000` | `config/constants.js` — max backoff between reconnect attempts |
 | `CIRCUIT_BREAKER_THRESHOLD` | `10` | `config/constants.js` — failures before circuit opens |
 
 ## Resilience
@@ -106,23 +106,38 @@ Delete it to return to provisioning mode.
 
 | Case | Situation | Behavior |
 |---|---|---|
-| 1A | Server down, external URL on screen | Keep playing |
+| 1A | Server down, external URL on screen | Keep playing — the window is left untouched, not reloaded |
 | 1B | Server down, internal URL on screen | Local carousel after 4s |
 | 2 | Internet lost | All screens → local carousel |
 | 3 | Internet back, server still down | Restore external URLs; carousel for internal |
-| 4 | Server back | Reconnect socket, reload URLs |
+| 4 | Server back | Reconnect socket, restore the assigned URLs |
 
 Network is checked every 15s when stable, 5s when degraded.
 
-**Circuit breaker** — reconnection uses exponential backoff with ±50% jitter; the agent never
-stops retrying. After 10 consecutive failures the circuit opens (`[CIRCUIT BREAKER]: OPEN`),
-capping retries at ~5 min until a success closes it.
+`inspectScreen()` in `main.js` is the single predicate deciding whether a screen is showing what
+it should. The watchdog, the offline handler and both recovery paths all ask it, so they cannot
+disagree — and only screens that fail it are reloaded. In case 1A the live wrapper needs the
+server only in order to *reload*: its content frame keeps playing without it, so restarting it
+into an offline shell holding the same URL would be a visible interruption bought for nothing.
+
+**Screen health** — a cross-origin frame reports no errors to the page embedding it, so the
+wrapper watches for a frame that never fires `onload`: it retries 3 times, then appends
+`[stalled]` to `document.title`. The agent reads that with `webContents.getTitle()`, which is
+the only way a black screen behind a correctly-loaded wrapper becomes visible. Frame-level
+load failures are logged as `[CONTENT]: Frame failed`.
+
+**Reconnection** — exponential backoff with ±50% jitter, capped at 30s, never giving up. After
+10 consecutive failures the circuit opens (`[CIRCUIT BREAKER]: OPEN`) and pauses for 5 minutes.
+
+That pause is overridden the moment the network monitor proves the server answers `/health`:
+`socket.forceReconnect()` drops the manager's pending backoff and dials immediately, because
+`socket.connect()` alone is a no-op while a reconnection is already scheduled.
 
 | Consecutive failures | Retry interval |
 |---|---|
-| 1–5 | 3s → 9s → 27s… |
-| 8 | ~2 min |
-| 10+ (open) | ~5 min + jitter |
+| 1–4 | 3s → 9s → 27s |
+| 5+ | 30s (cap) |
+| 10+ (open) | 5 min, unless the monitor forces it sooner |
 
 ## Security
 

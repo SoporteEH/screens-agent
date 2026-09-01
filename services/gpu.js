@@ -5,11 +5,23 @@ const { log } = require('../utils/logConfig');
 
 const GPU_CONFIG_FILE = path.join(app.getPath('userData'), 'gpu-config.json');
 
+// A one-off driver hiccup must not condemn the box to software rendering forever.
+const GPU_RETRY_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+
+let hardwareAccelerationRequested = false;
+
 function hasGpuFailed() {
     try {
         if (fs.existsSync(GPU_CONFIG_FILE)) {
             const config = JSON.parse(fs.readFileSync(GPU_CONFIG_FILE, 'utf8'));
-            return config.gpuFailed === true;
+            if (config.gpuFailed !== true) return false;
+
+            const failedAt = Date.parse(config.failedAt || '');
+            if (Number.isFinite(failedAt) && Date.now() - failedAt > GPU_RETRY_AFTER_MS) {
+                resetGpuState();
+                return false;
+            }
+            return true;
         }
     } catch (_e) { }
     return false;
@@ -44,6 +56,15 @@ function configureGpu() {
         return;
     }
 
+    // markGpuAsFailed() exists so a crashing GPU degrades to software instead of
+    // repeating the crash — which on a screen means black — so it has to be read here.
+    if (hasGpuFailed()) {
+        log.warn('[GPU]: A previous run lost the GPU process. Starting in software rendering.');
+        app.disableHardwareAcceleration();
+        return;
+    }
+
+    hardwareAccelerationRequested = true;
     log.info('[GPU]: Using hardware acceleration.');
 
     // A/B knob: keep acceleration but let Chromium's blocklist decide instead of forcing raster/decode on old iGPUs.
@@ -106,6 +127,12 @@ function logGpuDiagnostics() {
             `video_decode: ${features.video_decode}, rasterization: ${features.rasterization}, ` +
             `webgl: ${features.webgl}`
         );
+        // Otherwise the startup line claims acceleration a silent fallback already denied.
+        if (hardwareAccelerationRequested && !/^enabled/.test(features.gpu_compositing || '')) {
+            log.warn(
+                `[GPU]: Acceleration requested but Chromium is compositing in software (${features.gpu_compositing}).`
+            );
+        }
     } catch (e) {
         log.warn('[GPU]: Could not read feature status:', e.message);
     }
@@ -131,7 +158,10 @@ function registerGpuCrashHandlers() {
         if (details.reason === 'crashed' || details.reason === 'gpu-dead') {
             log.error(`[GPU]: Render failed (${details.reason})`);
             markGpuAsFailed();
+            return;
         }
+        // oom / killed / launch-failed leave the same black screen and used to log nothing.
+        log.error(`[RENDERER]: Process gone (${details.reason}, exit ${details.exitCode})`);
     });
 }
 

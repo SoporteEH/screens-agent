@@ -92,12 +92,13 @@ function isServerDependentUrl(url, serverUrl) {
 }
 
 function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl, reason = 'NO_SERVER') {
+    const carouselUrl = buildLocalCarouselUrl();
     let iframeUrl = null;
     let usingCache = false;
 
     if (currentUrl) {
         if (isServerDependentUrl(currentUrl, serverUrl)) {
-            iframeUrl = buildLocalCarouselUrl();
+            iframeUrl = carouselUrl;
             if (iframeUrl) usingCache = true;
         } else if (currentUrl.startsWith('http://') || currentUrl.startsWith('https://')) {
             iframeUrl = currentUrl;
@@ -105,7 +106,7 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl, reason = 'NO
     }
 
     if (!iframeUrl) {
-        iframeUrl = buildLocalCarouselUrl();
+        iframeUrl = carouselUrl;
         if (iframeUrl) usingCache = true;
     }
 
@@ -139,6 +140,7 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl, reason = 'NO
     <div class="status-dot" id="statusDot"></div>
     <script>
         var iframeUrl = ${JSON.stringify(iframeUrl)};
+        var carouselUrl = ${JSON.stringify(carouselUrl || null)};
         var dotState = ${JSON.stringify(dotState)};
         var frame = document.getElementById('contentFrame');
         var offlineMsg = document.getElementById('offlineMsg');
@@ -153,19 +155,32 @@ function buildOfflinePlayerHTML(screenIndex, currentUrl, serverUrl, reason = 'NO
         window.addEventListener('offline', function() { paintDot('offline'); });
         window.addEventListener('online', function() { paintDot(dotState); });
 
+        var loaded = false;
+
         if (iframeUrl) {
             frame.onload = function() {
+                loaded = true;
                 frame.style.display = 'block';
                 offlineMsg.style.display = 'none';
             };
             frame.src = iframeUrl;
             frame.style.display = 'block';
+
+            // The assigned URL can be unreachable while the server is down; the cached
+            // carousel is local and always loads, so it is the better dark-screen answer.
+            setTimeout(function() {
+                if (loaded || !carouselUrl || carouselUrl === iframeUrl) return;
+                iframeUrl = carouselUrl;
+                frame.src = carouselUrl;
+            }, 12000);
         } else {
             frame.style.display = 'none';
             offlineMsg.style.display = 'block';
         }
 
-        setInterval(function() { location.reload(); }, 60000); // 1 minute retry
+        // Reloading a file:// page cannot reach the server — the agent handles recovery.
+        // Retry only while nothing is playing, instead of interrupting content every minute.
+        setInterval(function() { if (!loaded) location.reload(); }, 60000);
     </script>
 </body>
 </html>`;

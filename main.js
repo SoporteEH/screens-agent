@@ -23,7 +23,6 @@ const context = {
     autoRefreshTimers: new Map(),
     fallbackTimers: new Map(),
     screenModes: new Map(),
-    lastDisconnectAt: 0,
     // ONLINE / NO_SERVER / NO_INTERNET. Starts optimistic, like the network monitor.
     networkState: 'ONLINE',
 };
@@ -131,78 +130,19 @@ async function bootstrap() {
                     context.registerDevice();
                     assetsService.syncLocalAssets(context.agentToken);
                 },
-                onDisconnect: (reason) => {
+                onDisconnect: (_reason) => {
                     context.isOnline = false;
-                    context.lastDisconnectAt = Date.now();
                     broadcastAppStatus();
                     context.onNetworkOffline('SOCKET_DISCONNECT');
                 },
+                // 'connect' fires on reconnections too and already re-registers the
+                // device; this handler only repairs what is on the screens.
                 onReconnect: () => {
-                    context.isOnline = true;
-                    broadcastAppStatus();
-                    context.registerDevice();
-                    assetsService.syncLocalAssets(context.agentToken);
-
-                    // Short blips shouldn't reload screens already live on the right URL — avoids flicker.
-                    const outageMs = context.lastDisconnectAt
-                        ? Date.now() - context.lastDisconnectAt
-                        : Infinity;
-                    const isShortBlip =
-                        outageMs < constants.CONSTANTS.RECONNECT_RELOAD_THRESHOLD_MS;
-
                     const { loadConfig } = require('./utils/configManager');
-                    const { isSameSite } = require('./utils/autologinUrl');
                     const onlineConfig = loadConfig();
                     const serverUrl = onlineConfig.serverUrl || constants.getServerUrl();
 
-                    if (serverUrl && onlineConfig.deviceId) {
-                        const savedState = stateService.loadLastState();
-                        setTimeout(() => {
-                            context.fallbackTimers.forEach((t) => clearTimeout(t));
-                            context.fallbackTimers.clear();
-
-                            context.managedWindows.forEach((win, screenId) => {
-                                if (!win || win.isDestroyed()) return;
-                                const screenIdStr = String(screenId);
-                                const screenData = savedState[screenIdStr];
-                                const isLive = context.screenModes.get(screenIdStr) === 'live';
-                                const currentUrl = win.webContents.getURL();
-                                if (screenData?.url && screenData.credentials) {
-                                    if (isShortBlip && isLive && isSameSite(currentUrl, screenData.url)) {
-                                        log.info(
-                                            `[SOCKET]: Short blip (${outageMs}ms). Keeping autologin screen ${screenId} as-is.`
-                                        );
-                                    } else {
-                                        log.info(
-                                            `[SOCKET]: Reconnected. Re-applying autologin for screen ${screenId}: ${screenData.url}`
-                                        );
-                                        commandHandlers.handleShowUrl({
-                                            action: 'show_url',
-                                            screenIndex: screenId,
-                                            url: screenData.url,
-                                            credentials: screenData.credentials,
-                                            refreshInterval: screenData.refreshInterval || 0,
-                                        });
-                                    }
-                                } else {
-                                    const playerUrl = `${serverUrl}/player/${onlineConfig.deviceId}/${screenId}`;
-                                    if (isShortBlip && isLive && currentUrl.startsWith(playerUrl)) {
-                                        log.info(
-                                            `[SOCKET]: Short blip (${outageMs}ms). Keeping player screen ${screenId} as-is.`
-                                        );
-                                    } else {
-                                        log.info(
-                                            `[SOCKET]: Reconnected. Reloading player URL for screen ${screenId}`
-                                        );
-                                        win.loadURL(playerUrl).catch((e) =>
-                                            log.error(`[SOCKET]: Error reloading win ${screenId}:`, e)
-                                        );
-                                    }
-                                }
-                                context.screenModes.set(screenIdStr, 'live');
-                            });
-                        }, 3000);
-                    } else {
+                    if (!serverUrl || !onlineConfig.deviceId) {
                         setTimeout(
                             () =>
                                 stateService.restoreLastState(
@@ -211,7 +151,14 @@ async function bootstrap() {
                                 ),
                             1000
                         );
+                        return;
                     }
+
+                    setTimeout(() => {
+                        context.fallbackTimers.forEach((t) => clearTimeout(t));
+                        context.fallbackTimers.clear();
+                        context.recoverScreens('SOCKET');
+                    }, 3000);
                 },
                 onCommand: (command) => {
                     // Never log the raw command: show_url carries autologin credentials.
@@ -380,6 +327,15 @@ async function bootstrap() {
             }
         };
 
+        // The wrapper publishes its content frame's health here; see playerEndpoint.js.
+        const isContentStalled = (win) => {
+            try {
+                return (win.webContents.getTitle() || '').includes('[stalled]');
+            } catch {
+                return false;
+            }
+        };
+
         // Lets a network flap skip screens that already show the right thing.
         const offlineSignatures = new Map();
 
@@ -460,6 +416,24 @@ async function bootstrap() {
             return true;
         };
 
+        // Both recovery paths (network monitor and socket reconnect) can fire seconds
+        // apart, so each repairs only what is actually wrong.
+        context.recoverScreens = (source) => {
+            context.managedWindows.forEach((win, screenId) => {
+                if (!win || win.isDestroyed()) return;
+                if (win.webContents.isLoading()) return;
+
+                const verdict = context.inspectScreen(screenId, win, true);
+                if (verdict.ok) {
+                    context.screenModes.set(String(screenId), 'live');
+                    return;
+                }
+
+                log.info(`[${source}]: Screen ${screenId} is ${verdict.reason} — restoring.`);
+                context.applyOnlineScreen(screenId, win);
+            });
+        };
+
         // Shared by the network handlers and the watchdog so the two cannot disagree.
         context.inspectScreen = (screenId, win, online) => {
             const { isServerDependentUrl } = require('./services/playerCache');
@@ -477,9 +451,32 @@ async function bootstrap() {
             }
 
             if (!online) {
-                return isServerDependentUrl(loadedUrl, serverUrl)
-                    ? { ok: false, reason: 'stuck on a server page while the server is down' }
-                    : { ok: true };
+                // Without a network nothing remote can play, so only local content counts.
+                if (context.networkState === 'NO_INTERNET') {
+                    return loadedUrl.startsWith('file://')
+                        ? { ok: true }
+                        : { ok: false, reason: 'showing remote content with no network' };
+                }
+
+                if (!isServerDependentUrl(loadedUrl, serverUrl)) return { ok: true };
+
+                // The live wrapper needs the server only to reload; its frame keeps
+                // playing without it, so a healthy one is left alone rather than
+                // restarted into an identical offline shell.
+                const wrapperUrl =
+                    cfg.deviceId && serverUrl
+                        ? `${serverUrl}/player/${cfg.deviceId}/${screenIdStr}`
+                        : null;
+                const keepsPlaying =
+                    !!wrapperUrl &&
+                    loadedUrl.startsWith(wrapperUrl) &&
+                    !!contentUrl &&
+                    !isServerDependentUrl(contentUrl, serverUrl) &&
+                    !isContentStalled(win);
+
+                return keepsPlaying
+                    ? { ok: true }
+                    : { ok: false, reason: 'stuck on a server page while the server is down' };
             }
 
             // Autologin bypasses the wrapper by design (the injection needs the login form).
@@ -497,9 +494,13 @@ async function bootstrap() {
             }
 
             const playerUrl = `${serverUrl}/player/${cfg.deviceId}/${screenIdStr}`;
-            return loadedUrl.startsWith(playerUrl)
-                ? { ok: true }
-                : { ok: false, reason: 'off the player wrapper while online' };
+            if (!loadedUrl.startsWith(playerUrl)) {
+                return { ok: false, reason: 'off the player wrapper while online' };
+            }
+            // The wrapper can be on the right URL with a dead frame behind it.
+            return isContentStalled(win)
+                ? { ok: false, reason: 'showing a stalled content frame' }
+                : { ok: true };
         };
 
         context.onNetworkOffline = (reason = 'UNKNOWN') => {
@@ -535,6 +536,16 @@ async function bootstrap() {
                     return;
                 }
 
+                // Content that does not depend on the server just keeps playing: swapping
+                // shells would restart the very same URL for nothing.
+                if (!loadedUrl.startsWith('file://') && context.inspectScreen(screenId, win, false).ok) {
+                    log.info(
+                        `[NETWORK]: Screen ${screenIdStr} plays content the server does not serve, leaving it untouched.`
+                    );
+                    context.screenModes.set(screenIdStr, 'live');
+                    return;
+                }
+
                 const timer = setTimeout(() => {
                     context.fallbackTimers.delete(screenIdStr);
                     if (win && !win.isDestroyed()) {
@@ -558,18 +569,14 @@ async function bootstrap() {
             });
             context.fallbackTimers.clear();
 
-            if (context.socket && !context.socket.connected) context.socket.connect();
+            if (context.socket && !context.socket.connected) context.socket.forceReconnect?.();
 
             const { loadConfig } = require('./utils/configManager');
             const onlineConfig = loadConfig();
             const serverUrl = onlineConfig.serverUrl || constants.getServerUrl();
 
             if (serverUrl && onlineConfig.deviceId) {
-                setTimeout(() => {
-                    context.managedWindows.forEach((win, screenId) => {
-                        if (win && !win.isDestroyed()) context.applyOnlineScreen(screenId, win);
-                    });
-                }, 2000);
+                setTimeout(() => context.recoverScreens('NETWORK'), 2000);
 
                 // Recreates auto-refresh timers lost while offline — this path bypasses handleShowUrl, which normally sets them up.
                 setTimeout(() => {
