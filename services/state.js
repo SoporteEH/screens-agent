@@ -140,7 +140,13 @@ function setupAutoRefresh(screenIndex, intervalSeconds, managedWindows, autoRefr
         const win = managedWindows.get(screenIndex);
         if (win && !win.isDestroyed()) {
             log.debug(`[AUTO-REFRESH]: Reloading screen ${screenIndex} (every ${intervalMin}min)`);
-            win.webContents.reload();
+            const { isWrapperUrl } = require('../utils/wrapperUrl');
+            if (isWrapperUrl(win.webContents.getURL())) {
+                // Refresh the content frame, not the wrapper: no black flash.
+                win.webContents.send('player:refresh');
+            } else {
+                win.webContents.reload();
+            }
         } else {
             log.debug(`[AUTO-REFRESH]: Window ${screenIndex} not available, skipping reload cycle`);
         }

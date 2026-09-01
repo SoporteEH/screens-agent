@@ -57,13 +57,9 @@ function runCheck(context, strikes) {
         log.warn(`[SCREEN-WATCHDOG]: Recovering screen ${screenIdStr} — ${verdict.reason}.`);
 
         if (online) {
-            context.applyOnlineScreen(screenId, win);
+            context.applyOnlineScreen(screenId);
         } else {
-            context.applyOfflineScreen(
-                screenId,
-                win,
-                context.networkState === 'NO_INTERNET' ? 'NO_INTERNET' : 'NO_SERVER'
-            );
+            context.applyOfflineScreen(screenId);
         }
     });
 }

@@ -6,7 +6,6 @@ const { reconcileDisplays } = require('./displaySlots');
 const { checkForUpdates } = require('./updater');
 const { initializeMonitors } = require('./monitors');
 const { pingServer } = require('./network');
-const { getCachedPlayerFileUrl, hasCachedPlayer, isServerDependentUrl } = require('./playerCache');
 const { net, app } = require('electron');
 
 const startNormalMode = async (context) => {
@@ -35,11 +34,17 @@ const startNormalMode = async (context) => {
     const serverUrl = config.serverUrl || require('../config/constants').getServerUrl();
 
     if (serverUrl) {
-        const { handleShowUrl, createContentWindow } = require('../handlers/commands');
+        const { handleShowUrl } = require('../handlers/commands');
         const savedState = loadLastState();
         const screens = Array.from(hardwareIdToDisplayMap.keys());
         const serverAvailable = await pingServer();
 
+        // resolveScreenTarget keys off networkState; set it before painting screens.
+        context.networkState = serverAvailable
+            ? 'ONLINE'
+            : net.isOnline()
+              ? 'NO_SERVER'
+              : 'NO_INTERNET';
         log.info(`[NORMAL]: Server available: ${serverAvailable}`);
 
         screens.forEach((screenIndex, i) => {
@@ -57,66 +62,12 @@ const startNormalMode = async (context) => {
                         refreshInterval: screenData.refreshInterval || 0,
                         silent: true,
                     });
-                    context.screenModes.set(String(screenIndex), 'live');
-                } else if (serverAvailable) {
-                    const playerUrl = `${serverUrl}/player/${config.deviceId}/${screenIndex}`;
-                    log.info(
-                        `[PLAYER]: Loading player URL for screen ${screenIndex}: ${playerUrl}`
-                    );
-                    handleShowUrl({
-                        action: 'show_url',
-                        screenIndex,
-                        url: playerUrl,
-                        contentName: `Player ${screenIndex}`,
-                        silent: true,
-                    });
-                    context.screenModes.set(String(screenIndex), 'live');
                 } else {
-                    const currentUrl = screenData?.url || '';
-                    const hasInternet = net.isOnline();
-                    const targetDisplay = hardwareIdToDisplayMap.get(screenIndex);
-
-                    if (hasCachedPlayer(screenIndex) || currentUrl) {
-                        // Wrapper even when the content is playable: only it shows the status dot.
-                        const playable =
-                            !!currentUrl &&
-                            hasInternet &&
-                            !isServerDependentUrl(currentUrl, serverUrl);
-                        const offlineUrl = getCachedPlayerFileUrl(
-                            screenIndex,
-                            playable ? currentUrl : '',
-                            serverUrl,
-                            hasInternet ? 'NO_SERVER' : 'NO_INTERNET'
-                        );
-                        log.info(
-                            `[PLAYER]: Server offline. Screen ${screenIndex} → ${playable ? `external content: ${currentUrl}` : 'local carousel'}`
-                        );
-                        if (targetDisplay) {
-                            createContentWindow(targetDisplay, offlineUrl, {
-                                action: 'show_url',
-                                screenIndex,
-                                url: currentUrl || `${serverUrl}/player/${config.deviceId}/${screenIndex}`,
-                                contentName: `Player ${screenIndex} (offline)`,
-                                silent: true,
-                            });
-                        }
-                        context.screenModes.set(String(screenIndex), 'offline');
-                    } else {
-                        log.info(
-                            `[PLAYER]: Server offline, no cache for screen ${screenIndex}. Showing fallback.`
-                        );
-                        if (targetDisplay) {
-                            const fallbackPath = `file://${require('path').join(__dirname, '../fallback.html')}`;
-                            createContentWindow(targetDisplay, fallbackPath, {
-                                action: 'show_url',
-                                screenIndex,
-                                url: '',
-                                contentName: `Player ${screenIndex} (fallback)`,
-                                silent: true,
-                            });
-                        }
-                        context.screenModes.set(String(screenIndex), 'offline');
-                    }
+                    const target = context.resolveScreenTarget(screenIndex);
+                    log.info(
+                        `[PLAYER]: Screen ${screenIndex} → local wrapper (${context.networkState}${target.url ? `: ${target.url}` : ': no content'})`
+                    );
+                    context.ensurePlayerScreen(screenIndex, target);
                 }
             }, 500 * i);
         });
@@ -141,30 +92,37 @@ const startNormalMode = async (context) => {
         managedWindows.forEach((win) => {
             if (win?.isDestroyed()) return;
             win.webContents
-                .executeJavaScript('try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}')
-                .catch(() => { });
+                .executeJavaScript(
+                    'try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}'
+                )
+                .catch(() => {});
         });
     }, CONSTANTS.GC_INTERVAL_MS);
 
-    setInterval(() => {
-        const metrics = app.getAppMetrics();
-        for (const [screenId, win] of managedWindows) {
-            if (!win || win.isDestroyed()) continue;
-            try {
-                const pid = win.webContents.getOSProcessId();
-                const metric = metrics.find(m => m.pid === pid);
-                if (!metric) continue;
-                const memMB = metric.memory.privateBytes / (1024 * 1024);
-                log.debug(`[MEMORY]: Screen ${screenId}: ${memMB.toFixed(0)}MB`);
-                if (memMB > 800) {
-                    log.warn(`[MEMORY]: Screen ${screenId} exceeds 800MB — reloading renderer.`);
-                    win.webContents.reload();
+    setInterval(
+        () => {
+            const metrics = app.getAppMetrics();
+            for (const [screenId, win] of managedWindows) {
+                if (!win || win.isDestroyed()) continue;
+                try {
+                    const pid = win.webContents.getOSProcessId();
+                    const metric = metrics.find((m) => m.pid === pid);
+                    if (!metric) continue;
+                    const memMB = metric.memory.privateBytes / (1024 * 1024);
+                    log.debug(`[MEMORY]: Screen ${screenId}: ${memMB.toFixed(0)}MB`);
+                    if (memMB > 800) {
+                        log.warn(
+                            `[MEMORY]: Screen ${screenId} exceeds 800MB — reloading renderer.`
+                        );
+                        win.webContents.reload();
+                    }
+                } catch (e) {
+                    log.error(`[MEMORY]: Failed to check memory for screen ${screenId}:`, e);
                 }
-            } catch (e) {
-                log.error(`[MEMORY]: Failed to check memory for screen ${screenId}:`, e);
             }
-        }
-    }, 60 * 60 * 1000);
+        },
+        60 * 60 * 1000
+    );
 };
 
 const startProvisioningMode = (context) => {

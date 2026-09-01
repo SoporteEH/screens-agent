@@ -45,10 +45,6 @@ const initializeMonitors = (context) => {
 
             if (result.newlyBound.length > 0) {
                 log.info(`[DISPLAY]: Slots reconnected: ${result.newlyBound.join(', ')}`);
-                const { loadConfig } = require('../utils/configManager');
-                const config = loadConfig();
-                const serverUrl =
-                    config.serverUrl || require('../config/constants').getServerUrl();
                 const lastState = loadLastState();
 
                 for (const id of result.newlyBound) {
@@ -64,19 +60,12 @@ const initializeMonitors = (context) => {
                                 refreshInterval: screenData.refreshInterval || 0,
                                 silent: true,
                             });
-                        } else if (serverUrl && config.deviceId) {
-                            // No local state (content was pinned while the monitor was off): player wrapper fetches it from the server.
-                            const playerUrl = `${serverUrl}/player/${config.deviceId}/${id}`;
-                            log.info(`[DISPLAY]: Loading player URL for slot ${id}`);
-                            handleShowUrl({
-                                action: 'show_url',
-                                screenIndex: id,
-                                url: playerUrl,
-                                contentName: `Player ${id}`,
-                                silent: true,
-                            });
+                        } else {
+                            // No local state (content pinned while the monitor was off):
+                            // registerDevice below lets the API reconcile it back.
+                            log.info(`[DISPLAY]: Loading local wrapper for slot ${id}`);
+                            context.ensurePlayerScreen?.(id, context.resolveScreenTarget(id));
                         }
-                        context.screenModes?.set(String(id), 'live');
                     }, 500);
                 }
             }
@@ -88,16 +77,19 @@ const initializeMonitors = (context) => {
                     if (display) {
                         const currentBounds = win.getBounds();
                         const targetBounds = display.bounds;
-                        
-                        if (currentBounds.x !== targetBounds.x ||
-                            currentBounds.y !== targetBounds.y || 
-                            currentBounds.width !== targetBounds.width || 
-                            currentBounds.height !== targetBounds.height) {
-                            
-                            log.info(`[DISPLAY]: Restoring bounds for screen ${id} to x:${targetBounds.x} y:${targetBounds.y}`);
+
+                        if (
+                            currentBounds.x !== targetBounds.x ||
+                            currentBounds.y !== targetBounds.y ||
+                            currentBounds.width !== targetBounds.width ||
+                            currentBounds.height !== targetBounds.height
+                        ) {
+                            log.info(
+                                `[DISPLAY]: Restoring bounds for screen ${id} to x:${targetBounds.x} y:${targetBounds.y}`
+                            );
                             win.setBounds(targetBounds);
                         }
-                        
+
                         // setAlwaysOnTop toggle forces focus without staying pinned on top (Windows trick).
                         if (!win.isVisible()) win.show();
                         win.setAlwaysOnTop(true, 'screen-saver');

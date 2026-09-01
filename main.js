@@ -22,7 +22,8 @@ const context = {
     hardwareIdToDisplayMap: new Map(),
     autoRefreshTimers: new Map(),
     fallbackTimers: new Map(),
-    screenModes: new Map(),
+    // What each screen should show; pushed into the local wrapper over IPC. Never persisted.
+    screenContent: new Map(),
     // ONLINE / NO_SERVER / NO_INTERNET. Starts optimistic, like the network monitor.
     networkState: 'ONLINE',
 };
@@ -126,7 +127,11 @@ async function bootstrap() {
             context.socket = socketService.connectToSocketServer(token, {
                 onConnect: () => {
                     context.isOnline = true;
+                    // A live socket is proof the server is reachable; don't wait for the
+                    // next monitor tick to turn the dots green.
+                    context.networkState = 'ONLINE';
                     broadcastAppStatus();
+                    context.broadcastPlayerStatus?.();
                     context.registerDevice();
                     assetsService.syncLocalAssets(context.agentToken);
                 },
@@ -243,9 +248,14 @@ async function bootstrap() {
                     app.exit(0);
                 },
                 onResetScreens: async () => {
-                    log.warn('[SOCKET]: Reset-screens received. Re-seeding slots from connected monitors.');
+                    log.warn(
+                        '[SOCKET]: Reset-screens received. Re-seeding slots from connected monitors.'
+                    );
                     try {
-                        const { clearSlots, reconcileDisplays } = require('./services/displaySlots');
+                        const {
+                            clearSlots,
+                            reconcileDisplays,
+                        } = require('./services/displaySlots');
 
                         // Snapshot slot->display and content so each monitor's content follows it (by display.id) into its new slot.
                         const oldMap = new Map(context.hardwareIdToDisplayMap);
@@ -270,7 +280,7 @@ async function bootstrap() {
                         context.retryManager.clear();
                         context.fallbackTimers.forEach((t) => clearTimeout(t));
                         context.fallbackTimers.clear();
-                        context.screenModes.clear();
+                        context.screenContent.clear();
 
                         // Wipe the persisted maps, then re-seed contiguous 1..K by position.
                         clearSlots();
@@ -300,7 +310,6 @@ async function bootstrap() {
                         if (context.socket?.connected) context.registerDevice();
 
                         restores.forEach(({ newSlotId, entry }, i) => {
-                            context.screenModes.set(String(newSlotId), 'live');
                             setTimeout(() => {
                                 commandHandlers.handleShowUrl({
                                     action: 'show_url',
@@ -326,8 +335,7 @@ async function bootstrap() {
         const isBlankOrErrorUrl = (url) =>
             !url || url === 'about:blank' || url.startsWith('chrome-error://');
 
-        // In player mode the window holds the wrapper, not the stored content URL, and
-        // only the wrapper dies with the server.
+        // In player mode the window holds the wrapper, not the stored content URL.
         const getLoadedUrl = (win) => {
             try {
                 return win.webContents.getURL() || '';
@@ -336,7 +344,7 @@ async function bootstrap() {
             }
         };
 
-        // The wrapper publishes its content frame's health here; see playerEndpoint.js.
+        // The wrapper publishes its content frame's health here; see player.html.
         const isContentStalled = (win) => {
             try {
                 return (win.webContents.getTitle() || '').includes('[stalled]');
@@ -345,58 +353,122 @@ async function bootstrap() {
             }
         };
 
-        // Lets a network flap skip screens that already show the right thing.
-        const offlineSignatures = new Map();
+        const { getWrapperUrl, isWrapperUrl } = require('./utils/wrapperUrl');
+        const { isServerDependentUrl, resolveLocalContentUrl } = require('./utils/contentUrl');
 
-        // Always the wrapper: it is the only page that can show the status dot.
-        const resolveOfflineTarget = (screenIdStr, reason) => {
-            const {
-                isServerDependentUrl,
-                getCachedPlayerFileUrl,
-            } = require('./services/playerCache');
-            const serverUrl = constants.getServerUrl();
+        const playerStatus = () =>
+            context.networkState === 'ONLINE'
+                ? 'connected'
+                : context.networkState === 'NO_INTERNET'
+                  ? 'offline'
+                  : 'server-down';
+
+        context.broadcastPlayerStatus = () => {
+            context.managedWindows.forEach((win) => {
+                if (!win || win.isDestroyed()) return;
+                if (!isWrapperUrl(getLoadedUrl(win))) return;
+                win.webContents.send('player:status', { state: playerStatus() });
+            });
+        };
+
+        // What a screen should show under the current network state. Offline targets
+        // carry the carousel as fallback so the wrapper never holds a dark frame.
+        context.resolveScreenTarget = (screenId) => {
+            const screenIdStr = String(screenId);
             const contentUrl = stateService.loadLastState()[screenIdStr]?.url || '';
-            // NO_INTERNET rules out external content too; the wrapper falls to the carousel.
+
+            if (context.networkState === 'ONLINE') return { url: contentUrl };
+
+            const { buildLocalCarouselUrl } = require('./services/localCarousel');
+            const carousel = buildLocalCarouselUrl() || '';
             const playable =
-                reason !== 'NO_INTERNET' &&
+                context.networkState !== 'NO_INTERNET' &&
                 net.isOnline() &&
                 !!contentUrl &&
-                !isServerDependentUrl(contentUrl, serverUrl);
-            const embed = playable ? contentUrl : '';
+                !isServerDependentUrl(contentUrl, constants.getServerUrl());
 
-            return {
-                url: getCachedPlayerFileUrl(screenIdStr, embed, serverUrl, reason),
-                signature: `${reason}|${embed}`,
-            };
+            return playable
+                ? { url: contentUrl, fallbackUrl: carousel || null }
+                : { url: carousel };
         };
 
-        // Terminal state: a local file cannot fail to load.
-        context.loadOfflineCarousel = (screenId, win) => {
-            const { getCachedPlayerFileUrl } = require('./services/playerCache');
+        context.pushPlayerState = (screenId, win) => {
             const screenIdStr = String(screenId);
-            const reason = context.networkState === 'NO_INTERNET' ? 'NO_INTERNET' : 'NO_SERVER';
-            log.info(`[NETWORK]: Screen ${screenIdStr} → local carousel.`);
-            win.loadURL(
-                getCachedPlayerFileUrl(screenIdStr, '', constants.getServerUrl(), reason)
-            ).catch((e) => log.error(`[NETWORK]: Carousel load error on screen ${screenIdStr}:`, e));
-            // Forced fallback: re-evaluate on the next network event.
-            offlineSignatures.delete(screenIdStr);
-            context.screenModes.set(screenIdStr, 'offline');
+            const target = context.screenContent.get(screenIdStr) || { url: '' };
+            const wc = win.webContents;
+            wc.send('player:init', { screenIndex: screenIdStr });
+            wc.send('player:status', { state: playerStatus() });
+            wc.send('player:show', {
+                url: resolveLocalContentUrl(target.url) || '',
+                contentName: target.contentName || '',
+                fallbackUrl: target.fallbackUrl || null,
+            });
         };
 
-        context.applyOfflineScreen = (screenId, win, reason = 'NO_SERVER') => {
+        // Convergence point for every wrapper screen: records the target, then either
+        // pushes it into the live wrapper (idempotent in the renderer) or (re)creates
+        // the window on the wrapper — its did-finish-load pushes the recorded target.
+        context.ensurePlayerScreen = (screenId, target) => {
             const screenIdStr = String(screenId);
-            const target = resolveOfflineTarget(screenIdStr, reason);
+            context.screenContent.set(screenIdStr, target || { url: '' });
 
-            log.info(`[NETWORK]: Screen ${screenIdStr} → offline wrapper (${target.signature})`);
-            win.loadURL(target.url).catch((e) =>
-                log.error(`[NETWORK]: Offline load error on screen ${screenIdStr}:`, e)
+            const win =
+                context.managedWindows.get(screenIdStr) || context.managedWindows.get(screenId);
+            if (win && !win.isDestroyed()) {
+                // A wrapper window still loading pushes the recorded target itself.
+                if (win.isPlayerWrapper && win.webContents.isLoading()) return win;
+                if (isWrapperUrl(getLoadedUrl(win))) {
+                    context.pushPlayerState(screenIdStr, win);
+                    return win;
+                }
+            }
+
+            const display =
+                context.hardwareIdToDisplayMap.get(screenIdStr) ||
+                context.hardwareIdToDisplayMap.get(screenId);
+            if (!display) return null;
+
+            const newWin = commandHandlers.createContentWindow(
+                display,
+                getWrapperUrl(),
+                {
+                    action: 'show_url',
+                    screenIndex: screenIdStr,
+                    url: getWrapperUrl(),
+                    contentName: `Player ${screenIdStr}`,
+                    silent: true,
+                },
+                { wrapper: true }
             );
-            offlineSignatures.set(screenIdStr, target.signature);
-            context.screenModes.set(screenIdStr, 'offline');
+            newWin.isPlayerWrapper = true;
+
+            // Direct/autologin window being replaced: close it once the wrapper is up.
+            if (win && !win.isDestroyed() && win !== newWin) {
+                newWin.once('ready-to-show', () => {
+                    setTimeout(() => {
+                        if (!win.isDestroyed()) win.close();
+                    }, 300);
+                });
+                setTimeout(() => {
+                    if (!win.isDestroyed()) win.close();
+                }, 5000);
+            }
+            return newWin;
         };
 
-        context.applyOnlineScreen = (screenId, win) => {
+        // Terminal state: the local carousel cannot fail to load.
+        context.loadOfflineCarousel = (screenId) => {
+            const { buildLocalCarouselUrl } = require('./services/localCarousel');
+            log.info(`[NETWORK]: Screen ${screenId} → local carousel.`);
+            context.ensurePlayerScreen(screenId, { url: buildLocalCarouselUrl() || '' });
+        };
+
+        context.applyOfflineScreen = (screenId) => {
+            log.info(`[NETWORK]: Screen ${screenId} → offline target (${context.networkState})`);
+            context.ensurePlayerScreen(screenId, context.resolveScreenTarget(screenId));
+        };
+
+        context.applyOnlineScreen = (screenId) => {
             const { loadConfig } = require('./utils/configManager');
             const screenIdStr = String(screenId);
             const onlineConfig = loadConfig();
@@ -415,18 +487,14 @@ async function bootstrap() {
                     silent: true,
                 });
             } else {
-                log.info(`[NETWORK]: Reloading player URL for screen ${screenIdStr}`);
-                win.loadURL(`${serverUrl}/player/${onlineConfig.deviceId}/${screenIdStr}`).catch(
-                    (e) => log.error(`[NETWORK]: Recovery error screen ${screenIdStr}:`, e)
-                );
+                log.info(`[NETWORK]: Re-asserting wrapper target for screen ${screenIdStr}`);
+                context.ensurePlayerScreen(screenIdStr, context.resolveScreenTarget(screenIdStr));
             }
-            offlineSignatures.delete(screenIdStr);
-            context.screenModes.set(screenIdStr, 'live');
             return true;
         };
 
         // Both recovery paths (network monitor and socket reconnect) can fire seconds
-        // apart, so each repairs only what is actually wrong.
+        // apart; pushes are idempotent in the renderer, so repeating one is harmless.
         context.recoverScreens = (source) => {
             context.managedWindows.forEach((win, screenId) => {
                 if (!win || win.isDestroyed()) return;
@@ -434,18 +502,21 @@ async function bootstrap() {
 
                 const verdict = context.inspectScreen(screenId, win, true);
                 if (verdict.ok) {
-                    context.screenModes.set(String(screenId), 'live');
+                    // A healthy wrapper may still play its offline fallback; re-asserting
+                    // the online target is a renderer no-op when nothing changed.
+                    if (isWrapperUrl(getLoadedUrl(win))) {
+                        context.ensurePlayerScreen(screenId, context.resolveScreenTarget(screenId));
+                    }
                     return;
                 }
 
                 log.info(`[${source}]: Screen ${screenId} is ${verdict.reason} — restoring.`);
-                context.applyOnlineScreen(screenId, win);
+                context.applyOnlineScreen(screenId);
             });
         };
 
         // Shared by the network handlers and the watchdog so the two cannot disagree.
         context.inspectScreen = (screenId, win, online) => {
-            const { isServerDependentUrl } = require('./services/playerCache');
             const { isAutologinUrl, isSameSite } = require('./utils/autologinUrl');
             const { loadConfig } = require('./utils/configManager');
             const screenIdStr = String(screenId);
@@ -459,54 +530,27 @@ async function bootstrap() {
                 return { ok: false, reason: 'blank or on an error page' };
             }
 
-            if (!online) {
-                // Without a network nothing remote can play, so only local content counts.
-                if (context.networkState === 'NO_INTERNET') {
-                    return loadedUrl.startsWith('file://')
-                        ? { ok: true }
-                        : { ok: false, reason: 'showing remote content with no network' };
-                }
-
-                if (!isServerDependentUrl(loadedUrl, serverUrl)) return { ok: true };
-
-                // The live wrapper needs the server only to reload; its frame keeps
-                // playing without it, so a healthy one is left alone rather than
-                // restarted into an identical offline shell.
-                const wrapperUrl =
-                    cfg.deviceId && serverUrl
-                        ? `${serverUrl}/player/${cfg.deviceId}/${screenIdStr}`
-                        : null;
-                const keepsPlaying =
-                    !!wrapperUrl &&
-                    loadedUrl.startsWith(wrapperUrl) &&
-                    !!contentUrl &&
-                    !isServerDependentUrl(contentUrl, serverUrl) &&
-                    !isContentStalled(win);
-
-                return keepsPlaying
-                    ? { ok: true }
-                    : { ok: false, reason: 'stuck on a server page while the server is down' };
-            }
-
-            // Autologin bypasses the wrapper by design (the injection needs the login form).
+            // Autologin bypasses the wrapper by design (the injection needs the login form);
+            // without a deviceId/server there is no wrapper at all.
             const bypassesWrapper = !!screenData.credentials || isAutologinUrl(contentUrl);
-            if (bypassesWrapper) {
+            if (bypassesWrapper || !cfg.deviceId || !serverUrl) {
+                if (!online) {
+                    // Offline, anything local (wrapper, carousel, fallback) counts as alive.
+                    if (loadedUrl.startsWith('file://')) return { ok: true };
+                    if (context.networkState === 'NO_INTERNET') {
+                        return { ok: false, reason: 'showing remote content with no network' };
+                    }
+                }
                 return !contentUrl || isSameSite(loadedUrl, contentUrl)
                     ? { ok: true }
                     : { ok: false, reason: 'off its assigned content' };
             }
 
-            if (!cfg.deviceId || !serverUrl) {
-                return !contentUrl || isSameSite(loadedUrl, contentUrl)
-                    ? { ok: true }
-                    : { ok: false, reason: 'off its assigned content' };
+            // Wrapper screens: online and offline collapse — the wrapper is local, so
+            // being on it and not stalled is healthy under any network state.
+            if (!isWrapperUrl(loadedUrl)) {
+                return { ok: false, reason: 'off the player wrapper' };
             }
-
-            const playerUrl = `${serverUrl}/player/${cfg.deviceId}/${screenIdStr}`;
-            if (!loadedUrl.startsWith(playerUrl)) {
-                return { ok: false, reason: 'off the player wrapper while online' };
-            }
-            // The wrapper can be on the right URL with a dead frame behind it.
             return isContentStalled(win)
                 ? { ok: false, reason: 'showing a stalled content frame' }
                 : { ok: true };
@@ -519,6 +563,9 @@ async function bootstrap() {
 
             if (reason === 'SOCKET_DISCONNECT') return;
 
+            // Dot flips immediately; content moves only after the fallback delay.
+            context.broadcastPlayerStatus();
+
             context.managedWindows.forEach((win, screenId) => {
                 if (!win || win.isDestroyed()) return;
                 const screenIdStr = String(screenId);
@@ -529,36 +576,27 @@ async function bootstrap() {
                 }
 
                 const loadedUrl = getLoadedUrl(win);
-                const target = resolveOfflineTarget(screenIdStr, reason);
-                // The wrapper path is stable, so compare what it was built with instead.
-                const alreadyThere =
+
+                // A direct window on content the server does not serve just keeps playing:
+                // swapping shells would restart the very same URL for nothing.
+                if (
+                    !isWrapperUrl(loadedUrl) &&
                     !isBlankOrErrorUrl(loadedUrl) &&
-                    loadedUrl.startsWith('file://') &&
-                    offlineSignatures.get(screenIdStr) === target.signature;
-
-                log.info(
-                    `[NETWORK]: Screen ${screenIdStr} — loaded: "${loadedUrl}", offline target: ${target.signature}`
-                );
-
-                if (alreadyThere) {
-                    log.info(`[NETWORK]: Screen ${screenIdStr} already correct, keeping playback.`);
-                    return;
-                }
-
-                // Content that does not depend on the server just keeps playing: swapping
-                // shells would restart the very same URL for nothing.
-                if (!loadedUrl.startsWith('file://') && context.inspectScreen(screenId, win, false).ok) {
+                    reason !== 'NO_INTERNET' &&
+                    !loadedUrl.startsWith('file://') &&
+                    !isServerDependentUrl(loadedUrl, constants.getServerUrl())
+                ) {
                     log.info(
                         `[NETWORK]: Screen ${screenIdStr} plays content the server does not serve, leaving it untouched.`
                     );
-                    context.screenModes.set(screenIdStr, 'live');
                     return;
                 }
 
+                // The push is idempotent: a wrapper already on a playable target ignores it.
                 const timer = setTimeout(() => {
                     context.fallbackTimers.delete(screenIdStr);
                     if (win && !win.isDestroyed()) {
-                        context.applyOfflineScreen(screenId, win, reason);
+                        context.applyOfflineScreen(screenId);
                     }
                 }, constants.CONSTANTS.FALLBACK_DELAY_MS);
                 context.fallbackTimers.set(screenIdStr, timer);
@@ -571,6 +609,7 @@ async function bootstrap() {
             );
             context.isOnline = true;
             broadcastAppStatus();
+            context.broadcastPlayerStatus();
 
             context.fallbackTimers.forEach((timer, id) => {
                 log.info(`[NETWORK]: Clearing pending fallback for screen ${id}`);
@@ -651,10 +690,10 @@ async function bootstrap() {
                     );
                     try {
                         const axios = require('axios');
-                        const response = await axios.post(
-                            `${serverUrl}/api/auth/agent-token`,
-                            { deviceId, nonce: provisionNonce }
-                        );
+                        const response = await axios.post(`${serverUrl}/api/auth/agent-token`, {
+                            deviceId,
+                            nonce: provisionNonce,
+                        });
                         agentToken = response.data.token;
                         log.info('[INIT]: Successfully retrieved JWT from server via CLI.');
                     } catch (e) {

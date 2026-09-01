@@ -62,6 +62,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Player wrapper contract check
+        run: node scripts/check-player-contract.js
+
       # The tag is the source of truth for the version
       - name: Set version from tag
         shell: bash

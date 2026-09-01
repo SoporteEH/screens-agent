@@ -16,7 +16,8 @@
     "format": "prettier --write \"**/*.js\"",
     "format:check": "prettier --check \"**/*.js\"",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "test:contract": "node scripts/check-player-contract.js"
   },
   "keywords": [],
   "author": "SoporteEH",
@@ -64,6 +65,7 @@
       "*.html",
       "preload.js",
       "identify-preload.js",
+      "player-preload.js",
       "package.json",
       "!mainOld.js"
     ],

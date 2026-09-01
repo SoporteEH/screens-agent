@@ -116,15 +116,23 @@ Network is checked every 15s when stable, 5s when degraded.
 
 `inspectScreen()` in `main.js` is the single predicate deciding whether a screen is showing what
 it should. The watchdog, the offline handler and both recovery paths all ask it, so they cannot
-disagree — and only screens that fail it are reloaded. In case 1A the live wrapper needs the
-server only in order to *reload*: its content frame keeps playing without it, so restarting it
-into an offline shell holding the same URL would be a visible interruption bought for nothing.
+disagree. The wrapper is local, so "on the wrapper and not stalled" is healthy under any network
+state; recovery is an idempotent `player:show` push the renderer ignores when nothing changed,
+so a flapping network never restarts content that is already playing.
+
+**Player wrapper** — `player.html`, shipped with the agent and loaded as `file://` with
+`player-preload.js`. The main process drives it over IPC: `player:init` (screen number),
+`player:show` (`{url, contentName, fallbackUrl}` — idempotent, re-pushed on every wrapper
+`did-finish-load`), `player:status` (`connected`/`server-down`/`offline` for the dot) and
+`player:refresh` (re-set the iframe, no window reload). Offline targets carry the local
+carousel as `fallbackUrl` so a dead content URL degrades to the carousel, never to black.
+`scripts/check-player-contract.js` pins the wrapper's contract in CI.
 
 **Screen health** — a cross-origin frame reports no errors to the page embedding it, so the
-wrapper watches for a frame that never fires `onload`: it retries 3 times, then appends
-`[stalled]` to `document.title`. The agent reads that with `webContents.getTitle()`, which is
-the only way a black screen behind a correctly-loaded wrapper becomes visible. Frame-level
-load failures are logged as `[CONTENT]: Frame failed`.
+wrapper (`player.html`) watches for a frame that never fires `onload`: it retries 3 times,
+then appends `[stalled]` to `document.title`. The agent reads that with
+`webContents.getTitle()`, which is the only way a black screen behind a correctly-loaded
+wrapper becomes visible. Frame-level load failures are logged as `[CONTENT]: Frame failed`.
 
 **Reconnection** — exponential backoff with ±50% jitter, capped at 30s, never giving up. After
 10 consecutive failures the circuit opens (`[CIRCUIT BREAKER]: OPEN`) and pauses for 5 minutes.

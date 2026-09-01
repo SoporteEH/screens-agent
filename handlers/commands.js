@@ -4,11 +4,8 @@ const fs = require('fs');
 const { log } = require('../utils/logConfig');
 const axios = require('axios');
 const { CONTENT_DIR, getServerUrl, CONSTANTS } = require('../config/constants');
-const {
-    cachePlayerHTML,
-    cacheContentURL,
-    isServerDependentUrl,
-} = require('../services/playerCache');
+const { isServerDependentUrl } = require('../utils/contentUrl');
+const { isWrapperUrl } = require('../utils/wrapperUrl');
 const { isAutologinUrl } = require('../utils/autologinUrl');
 
 let context = {};
@@ -27,11 +24,11 @@ function isNavigationAllowed(targetUrl, currentUrl) {
     }
     try {
         if (currentUrl && new URL(currentUrl).origin === target.origin) return true;
-    } catch { }
+    } catch {}
     try {
         const serverUrl = getServerUrl();
         if (serverUrl && new URL(serverUrl).origin === target.origin) return true;
-    } catch { }
+    } catch {}
     return false;
 }
 
@@ -77,9 +74,10 @@ function scheduleRetry(command) {
     context.retryManager.set(screenIndex, { attempt, timerId });
 }
 
-function createContentWindow(display, urlToLoad, command) {
+function createContentWindow(display, urlToLoad, command, opts = {}) {
     const { screenIndex, url: originalUrl, contentName } = command;
     const fallbackPath = `file://${path.join(__dirname, '../fallback.html')}`;
+    const isWrapperWindow = !!opts.wrapper;
 
     log.info(
         `[COMMAND]: Creating window on screen ${screenIndex} (${display.bounds.width}x${display.bounds.height})`
@@ -97,6 +95,8 @@ function createContentWindow(display, urlToLoad, command) {
         backgroundColor: '#000000',
         paintWhenInitiallyHidden: false,
         webPreferences: {
+            // Wrapper only: third-party content pages must not see playerAPI.
+            ...(opts.wrapper ? { preload: path.join(__dirname, '../player-preload.js') } : {}),
             nodeIntegration: false,
             contextIsolation: true,
             sandbox: true,
@@ -126,8 +126,11 @@ function createContentWindow(display, urlToLoad, command) {
     win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
         const headers = details.responseHeaders;
         const keys = Object.keys(headers);
-        const xframeKey = keys.find(k => { const l = k.toLowerCase(); return l === 'x-frame-options' || l === 'frame-options'; });
-        const cspKey = keys.find(k => k.toLowerCase() === 'content-security-policy');
+        const xframeKey = keys.find((k) => {
+            const l = k.toLowerCase();
+            return l === 'x-frame-options' || l === 'frame-options';
+        });
+        const cspKey = keys.find((k) => k.toLowerCase() === 'content-security-policy');
 
         if (!xframeKey && !cspKey) {
             callback({ cancel: false });
@@ -137,7 +140,9 @@ function createContentWindow(display, urlToLoad, command) {
         const responseHeaders = { ...headers };
         if (xframeKey) delete responseHeaders[xframeKey];
         if (cspKey) {
-            responseHeaders[cspKey] = [responseHeaders[cspKey][0].replace(/frame-ancestors[^;]+;?/gi, '')];
+            responseHeaders[cspKey] = [
+                responseHeaders[cspKey][0].replace(/frame-ancestors[^;]+;?/gi, ''),
+            ];
         }
 
         callback({ cancel: false, responseHeaders });
@@ -174,14 +179,24 @@ function createContentWindow(display, urlToLoad, command) {
     });
 
     win.webContents.on('did-finish-load', () => {
-        const loadedUrl = win.webContents.getURL();
-        if (loadedUrl.includes('/player/') && screenIndex) {
-            cachePlayerHTML(screenIndex);
-            if (context.retryManager.has(screenIndex)) {
-                clearTimeout(context.retryManager.get(screenIndex).timerId);
-                context.retryManager.delete(screenIndex);
-            }
+        if (!isWrapperWindow || !screenIndex) return;
+        if (!isWrapperUrl(win.webContents.getURL())) return;
+
+        if (context.retryManager.has(screenIndex)) {
+            clearTimeout(context.retryManager.get(screenIndex).timerId);
+            context.retryManager.delete(screenIndex);
         }
+        // Re-push on every wrapper load: covers refresh, memory and crash reloads.
+        context.pushPlayerState?.(screenIndex, win);
+    });
+
+    // Without this a dead renderer keeps its old URL, so the watchdog sees a healthy screen.
+    win.webContents.on('render-process-gone', (_event, details) => {
+        if (details.reason === 'clean-exit') return;
+        log.error(
+            `[RENDERER]: Screen ${screenIndex} renderer gone (${details.reason}). Reloading.`
+        );
+        if (!win.isDestroyed()) win.webContents.reload();
     });
 
     win.webContents.on(
@@ -218,21 +233,23 @@ function createContentWindow(display, urlToLoad, command) {
 
             // Retrying while offline just re-lands on an error page with no script to recover it.
             if (context.networkState && context.networkState !== 'ONLINE') {
-                const reason =
-                    context.networkState === 'NO_INTERNET' ? 'NO_INTERNET' : 'NO_SERVER';
+                const reason = context.networkState === 'NO_INTERNET' ? 'NO_INTERNET' : 'NO_SERVER';
 
-                if (isServerDependentUrl(validatedURL, getServerUrl()) && context.applyOfflineScreen) {
+                if (
+                    isServerDependentUrl(validatedURL, getServerUrl()) &&
+                    context.applyOfflineScreen
+                ) {
                     log.warn(
-                        `[RESILIENCE]: Server page failed on screen ${screenIndex}. Switching to offline content.`
+                        `[RESILIENCE]: Server page failed on screen ${screenIndex} (${reason}). Switching to offline content.`
                     );
-                    context.applyOfflineScreen(screenIndex, win, reason);
+                    context.applyOfflineScreen(screenIndex);
                     return;
                 }
                 if (context.loadOfflineCarousel) {
                     log.warn(
                         `[RESILIENCE]: Content unreachable on screen ${screenIndex}. Falling back to carousel.`
                     );
-                    context.loadOfflineCarousel(screenIndex, win);
+                    context.loadOfflineCarousel(screenIndex);
                     return;
                 }
             }
@@ -277,7 +294,9 @@ function handleShowUrl(command, _currentAttempt = 0) {
         return;
     }
     if (!allowedSchemes.includes(parsedUrl.protocol)) {
-        log.error(`[COMMAND]: Blocked disallowed URL scheme '${parsedUrl.protocol}' for screen ${screenIndex}`);
+        log.error(
+            `[COMMAND]: Blocked disallowed URL scheme '${parsedUrl.protocol}' for screen ${screenIndex}`
+        );
         sendCommandFeedback(command, 'error', `URL scheme not allowed`);
         return;
     }
@@ -296,7 +315,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
         const isKnownSlot =
             hasSlot(screenIndex) ||
             (Number.isInteger(slotNumber) && slotNumber >= 1 && slotNumber <= expectedScreens);
-        const isPlayerWrapperCmd = trimmedUrl.includes('/player/');
+        const isPlayerWrapperCmd = isWrapperUrl(trimmedUrl);
 
         if (isKnownSlot && !isPlayerWrapperCmd && context.saveCurrentState) {
             ensureSlot(screenIndex);
@@ -327,7 +346,8 @@ function handleShowUrl(command, _currentAttempt = 0) {
         return;
     }
 
-    const isPlayerWrapperUrl = url.includes('/player/');
+    // State purity: the wrapper URL must never land in state.json or registerDevice.
+    const isPlayerWrapperUrl = isWrapperUrl(url);
     if (context.saveCurrentState && !isPlayerWrapperUrl) {
         context.saveCurrentState(
             screenIndex,
@@ -362,32 +382,36 @@ function handleShowUrl(command, _currentAttempt = 0) {
     const { isAutologinUrl: checkIsAutologinUrl } = require('../utils/autologinUrl');
 
     if (isPlayerMode && !credentials && !checkIsAutologinUrl(url)) {
-        const playerUrl = `${serverUrl}/player/${config.deviceId}/${screenIndex}`;
+        log.info(
+            `[COMMAND]: Player Mode active. Routing screen ${screenIndex} through the local wrapper.`
+        );
 
-        log.info(`[COMMAND]: Player Mode active. Forcing window reset for transition to '${url}'.`);
+        // A wrapper URL is never content (retry of a failed wrapper load): re-assert
+        // the recorded target instead of framing the wrapper inside itself.
+        const target = isPlayerWrapperUrl
+            ? context.resolveScreenTarget?.(screenIndex) || { url: '' }
+            : { url: trimmedUrl, contentName: contentName || '' };
 
-        let oldWin = context.managedWindows.get(screenIndex);
+        // Live wrapper → crossfade push; missing/foreign window → wrapper recreation.
+        const win = context.ensurePlayerScreen?.(screenIndex, target);
 
-        if (url.includes('/view/')) {
-            cacheContentURL(url, serverUrl).catch(() => { });
+        if (!win) {
+            sendCommandFeedback(command, 'error', `No display available for screen ${screenIndex}`);
+            return;
         }
 
-        const win = createContentWindow(targetDisplay, playerUrl, { ...command, url: playerUrl });
-
-        if (oldWin && !oldWin.isDestroyed() && oldWin !== win) {
-            win.once('ready-to-show', () => {
-                setTimeout(() => {
-                    if (oldWin && !oldWin.isDestroyed()) {
-                        log.info(`[COMMAND]: Closing old window for screen ${screenIndex} after new one is ready.`);
-                        oldWin.close();
-                    }
-                }, 300);
+        if (!isPlayerWrapperUrl && context.socket && context.socket.connected) {
+            context.socket.emit('reportScreenState', {
+                deviceId: context.deviceId,
+                screenId: screenIndex,
+                url: trimmedUrl,
             });
-            // Force-close if 'ready-to-show' never fires
-            setTimeout(() => {
-                if (oldWin && !oldWin.isDestroyed()) oldWin.close();
-            }, 5000);
         }
+        sendCommandFeedback(
+            command,
+            'success',
+            `Sending '${contentName || trimmedUrl}' to screen ${screenIndex}`
+        );
         return;
     }
 
@@ -404,7 +428,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
     }
 
     try {
-        let oldWin = context.managedWindows.get(screenIndex);
+        const oldWin = context.managedWindows.get(screenIndex);
 
         const win = createContentWindow(targetDisplay, 'about:blank', command);
 
@@ -412,7 +436,9 @@ function handleShowUrl(command, _currentAttempt = 0) {
             win.once('ready-to-show', () => {
                 setTimeout(() => {
                     if (oldWin && !oldWin.isDestroyed()) {
-                        log.info(`[COMMAND]: Closing old window for screen ${screenIndex} after new one is ready.`);
+                        log.info(
+                            `[COMMAND]: Closing old window for screen ${screenIndex} after new one is ready.`
+                        );
                         oldWin.close();
                     }
                 }, 300);
@@ -480,8 +506,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
 
             let lastLoggedUrl = null;
             const injectIfTarget = (sourceUrl) => {
-                const isTarget =
-                    isSameSite(sourceUrl, trimmedUrl) || checkIsTargetUrl(sourceUrl);
+                const isTarget = isSameSite(sourceUrl, trimmedUrl) || checkIsTargetUrl(sourceUrl);
                 if (!win.isDestroyed() && isTarget) {
                     const shouldLog = lastLoggedUrl !== sourceUrl;
                     if (shouldLog) {
@@ -537,6 +562,7 @@ function handleCloseScreen(command) {
     try {
         const win = context.managedWindows.get(screenIndex);
         if (win && !win.isDestroyed()) win.close();
+        context.screenContent?.delete(String(screenIndex));
 
         if (context.saveCurrentState) {
             context.saveCurrentState(
@@ -570,14 +596,15 @@ function handleRefreshScreen(command) {
     try {
         const win = context.managedWindows.get(screenIndex);
         if (!win || win.isDestroyed()) {
-            sendCommandFeedback(
-                command,
-                'error',
-                `Screen ${screenIndex} has no active content`
-            );
+            sendCommandFeedback(command, 'error', `Screen ${screenIndex} has no active content`);
             return;
         }
-        win.webContents.reload();
+        if (isWrapperUrl(win.webContents.getURL())) {
+            // Refresh the content frame, not the wrapper: no black flash.
+            win.webContents.send('player:refresh');
+        } else {
+            win.webContents.reload();
+        }
         sendCommandFeedback(command, 'success', `Screen ${screenIndex} reloaded`);
     } catch (error) {
         sendCommandFeedback(

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ScreensWeb Player</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%; height: 100%; overflow: hidden; background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        #contentFrame {
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            border: none; background: #000;
+        }
+
+        .no-content {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #444; text-align: center; z-index: 5;
+        }
+        .no-content h2 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+        .no-content .dot-animation::after {
+            content: '';
+            animation: dots 1.5s steps(4) infinite;
+        }
+        @keyframes dots {
+            0% { content: ''; }
+            25% { content: '.'; }
+            50% { content: '..'; }
+            75% { content: '...'; }
+        }
+
+        .status-dot {
+            position: fixed; bottom: 6px; right: 6px;
+            width: 7px; height: 7px; border-radius: 50%;
+            background: #444; z-index: 9999;
+            transition: background 0.3s;
+        }
+        .status-dot.connected       { background: #4caf72; }
+        .status-dot.server-down     { background: #9ca3af; }
+        .status-dot.offline         { background: #b55353; }
+        .status-dot.content-stalled { background: #d08c2e; }
+    </style>
+</head>
+<body>
+    <iframe id="contentFrame" style="display:none;" allow="autoplay; fullscreen; encrypted-media"></iframe>
+
+    <div class="no-content" id="noContent">
+        <h1>SIN CONTENIDO ASIGNADO</h1>
+        <h2>Pantalla <span id="screenLabel">-</span> <span class="dot-animation"></span></h2>
+    </div>
+
+    <div class="status-dot" id="statusDot" title="Connection status"></div>
+
+    <script>
+        let screenIndex = null;
+        let assignedUrl = '';   // what main asked this screen to show
+        let activeUrl = '';     // what the frame is actually on (fallback may differ)
+        let fallbackUrl = null;
+
+        let frame = document.getElementById('contentFrame');
+        const noContent = document.getElementById('noContent');
+        const statusDot = document.getElementById('statusDot');
+
+        // --- STATUS INDICATOR ---
+        // green: content is up. amber: the content frame never loaded — the screen is dark.
+        // grey: server unreachable. red: no network. Main pushes the network states over
+        // IPC; only content-stalled is derived here.
+        const STATUS_TITLES = {
+            connected: 'Connected',
+            'content-stalled': 'Content is not loading',
+            'server-down': 'No connection to the server',
+            offline: 'No network',
+        };
+        let serverState = 'connected';
+        let contentState = 'ok';
+
+        // A dead server explains dead content, so it is the one worth showing.
+        function renderStatus() {
+            const state =
+                serverState !== 'connected'
+                    ? serverState
+                    : contentState === 'stalled'
+                      ? 'content-stalled'
+                      : 'connected';
+            statusDot.className = 'status-dot ' + state;
+            statusDot.title = STATUS_TITLES[state];
+        }
+
+        function setStatus(state) {
+            serverState = state;
+            renderStatus();
+        }
+
+        // A cross-origin frame exposes no error state, so "onload never fired" is the only
+        // failure this page can observe. It goes in the title because that is what the
+        // agent's watchdog reads from outside (getTitle): a wrapper with a black frame is
+        // otherwise indistinguishable from a healthy screen.
+        function setContentState(state) {
+            contentState = state;
+            const base = 'ScreensWeb Player' + (screenIndex ? ' - ' + screenIndex : '');
+            document.title = base + (state === 'stalled' ? ' [stalled]' : '');
+            renderStatus();
+        }
+
+        // Link-state only escalates to red fast; main's next status push is authoritative.
+        window.addEventListener('offline', () => setStatus('offline'));
+        window.addEventListener('online', () => setStatus('server-down'));
+
+        // --- URL RESOLUTION ---
+        function resolveUrl(url) {
+            if (!url) return null;
+            // Neither the legacy server wrapper nor this page itself may be framed (player loop).
+            if (url.includes('/player/') || url.split('#')[0] === location.href.split('#')[0]) {
+                console.warn('[PLAYER] Detected player URL, preventing loop.');
+                return null;
+            }
+            if (url.startsWith('http://') || url.startsWith('https://')) return url;
+            // Local carousel and cached pages arrive as file:// from main.
+            if (url.startsWith('file://')) return url;
+            // local: assets are resolved by main before reaching the wrapper.
+            if (url.startsWith('local:')) return null;
+            return url;
+        }
+
+        // --- CONTENT DISPLAY ---
+        const REVEAL_MS = 3000;
+        const LOAD_TIMEOUT_MS = 12000;
+        const MAX_CONTENT_RETRIES = 3;
+        let contentRetries = 0;
+        let generation = 0; // invalidates timers from superseded showContent runs
+
+        function showContent(url) {
+            const gen = ++generation;
+            const resolved = resolveUrl(url);
+            if (!resolved) {
+                if (frame) frame.style.display = 'none';
+                // display (not opacity): a hidden overlay must not keep the dots animation running
+                noContent.style.display = '';
+                activeUrl = '';
+                // An unassigned screen is idle, not broken.
+                setContentState('ok');
+                return;
+            }
+
+            noContent.style.display = 'none';
+            activeUrl = resolved;
+            console.log('[PLAYER] Transitioning to:', resolved);
+
+            // Double buffer: load new content behind the current frame, then crossfade.
+            const newFrame = document.createElement('iframe');
+            newFrame.style.position = 'fixed';
+            newFrame.style.top = '0';
+            newFrame.style.left = '0';
+            newFrame.style.width = '100%';
+            newFrame.style.height = '100%';
+            newFrame.style.border = 'none';
+            newFrame.style.opacity = '0';
+            newFrame.style.transition = 'opacity 0.4s ease-in-out';
+            newFrame.style.backgroundColor = 'black';
+            newFrame.allow = 'autoplay; fullscreen; encrypted-media';
+            newFrame.src = resolved;
+
+            document.body.appendChild(newFrame);
+
+            let swapped = false;
+            const swap = () => {
+                if (swapped) return;
+                swapped = true;
+
+                newFrame.style.opacity = '1';
+
+                setTimeout(() => {
+                    if (frame && frame.parentNode && frame !== newFrame) {
+                        frame.parentNode.removeChild(frame);
+                        frame.src = 'about:blank';
+                    }
+                    frame = newFrame;
+                    console.log('[PLAYER] Transition completed');
+                }, 500);
+            };
+
+            let loaded = false;
+            newFrame.onload = () => {
+                loaded = true;
+                contentRetries = 0;
+                setContentState('ok');
+                swap();
+            };
+
+            // Reveal early: a heavy page that paints before onload beats holding black.
+            setTimeout(() => { if (gen === generation) swap(); }, REVEAL_MS);
+
+            setTimeout(() => {
+                if (loaded || gen !== generation) return;
+                if (contentRetries < MAX_CONTENT_RETRIES) {
+                    contentRetries++;
+                    console.warn('[PLAYER] Content never loaded, retry ' + contentRetries);
+                    showContent(url);
+                    return;
+                }
+                // Offline targets carry a fallback (local carousel) that always loads;
+                // playing it beats a dark screen, and main re-pushes the real target
+                // on the next network transition.
+                if (fallbackUrl && url !== fallbackUrl) {
+                    console.warn('[PLAYER] Content stalled, switching to fallback');
+                    contentRetries = 0;
+                    showContent(fallbackUrl);
+                    return;
+                }
+                console.error('[PLAYER] Content stalled after ' + contentRetries + ' retries');
+                setContentState('stalled');
+            }, LOAD_TIMEOUT_MS);
+        }
+
+        // --- MIDNIGHT REFRESH ---
+        // Iframe-level, no reload and no server ping: long-lived content pages drift/leak.
+        function scheduleMidnightRefresh() {
+            const now = new Date();
+            const midnight = new Date(now);
+            midnight.setHours(24, 0, 5, 0);
+            setTimeout(() => {
+                if (activeUrl) showContent(assignedUrl || activeUrl);
+                scheduleMidnightRefresh();
+            }, midnight - now);
+        }
+
+        // --- IPC (pushed by the agent main process) ---
+        window.playerAPI.onInit(({ screenIndex: idx }) => {
+            screenIndex = idx;
+            document.getElementById('screenLabel').textContent = idx;
+            setContentState(contentState);
+            console.log('[PLAYER] Initialized for screen=' + idx);
+        });
+
+        window.playerAPI.onShow(({ url, contentName, fallbackUrl: fb }) => {
+            fallbackUrl = fb || null;
+            const target = url || '';
+            // Idempotent: recovery and reconciliation re-push the same target freely.
+            const healthy = activeUrl === (resolveUrl(target) || '') && contentState !== 'stalled';
+            if (target === assignedUrl && healthy && (activeUrl || !target)) return;
+            assignedUrl = target;
+            contentRetries = 0;
+            showContent(target);
+        });
+
+        window.playerAPI.onStatus(({ state }) => setStatus(state));
+
+        window.playerAPI.onRefresh(() => {
+            if (assignedUrl || activeUrl) {
+                console.log('[PLAYER] Refresh requested');
+                contentRetries = 0;
+                showContent(assignedUrl || activeUrl);
+            }
+        });
+
+        // --- INIT ---
+        setStatus('connected');
+        setContentState('ok');
+        scheduleMidnightRefresh();
+        console.log('[PLAYER] Wrapper ready');
+    </script>
+</body>
+</html>

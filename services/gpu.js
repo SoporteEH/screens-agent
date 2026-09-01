@@ -5,7 +5,6 @@ const { log } = require('../utils/logConfig');
 
 const GPU_CONFIG_FILE = path.join(app.getPath('userData'), 'gpu-config.json');
 
-// A one-off driver hiccup must not condemn the box to software rendering forever.
 const GPU_RETRY_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 let hardwareAccelerationRequested = false;
@@ -56,8 +55,6 @@ function configureGpu() {
         return;
     }
 
-    // markGpuAsFailed() exists so a crashing GPU degrades to software instead of
-    // repeating the crash — which on a screen means black — so it has to be read here.
     if (hasGpuFailed()) {
         log.warn('[GPU]: A previous run lost the GPU process. Starting in software rendering.');
         app.disableHardwareAcceleration();
@@ -93,7 +90,6 @@ function configureMemory() {
 
     app.commandLine.appendSwitch('js-flags', `--max-old-space-size=${maxOldSpace} --max-semi-space-size=8`);
     app.commandLine.appendSwitch('renderer-process-limit', '10');
-    // Site isolation off is safe here: player pages hold no secrets, content is admin-curated.
     app.commandLine.appendSwitch('process-per-site');
     app.commandLine.appendSwitch('disable-site-isolation-trials');
     app.commandLine.appendSwitch('disk-cache-size', '157286400'); // 150MB
@@ -117,35 +113,49 @@ function configureMemory() {
     log.info(`[MEMORY]: Optimization applied (Max Old Space: ${maxOldSpace}MB). Total RAM: ${Math.round(totalMemMb)}MB`);
 }
 
-// Call after app.whenReady. Diagnostic aid for dual-GPU boxes that copy every
-// frame across adapters (fix is operational, not in code).
-function logGpuDiagnostics() {
-    try {
-        const features = app.getGPUFeatureStatus();
-        log.info(
-            `[GPU]: Features — compositing: ${features.gpu_compositing}, ` +
-            `video_decode: ${features.video_decode}, rasterization: ${features.rasterization}, ` +
-            `webgl: ${features.webgl}`
-        );
-        // Otherwise the startup line claims acceleration a silent fallback already denied.
-        if (hardwareAccelerationRequested && !/^enabled/.test(features.gpu_compositing || '')) {
-            log.warn(
-                `[GPU]: Acceleration requested but Chromium is compositing in software (${features.gpu_compositing}).`
-            );
-        }
-    } catch (e) {
-        log.warn('[GPU]: Could not read feature status:', e.message);
-    }
+const GPU_INFO_TIMEOUT_MS = 5000;
 
-    app.getGPUInfo('basic')
-        .then((info) => {
-            const gpus = (info?.gpuDevice || []).map(
-                (d) =>
-                    `vendor=0x${(d.vendorId || 0).toString(16)} device=0x${(d.deviceId || 0).toString(16)}${d.active ? ' (active)' : ''}`
+// Call after app.whenReady. Diagnostic aid for dual-GPU boxes that copy every
+function logGpuDiagnostics() {
+    let reported = false;
+
+    const report = () => {
+        if (reported) return;
+        reported = true;
+
+        try {
+            const features = app.getGPUFeatureStatus();
+            log.info(
+                `[GPU]: Features — compositing: ${features.gpu_compositing}, ` +
+                `video_decode: ${features.video_decode}, rasterization: ${features.rasterization}, ` +
+                `webgl: ${features.webgl}`
             );
-            log.info(`[GPU]: Adapters: ${gpus.join(' | ') || 'unknown'}`);
-        })
-        .catch((e) => log.warn('[GPU]: Could not read GPU info:', e.message));
+            // Otherwise the startup line claims acceleration a silent fallback already denied.
+            if (hardwareAccelerationRequested && !/^enabled/.test(features.gpu_compositing || '')) {
+                log.warn(
+                    `[GPU]: Acceleration requested but Chromium is compositing in software (${features.gpu_compositing}).`
+                );
+            }
+        } catch (e) {
+            log.warn('[GPU]: Could not read feature status:', e.message);
+        }
+
+        app.getGPUInfo('complete')
+            .then((info) => {
+                const gpus = (info?.gpuDevice || []).map(
+                    (d) =>
+                        `vendor=0x${(d.vendorId || 0).toString(16)} device=0x${(d.deviceId || 0).toString(16)}${d.active ? ' (active)' : ''}`
+                );
+                log.info(`[GPU]: Adapters: ${gpus.join(' | ') || 'unknown'}`);
+
+                const renderer = info?.auxAttributes?.glRenderer;
+                if (renderer) log.info(`[GPU]: Renderer: ${renderer}`);
+            })
+            .catch((e) => log.warn('[GPU]: Could not read GPU info:', e.message));
+    };
+
+    app.once('gpu-info-update', report);
+    setTimeout(report, GPU_INFO_TIMEOUT_MS).unref?.();
 }
 
 function registerGpuCrashHandlers() {
@@ -160,7 +170,6 @@ function registerGpuCrashHandlers() {
             markGpuAsFailed();
             return;
         }
-        // oom / killed / launch-failed leave the same black screen and used to log nothing.
         log.error(`[RENDERER]: Process gone (${details.reason}, exit ${details.exitCode})`);
     });
 }
