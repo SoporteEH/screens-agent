@@ -81,7 +81,8 @@ function buildLocalCarouselUrl() {
         const VIDEO_CEILING_MS = 600000;
         const STALL_TICK_MS = 1000;
         const STALL_GRACE_MS = 10000;
-        const FROZEN_GRACE_MS = 8000;
+        const FIRST_FRAME_GRACE_MS = 8000;
+        const FROZEN_GRACE_MS = 5000;
         const FAIL_RETRY_MS = 1000;
 
         // The wrapper forwards '[PLAYER]' console lines to the agent log; this page is
@@ -214,8 +215,10 @@ function buildLocalCarouselUrl() {
                     frameIdle = 0;
                     return;
                 }
+                // Frames already seen means the decoder proved it works, so a shorter grace
+                // is safe; before the first one the wait has to cover a slow start.
                 frameIdle += STALL_TICK_MS;
-                if (frameIdle >= FROZEN_GRACE_MS) {
+                if (frameIdle >= (frames > 0 ? FROZEN_GRACE_MS : FIRST_FRAME_GRACE_MS)) {
                     report('video ' + i + ' picture frozen at ' + Math.round(el.currentTime) + 's');
                     advance(t);
                 }

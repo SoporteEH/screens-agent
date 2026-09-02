@@ -64,6 +64,14 @@ function configureGpu() {
     hardwareAccelerationRequested = true;
     log.info('[GPU]: Using hardware acceleration.');
 
+    // One decode engine shared by several kiosk windows starves: the media clock keeps
+    // running while the picture freezes. Software decode is steadier on such boxes.
+    const softwareVideoDecode = process.env.DISABLE_VIDEO_DECODE === 'true';
+    if (softwareVideoDecode) {
+        log.info('[GPU]: Hardware video decode disabled — using software decode.');
+        app.commandLine.appendSwitch('disable-accelerated-video-decode');
+    }
+
     // A/B knob: keep acceleration but let Chromium's blocklist decide instead of forcing raster/decode on old iGPUs.
     if (process.env.GPU_SAFE_MODE === 'true') {
         log.info('[GPU]: Safe mode — skipping forced GPU switches.');
@@ -71,7 +79,7 @@ function configureGpu() {
     }
 
     app.commandLine.appendSwitch('enable-gpu-rasterization');
-    app.commandLine.appendSwitch('enable-accelerated-video-decode');
+    if (!softwareVideoDecode) app.commandLine.appendSwitch('enable-accelerated-video-decode');
     app.commandLine.appendSwitch('enable-zero-copy');
     app.commandLine.appendSwitch('use-angle', 'default');
     app.commandLine.appendSwitch('enable-webgl');

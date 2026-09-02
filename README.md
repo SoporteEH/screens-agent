@@ -95,6 +95,7 @@ Delete it to return to provisioning mode.
 | `maxStorageMB` | `500` | config — local asset storage cap |
 | `DISABLE_GPU` | unset | env — disable hardware acceleration entirely |
 | `GPU_SAFE_MODE` | unset | env — keep acceleration but skip forced GPU switches (Chromium blocklist decides) |
+| `DISABLE_VIDEO_DECODE` | unset | env — software video decode; for GPUs whose single decode engine starves with several screens |
 | `REDUCED_MOTION` | unset | env — force `prefers-reduced-motion` in content pages |
 | `SOCKET_RECONNECT_DELAY_MS` | `3000` | `config/constants.js` — base reconnect delay |
 | `SOCKET_RECONNECT_DELAY_MAX_MS` | `30000` | `config/constants.js` — max backoff between reconnect attempts |
