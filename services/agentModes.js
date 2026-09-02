@@ -1,7 +1,7 @@
 const { log } = require('../utils/logConfig');
 const { loadConfig } = require('../utils/configManager');
 const { startTokenRefreshLoop } = require('./auth');
-const { loadLastState } = require('./state');
+const { loadLastState, rearmAutoRefreshTimers } = require('./state');
 const { reconcileDisplays } = require('./displaySlots');
 const { checkForUpdates } = require('./updater');
 const { initializeMonitors } = require('./monitors');
@@ -27,7 +27,6 @@ const startNormalMode = async (context) => {
     log.info(`[NORMAL]: Device ID: ${config.deviceId}`);
 
     startTokenRefreshLoop(config.agentToken, setAgentToken);
-    // From the stored copy: the schedule must hold before (and without) the server.
     require('./restartScheduler').applyRestartSchedule(config.restartSchedule);
     await reconcileDisplays(hardwareIdToDisplayMap);
 
@@ -71,6 +70,11 @@ const startNormalMode = async (context) => {
                 }
             }, 500 * i);
         });
+
+        setTimeout(
+            () => rearmAutoRefreshTimers(context.managedWindows, context.autoRefreshTimers),
+            500 * screens.length + 3000
+        );
     } else {
         log.info('[NORMAL]: No server URL, using legacy content restore');
         restoreAllContent();

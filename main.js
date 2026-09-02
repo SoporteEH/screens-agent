@@ -22,9 +22,7 @@ const context = {
     hardwareIdToDisplayMap: new Map(),
     autoRefreshTimers: new Map(),
     fallbackTimers: new Map(),
-    // What each screen should show; pushed into the local wrapper over IPC. Never persisted.
     screenContent: new Map(),
-    // ONLINE / NO_SERVER / NO_INTERNET. Starts optimistic, like the network monitor.
     networkState: 'ONLINE',
 };
 
@@ -530,12 +528,9 @@ async function bootstrap() {
                 return { ok: false, reason: 'blank or on an error page' };
             }
 
-            // Autologin bypasses the wrapper by design (the injection needs the login form);
-            // without a deviceId/server there is no wrapper at all.
             const bypassesWrapper = !!screenData.credentials || isAutologinUrl(contentUrl);
             if (bypassesWrapper || !cfg.deviceId || !serverUrl) {
                 if (!online) {
-                    // Offline, anything local (wrapper, carousel, fallback) counts as alive.
                     if (loadedUrl.startsWith('file://')) return { ok: true };
                     if (context.networkState === 'NO_INTERNET') {
                         return { ok: false, reason: 'showing remote content with no network' };
@@ -546,8 +541,6 @@ async function bootstrap() {
                     : { ok: false, reason: 'off its assigned content' };
             }
 
-            // Wrapper screens: online and offline collapse — the wrapper is local, so
-            // being on it and not stalled is healthy under any network state.
             if (!isWrapperUrl(loadedUrl)) {
                 return { ok: false, reason: 'off the player wrapper' };
             }
@@ -577,8 +570,6 @@ async function bootstrap() {
 
                 const loadedUrl = getLoadedUrl(win);
 
-                // A direct window on content the server does not serve just keeps playing:
-                // swapping shells would restart the very same URL for nothing.
                 if (
                     !isWrapperUrl(loadedUrl) &&
                     !isBlankOrErrorUrl(loadedUrl) &&
@@ -626,29 +617,14 @@ async function bootstrap() {
             if (serverUrl && onlineConfig.deviceId) {
                 setTimeout(() => context.recoverScreens('NETWORK'), 2000);
 
-                // Recreates auto-refresh timers lost while offline — this path bypasses handleShowUrl, which normally sets them up.
-                setTimeout(() => {
-                    const lastState = stateService.loadLastState();
-                    for (const [screenId, screenData] of Object.entries(lastState)) {
-                        if (
-                            (screenData.refreshInterval || 0) > 0 &&
-                            !context.autoRefreshTimers.has(screenId)
-                        ) {
-                            const win = context.managedWindows.get(screenId);
-                            if (win && !win.isDestroyed()) {
-                                log.info(
-                                    `[NETWORK]: Recreating missing auto-refresh timer for screen ${screenId} (${screenData.refreshInterval}s)`
-                                );
-                                stateService.setupAutoRefresh(
-                                    screenId,
-                                    screenData.refreshInterval,
-                                    context.managedWindows,
-                                    context.autoRefreshTimers
-                                );
-                            }
-                        }
-                    }
-                }, 3500);
+                setTimeout(
+                    () =>
+                        stateService.rearmAutoRefreshTimers(
+                            context.managedWindows,
+                            context.autoRefreshTimers
+                        ),
+                    3500
+                );
             } else {
                 setTimeout(
                     () =>

@@ -3,19 +3,17 @@ const { log } = require('../utils/logConfig');
 const { STATE_FILE_PATH } = require('../config/constants');
 const { encryptCredentials, decryptCredentials } = require('../utils/configManager');
 
-// Credentials are stored encrypted; legacy plain-object credentials are decrypted in-memory
-// and re-encrypted on the next save.
+// Credentials stored encrypted
 function loadLastState() {
     try {
         if (fs.existsSync(STATE_FILE_PATH)) {
             const state = JSON.parse(fs.readFileSync(STATE_FILE_PATH, 'utf8')) || {};
-            const migratedState = {}; // in-memory view (credentials decrypted)
-            const persistedState = {}; // on-disk view (credentials stay encrypted)
+            const migratedState = {};
+            const persistedState = {};
             let needsStructuralMigration = false;
 
             for (const [key, value] of Object.entries(state)) {
                 if (typeof value === 'string') {
-                    // Legacy format: bare URL string
                     const migrated = {
                         url: value,
                         credentials: null,
@@ -27,10 +25,8 @@ function loadLastState() {
                 } else {
                     const entry = { ...value };
                     if (typeof entry.credentials === 'string') {
-                        // Decrypt in memory only — writing it back to disk would undo the encryption on every startup.
                         entry.credentials = decryptCredentials(entry.credentials);
                     }
-                    // Plain object credentials are kept as-is (legacy, re-encrypted on next save)
                     migratedState[key] = entry;
                     persistedState[key] = value;
                 }
@@ -60,8 +56,7 @@ function loadRawState() {
     return {};
 }
 
-// Re-encrypts plaintext credentials in state.json; idempotent, skips entries that fail
-// so nothing is lost without the hardware key.
+// Re-encrypts plaintext credentials in state.json; idempotent
 function migrateStateEncryption() {
     try {
         const state = loadRawState();
@@ -93,8 +88,7 @@ function migrateStateEncryption() {
     }
 }
 
-// Removes slots no longer in the slot map; a merely-disconnected slot stays and its
-// content is restored on reconnect. Operates on raw (encrypted) state.
+// Removes slots no longer in the slot map;
 function cleanOrphanedState(validSlotIds) {
     const state = loadRawState();
     const cleanedState = {};
@@ -125,9 +119,8 @@ function clearAllState() {
     }
 }
 
-// intervalSeconds is in seconds (e.g. 600 = 10 min).
+// intervalSeconds is in seconds
 function setupAutoRefresh(screenIndex, intervalSeconds, managedWindows, autoRefreshTimers) {
-    // Jitter spreads reloads so multiple screens never reload at the same instant
     const intervalMs = intervalSeconds * 1000 + Math.floor(Math.random() * 15000);
     const intervalMin = Math.round(intervalSeconds / 60);
 
@@ -135,7 +128,6 @@ function setupAutoRefresh(screenIndex, intervalSeconds, managedWindows, autoRefr
         `[AUTO-REFRESH]: Setting up auto-refresh every ${intervalMin} minutes (${intervalSeconds}s) for screen ${screenIndex}`
     );
 
-    // Per-cycle logging: a short refreshInterval would otherwise dominate the log.
     const timerId = setInterval(() => {
         const win = managedWindows.get(screenIndex);
         if (win && !win.isDestroyed()) {
@@ -155,7 +147,21 @@ function setupAutoRefresh(screenIndex, intervalSeconds, managedWindows, autoRefr
     autoRefreshTimers.set(screenIndex, timerId);
 }
 
-// Serializes writes to state.json so concurrent handleShowUrl calls don't corrupt it.
+// state.json is the only record of refreshInterval
+function rearmAutoRefreshTimers(managedWindows, autoRefreshTimers) {
+    for (const [screenId, screenData] of Object.entries(loadLastState())) {
+        const interval = screenData.refreshInterval || 0;
+        if (interval <= 0 || autoRefreshTimers.has(screenId)) continue;
+
+        const win = managedWindows.get(screenId);
+        if (!win || win.isDestroyed()) continue;
+
+        log.info(`[AUTO-REFRESH]: Re-arming timer for screen ${screenId} (${interval}s)`);
+        setupAutoRefresh(screenId, interval, managedWindows, autoRefreshTimers);
+    }
+}
+
+// Serializes writes to state.json
 let writeLock = Promise.resolve();
 
 function saveCurrentState(
@@ -189,7 +195,6 @@ function _saveCurrentState(
     autoRefreshTimers,
     managedWindows
 ) {
-    // Raw state — loadLastState() here would write every screen's credentials back decrypted.
     const state = loadRawState();
 
     if (autoRefreshTimers.has(screenIndex)) {
@@ -229,7 +234,6 @@ const path = require('path');
 
 function restoreLastState(hardwareIdToDisplayMap, handleShowUrlCallback) {
     log.info('[STATE]: Initiating state restoration...');
-    // Purge only slots removed from the persistent map, never ones merely disconnected.
     const { loadSlots } = require('./displaySlots');
     const lastState = cleanOrphanedState(Object.keys(loadSlots()));
 
@@ -238,7 +242,7 @@ function restoreLastState(hardwareIdToDisplayMap, handleShowUrlCallback) {
         return;
     }
 
-    // Log screens/urls only — never the decrypted credentials.
+    // Log screens/urls only never the decrypted credentials.
     log.info(
         '[STATE]: Restoring last known state:',
         JSON.stringify(
@@ -353,6 +357,7 @@ module.exports = {
     clearAllState,
     migrateStateEncryption,
     setupAutoRefresh,
+    rearmAutoRefreshTimers,
     saveCurrentState,
     restoreLastState,
     restoreAllContentImmediately,
