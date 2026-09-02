@@ -53,65 +53,106 @@ function buildLocalCarouselUrl() {
     <script>
         const mediaUrls = ${JSON.stringify(mediaUrls)};
         const container = document.getElementById('container');
-        let currentIndex = 0;
-        let elements = [];
 
-        // Pre-create DOM elements
-        mediaUrls.forEach((url, i) => {
-            const isVideo = url.toLowerCase().match(/\\.(mp4|mkv|avi)$/);
-            let el;
+        const IMAGE_MS = 10000;
+        const VIDEO_CEILING_MS = 600000;
+        const STALL_TICK_MS = 1000;
+        const STALL_GRACE_MS = 10000;
+        const FAIL_RETRY_MS = 1000;
+
+        const items = mediaUrls.map(function (url) {
+            const isVideo = /\\.(mp4|mkv|avi)$/i.test(url);
+            const el = document.createElement(isVideo ? 'video' : 'img');
             if (isVideo) {
-                el = document.createElement('video');
-                el.src = url;
                 el.muted = true;
                 el.playsInline = true;
-                
-                el.onerror = () => nextMedia();
-                el.onended = () => nextMedia();
+                el.preload = 'none';
             } else {
-                el = document.createElement('img');
                 el.src = url;
-                
-                el.onerror = () => nextMedia();
             }
             container.appendChild(el);
-            elements.push({ type: isVideo ? 'video' : 'image', el });
+            return { url: url, isVideo: isVideo, el: el };
         });
 
-        let imageTimer = null;
+        let index = -1;
+        let token = 0;
+        let advanceTimer = null;
+        let stallTimer = null;
 
-        function showNext() {
-            if (elements.length === 0) return;
-            
-            // Hide all
-            elements.forEach(item => {
-                item.el.classList.remove('active');
-                if (item.type === 'video') item.el.pause();
-            });
+        function advance(t) {
+            if (t !== token || items.length === 0) return;
+            show((index + 1) % items.length);
+        }
 
-            // Show current
-            const currentItem = elements[currentIndex];
-            currentItem.el.classList.add('active');
+        // Async so a run of unplayable items cannot recurse into a tight loop.
+        function fail(t) {
+            if (t !== token) return;
+            clearTimeout(advanceTimer);
+            advanceTimer = setTimeout(function () { advance(t); }, FAIL_RETRY_MS);
+        }
 
-            if (currentItem.type === 'video') {
-                currentItem.el.currentTime = 0;
-                currentItem.el.play().catch(e => {
-                    console.error("Video play failed", e);
-                    nextMedia();
-                });
-            } else {
-                clearTimeout(imageTimer);
-                imageTimer = setTimeout(nextMedia, 10000); // 10 seconds per image
+        function release(item) {
+            const el = item.el;
+            el.onended = el.onerror = el.onloadedmetadata = null;
+            el.classList.remove('active');
+            if (!item.isVideo || !el.getAttribute('src')) return;
+            el.pause();
+            // Hand the decoder back: sibling screens share one hardware decode engine.
+            el.removeAttribute('src');
+            el.load();
+        }
+
+        function show(i) {
+            const t = ++token;
+            clearTimeout(advanceTimer);
+            clearInterval(stallTimer);
+            index = i;
+
+            items.forEach(function (item, j) { if (j !== i) release(item); });
+
+            const item = items[i];
+            const el = item.el;
+            el.classList.add('active');
+
+            if (!item.isVideo) {
+                el.onerror = function () { fail(t); };
+                // A src that failed before this turn will never re-fire onerror.
+                if (el.complete && el.naturalWidth === 0) { fail(t); return; }
+                advanceTimer = setTimeout(function () { advance(t); }, IMAGE_MS);
+                return;
             }
+
+            el.onended = function () { advance(t); };
+            el.onerror = function () { fail(t); };
+            el.onloadedmetadata = function () {
+                if (t !== token || !isFinite(el.duration) || el.duration <= 0) return;
+                clearTimeout(advanceTimer);
+                advanceTimer = setTimeout(function () { advance(t); }, el.duration * 1000 + 5000);
+            };
+
+            el.src = item.url;
+            el.load();
+            el.play().catch(function () { fail(t); });
+
+            advanceTimer = setTimeout(function () { advance(t); }, VIDEO_CEILING_MS);
+
+            // 'ended' is not a guarantee: a decoder that never starts emits no event at all.
+            let lastTime = -1;
+            let idleMs = 0;
+            stallTimer = setInterval(function () {
+                if (t !== token) return;
+                if (el.currentTime !== lastTime) {
+                    lastTime = el.currentTime;
+                    idleMs = 0;
+                    return;
+                }
+                idleMs += STALL_TICK_MS;
+                if (idleMs >= STALL_GRACE_MS) advance(t);
+            }, STALL_TICK_MS);
         }
 
-        function nextMedia() {
-            currentIndex = (currentIndex + 1) % elements.length;
-            showNext();
-        }
-
-        // Start
-        showNext();
+        // Random entry point: sibling screens otherwise open the same clip at the same instant.
+        if (items.length > 0) show(Math.floor(Math.random() * items.length));
     </script>
 </body>
 </html>`;
