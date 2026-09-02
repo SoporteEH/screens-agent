@@ -5,6 +5,29 @@ const { CONTENT_DIR, CONFIG_DIR } = require('../config/constants');
 
 const CAROUSEL_HTML_PATH = path.join(CONFIG_DIR, 'offline-carousel.html');
 
+
+function writeCarouselFile(html, itemCount) {
+    try {
+        if (fs.readFileSync(CAROUSEL_HTML_PATH, 'utf8') === html) return;
+    } catch (_e) {
+        
+    }
+
+    const tmp = CAROUSEL_HTML_PATH + '.' + process.pid + '.tmp';
+    try {
+        fs.writeFileSync(tmp, html, 'utf8');
+        fs.renameSync(tmp, CAROUSEL_HTML_PATH);
+    } catch (error) {
+        log.warn('[CAROUSEL]: Atomic write failed, falling back to in-place:', error.message);
+        try {
+            fs.unlinkSync(tmp);
+        } catch (_e) { /* nothing to clean up */ }
+        fs.writeFileSync(CAROUSEL_HTML_PATH, html, 'utf8');
+    }
+
+    log.info('[CAROUSEL]: Offline carousel built successfully with ' + itemCount + ' items.');
+}
+
 function buildLocalCarouselUrl() {
     try {
         if (!fs.existsSync(CONTENT_DIR)) {
@@ -58,7 +81,15 @@ function buildLocalCarouselUrl() {
         const VIDEO_CEILING_MS = 600000;
         const STALL_TICK_MS = 1000;
         const STALL_GRACE_MS = 10000;
+        const FROZEN_GRACE_MS = 8000;
         const FAIL_RETRY_MS = 1000;
+
+        // The wrapper forwards '[PLAYER]' console lines to the agent log; this page is
+        // otherwise invisible from outside. Only anomalies are reported, so silence during
+        // a freeze means the timers themselves died.
+        function report(msg) {
+            console.warn('[PLAYER] Carousel: ' + msg);
+        }
 
         const items = mediaUrls.map(function (url) {
             const isVideo = /\\.(mp4|mkv|avi)$/i.test(url);
@@ -85,8 +116,9 @@ function buildLocalCarouselUrl() {
         }
 
         // Async so a run of unplayable items cannot recurse into a tight loop.
-        function fail(t) {
+        function fail(t, why) {
             if (t !== token) return;
+            report(why);
             clearTimeout(advanceTimer);
             advanceTimer = setTimeout(function () { advance(t); }, FAIL_RETRY_MS);
         }
@@ -115,50 +147,92 @@ function buildLocalCarouselUrl() {
             el.classList.add('active');
 
             if (!item.isVideo) {
-                el.onerror = function () { fail(t); };
+                el.onerror = function () { fail(t, 'image ' + i + ' failed to load'); };
                 // A src that failed before this turn will never re-fire onerror.
-                if (el.complete && el.naturalWidth === 0) { fail(t); return; }
+                if (el.complete && el.naturalWidth === 0) { fail(t, 'image ' + i + ' is broken'); return; }
                 advanceTimer = setTimeout(function () { advance(t); }, IMAGE_MS);
                 return;
             }
 
             el.onended = function () { advance(t); };
-            el.onerror = function () { fail(t); };
+            el.onerror = function () { fail(t, 'video ' + i + ' failed to load'); };
             el.onloadedmetadata = function () {
                 if (t !== token || !isFinite(el.duration) || el.duration <= 0) return;
+                const ceiling = el.duration * 1000 + 5000;
                 clearTimeout(advanceTimer);
-                advanceTimer = setTimeout(function () { advance(t); }, el.duration * 1000 + 5000);
+                advanceTimer = setTimeout(function () {
+                    report('video ' + i + ' outlived its ' + Math.round(el.duration) + 's duration');
+                    advance(t);
+                }, ceiling);
             };
 
             el.src = item.url;
             el.load();
-            el.play().catch(function () { fail(t); });
+            el.play().catch(function () { fail(t, 'video ' + i + ' play() rejected'); });
 
-            advanceTimer = setTimeout(function () { advance(t); }, VIDEO_CEILING_MS);
+            advanceTimer = setTimeout(function () {
+                report('video ' + i + ' hit the hard ceiling');
+                advance(t);
+            }, VIDEO_CEILING_MS);
 
-            // 'ended' is not a guarantee: a decoder that never starts emits no event at all.
             let lastTime = -1;
-            let idleMs = 0;
+            let clockIdle = 0;
+            let frames = 0;
+            let lastFrames = -1;
+            let frameIdle = 0;
+
+            if (el.requestVideoFrameCallback) {
+                const onFrame = function () {
+                    if (t !== token) return;
+                    frames++;
+                    el.requestVideoFrameCallback(onFrame);
+                };
+                el.requestVideoFrameCallback(onFrame);
+            }
+
             stallTimer = setInterval(function () {
                 if (t !== token) return;
+
+                // 'ended' is not a guarantee: a decoder that never starts emits no event at all.
                 if (el.currentTime !== lastTime) {
                     lastTime = el.currentTime;
-                    idleMs = 0;
+                    clockIdle = 0;
+                } else {
+                    clockIdle += STALL_TICK_MS;
+                    if (clockIdle >= STALL_GRACE_MS) {
+                        report('video ' + i + ' never advanced past ' + Math.round(el.currentTime) + 's');
+                        advance(t);
+                        return;
+                    }
+                }
+
+                // A running media clock is not proof the viewer sees motion: a starved
+                // decoder keeps time while presenting the same frame forever.
+                if (!el.requestVideoFrameCallback) return;
+                if (frames !== lastFrames) {
+                    lastFrames = frames;
+                    frameIdle = 0;
                     return;
                 }
-                idleMs += STALL_TICK_MS;
-                if (idleMs >= STALL_GRACE_MS) advance(t);
+                frameIdle += STALL_TICK_MS;
+                if (frameIdle >= FROZEN_GRACE_MS) {
+                    report('video ' + i + ' picture frozen at ' + Math.round(el.currentTime) + 's');
+                    advance(t);
+                }
             }, STALL_TICK_MS);
         }
 
         // Random entry point: sibling screens otherwise open the same clip at the same instant.
-        if (items.length > 0) show(Math.floor(Math.random() * items.length));
+        if (items.length > 0) {
+            const start = Math.floor(Math.random() * items.length);
+            console.log('[PLAYER] Carousel started: ' + items.length + ' items, from #' + start);
+            show(start);
+        }
     </script>
 </body>
 </html>`;
 
-        fs.writeFileSync(CAROUSEL_HTML_PATH, htmlContent, 'utf8');
-        log.info('[CAROUSEL]: Offline carousel built successfully with ' + mediaFiles.length + ' items.');
+        writeCarouselFile(htmlContent, mediaFiles.length);
         return 'file://' + CAROUSEL_HTML_PATH.replace(/\\/g, '/');
 
     } catch (error) {
