@@ -8,42 +8,61 @@ const GPU_CONFIG_FILE = path.join(app.getPath('userData'), 'gpu-config.json');
 const GPU_RETRY_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 let hardwareAccelerationRequested = false;
+let softwareVideoDecodeRequested = false;
 
-function hasGpuFailed() {
+function readGpuConfig() {
     try {
         if (fs.existsSync(GPU_CONFIG_FILE)) {
-            const config = JSON.parse(fs.readFileSync(GPU_CONFIG_FILE, 'utf8'));
-            if (config.gpuFailed !== true) return false;
-
-            const failedAt = Date.parse(config.failedAt || '');
-            if (Number.isFinite(failedAt) && Date.now() - failedAt > GPU_RETRY_AFTER_MS) {
-                resetGpuState();
-                return false;
-            }
-            return true;
+            return JSON.parse(fs.readFileSync(GPU_CONFIG_FILE, 'utf8')) || {};
         }
-    } catch (_e) { }
-    return false;
+    } catch (e) {
+        log.warn('[GPU]: Could not read gpu-config.json:', e.message);
+    }
+    return {};
 }
 
-function markGpuAsFailed() {
+function writeGpuConfig(config) {
     try {
-        fs.writeFileSync(
-            GPU_CONFIG_FILE,
-            JSON.stringify({ gpuFailed: true, failedAt: new Date().toISOString() })
-        );
-        log.info('[GPU]: Marked as failed.');
+        fs.writeFileSync(GPU_CONFIG_FILE, JSON.stringify(config, null, 2));
+        return true;
     } catch (e) {
         log.error('[GPU]: Error saving state:', e);
+        return false;
     }
 }
 
+function hasGpuFailed() {
+    const config = readGpuConfig();
+    if (config.gpuFailed !== true) return false;
+
+    const failedAt = Date.parse(config.failedAt || '');
+    if (Number.isFinite(failedAt) && Date.now() - failedAt > GPU_RETRY_AFTER_MS) {
+        resetGpuState();
+        return false;
+    }
+    return true;
+}
+
+function markGpuAsFailed() {
+    // Merge: the file also carries operator-set preferences that a crash must not wipe.
+    const config = readGpuConfig();
+    config.gpuFailed = true;
+    config.failedAt = new Date().toISOString();
+    if (writeGpuConfig(config)) log.info('[GPU]: Marked as failed.');
+}
+
 function resetGpuState() {
-    try {
-        if (fs.existsSync(GPU_CONFIG_FILE)) {
-            fs.unlinkSync(GPU_CONFIG_FILE);
-        }
-    } catch (_e) { }
+    const config = readGpuConfig();
+    delete config.gpuFailed;
+    delete config.failedAt;
+
+    if (Object.keys(config).length === 0) {
+        try {
+            if (fs.existsSync(GPU_CONFIG_FILE)) fs.unlinkSync(GPU_CONFIG_FILE);
+        } catch (_e) { }
+        return;
+    }
+    writeGpuConfig(config);
 }
 
 function configureGpu() {
@@ -64,11 +83,16 @@ function configureGpu() {
     hardwareAccelerationRequested = true;
     log.info('[GPU]: Using hardware acceleration.');
 
-    // One decode engine shared by several kiosk windows starves: the media clock keeps
-    // running while the picture freezes. Software decode is steadier on such boxes.
-    const softwareVideoDecode = process.env.DISABLE_VIDEO_DECODE === 'true';
-    if (softwareVideoDecode) {
-        log.info('[GPU]: Hardware video decode disabled — using software decode.');
+    // The file wins: an env var survives neither an update relaunch nor a setx in an open shell.
+    const fromFile = readGpuConfig().softwareVideoDecode === true;
+    const fromEnv = process.env.DISABLE_VIDEO_DECODE === 'true';
+    softwareVideoDecodeRequested = fromFile || fromEnv;
+
+    const source = fromFile ? 'gpu-config.json' : fromEnv ? 'DISABLE_VIDEO_DECODE' : null;
+    log.info(
+        `[GPU]: Video decode requested: ${source ? `software (via ${source})` : 'hardware'}`
+    );
+    if (softwareVideoDecodeRequested) {
         app.commandLine.appendSwitch('disable-accelerated-video-decode');
     }
 
@@ -79,7 +103,7 @@ function configureGpu() {
     }
 
     app.commandLine.appendSwitch('enable-gpu-rasterization');
-    if (!softwareVideoDecode) app.commandLine.appendSwitch('enable-accelerated-video-decode');
+    if (!softwareVideoDecodeRequested) app.commandLine.appendSwitch('enable-accelerated-video-decode');
     app.commandLine.appendSwitch('enable-zero-copy');
     app.commandLine.appendSwitch('use-angle', 'default');
     app.commandLine.appendSwitch('enable-webgl');
@@ -100,8 +124,8 @@ function configureMemory() {
     app.commandLine.appendSwitch('renderer-process-limit', '10');
     app.commandLine.appendSwitch('process-per-site');
     app.commandLine.appendSwitch('disable-site-isolation-trials');
-    app.commandLine.appendSwitch('disk-cache-size', '157286400'); // 150MB
-    app.commandLine.appendSwitch('media-cache-size', '52428800'); // 50MB
+    app.commandLine.appendSwitch('disk-cache-size', '157286400');
+    app.commandLine.appendSwitch('media-cache-size', '52428800');
     app.commandLine.appendSwitch(
         'disable-features',
         'MediaRouter,AudioServiceOutOfProcess,CalculateNativeWinOcclusion,HardwareMediaKeyHandling'
@@ -123,7 +147,7 @@ function configureMemory() {
 
 const GPU_INFO_TIMEOUT_MS = 5000;
 
-// Call after app.whenReady. Diagnostic aid for dual-GPU boxes that copy every
+// Call after app.whenReady.
 function logGpuDiagnostics() {
     let reported = false;
 
@@ -142,6 +166,11 @@ function logGpuDiagnostics() {
             if (hardwareAccelerationRequested && !/^enabled/.test(features.gpu_compositing || '')) {
                 log.warn(
                     `[GPU]: Acceleration requested but Chromium is compositing in software (${features.gpu_compositing}).`
+                );
+            }
+            if (softwareVideoDecodeRequested && /^enabled/.test(features.video_decode || '')) {
+                log.warn(
+                    '[GPU]: Software video decode was requested but Chromium still decodes in hardware.'
                 );
             }
         } catch (e) {

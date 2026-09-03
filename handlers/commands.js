@@ -36,7 +36,7 @@ function initializeHandlers(ctx) {
     context = ctx;
 }
 
-function sendCommandFeedback(command, status, message) {
+function sendCommandFeedback(command, status, message, messageKey, messageParams) {
     if (!command || !command.commandId) return;
     if (command.silent) return;
 
@@ -47,6 +47,7 @@ function sendCommandFeedback(command, status, message) {
             action: command.action,
             status,
             message,
+            ...(messageKey ? { messageKey, messageParams: messageParams || {} } : {}),
         });
         log.debug(`[FEEDBACK]: Sending feedback for commandId ${command.commandId}: ${status}`);
     }
@@ -224,7 +225,9 @@ function createContentWindow(display, urlToLoad, command, opts = {}) {
                 sendCommandFeedback(
                     command,
                     'error',
-                    `Failed to load ${displayName}. Reason: ${errorDescription}`
+                    `Failed to load ${displayName}. Reason: ${errorDescription}`,
+                    'contentLoadFailed',
+                    { name: displayName, reason: errorDescription }
                 );
             }
 
@@ -279,7 +282,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
 
     if (!url || !url.trim()) {
         log.error(`[COMMAND]: Empty URL received for screen ${screenIndex}. Ignoring.`);
-        sendCommandFeedback(command, 'error', `Empty URL, cannot load`);
+        sendCommandFeedback(command, 'error', 'Empty URL, cannot load', 'emptyUrl');
         return;
     }
 
@@ -290,14 +293,14 @@ function handleShowUrl(command, _currentAttempt = 0) {
         parsedUrl = new URL(trimmedUrl);
     } catch {
         log.error(`[COMMAND]: Malformed URL for screen ${screenIndex}: ${trimmedUrl}`);
-        sendCommandFeedback(command, 'error', `Malformed URL, cannot load`);
+        sendCommandFeedback(command, 'error', 'Malformed URL, cannot load', 'malformedUrl');
         return;
     }
     if (!allowedSchemes.includes(parsedUrl.protocol)) {
         log.error(
             `[COMMAND]: Blocked disallowed URL scheme '${parsedUrl.protocol}' for screen ${screenIndex}`
         );
-        sendCommandFeedback(command, 'error', `URL scheme not allowed`);
+        sendCommandFeedback(command, 'error', 'URL scheme not allowed', 'urlSchemeNotAllowed');
         return;
     }
     if (context.retryManager.has(screenIndex)) {
@@ -333,7 +336,9 @@ function handleShowUrl(command, _currentAttempt = 0) {
             sendCommandFeedback(
                 command,
                 'saved_offline',
-                `Pantalla ${screenIndex} desconectada. El contenido se aplicará al reconectar.`
+                `Screen ${screenIndex} is disconnected. Content will be applied on reconnect.`,
+                'screenOfflineSaved',
+                { screen: screenIndex }
             );
             return;
         }
@@ -341,7 +346,9 @@ function handleShowUrl(command, _currentAttempt = 0) {
         sendCommandFeedback(
             command,
             'error',
-            `Display with hardware ID '${screenIndex}' not found.`
+            `Display with hardware ID '${screenIndex}' not found.`,
+            'displayNotFound',
+            { screen: screenIndex }
         );
         return;
     }
@@ -365,7 +372,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
     if (!hasInternet && !url.startsWith('local:')) {
         const errorMsg = `Error: No connection. Cannot load URL '${url}'. Will retry when connection is restored.`;
         log.error(`[RESILIENCE]: ${errorMsg}`);
-        sendCommandFeedback(command, 'error', errorMsg);
+        sendCommandFeedback(command, 'error', errorMsg, 'noConnectionWillRetry', { url });
         scheduleRetry(command);
         return;
     }
@@ -396,7 +403,13 @@ function handleShowUrl(command, _currentAttempt = 0) {
         const win = context.ensurePlayerScreen?.(screenIndex, target);
 
         if (!win) {
-            sendCommandFeedback(command, 'error', `No display available for screen ${screenIndex}`);
+            sendCommandFeedback(
+                command,
+                'error',
+                `No display available for screen ${screenIndex}`,
+                'noDisplayAvailable',
+                { screen: screenIndex }
+            );
             return;
         }
 
@@ -410,7 +423,9 @@ function handleShowUrl(command, _currentAttempt = 0) {
         sendCommandFeedback(
             command,
             'success',
-            `Sending '${contentName || trimmedUrl}' to screen ${screenIndex}`
+            `Sending '${contentName || trimmedUrl}' to screen ${screenIndex}`,
+            'contentSent',
+            { name: contentName || trimmedUrl, screen: screenIndex }
         );
         return;
     }
@@ -421,7 +436,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
         if (!fs.existsSync(filePath)) {
             const errorMsg = `Error: Local asset not found: ${filename}.`;
             log.error(`[COMMAND]: ${errorMsg}`);
-            sendCommandFeedback(command, 'error', errorMsg);
+            sendCommandFeedback(command, 'error', errorMsg, 'localAssetNotFound', { filename });
             return;
         }
         finalUrl = `file://${filePath}`;
@@ -548,12 +563,14 @@ function handleShowUrl(command, _currentAttempt = 0) {
         sendCommandFeedback(
             command,
             'success',
-            `Sending '${displayName}' to screen ${screenIndex}`
+            `Sending '${displayName}' to screen ${screenIndex}`,
+            'contentSent',
+            { name: displayName, screen: screenIndex }
         );
     } catch (error) {
         const errorMsg = `Unexpected error executing show_url: ${error.message}`;
         log.error(`[COMMAND]: ${errorMsg}`);
-        sendCommandFeedback(command, 'error', errorMsg);
+        sendCommandFeedback(command, 'error', errorMsg, 'showUrlFailed', { reason: error.message });
     }
 }
 
@@ -581,12 +598,16 @@ function handleCloseScreen(command) {
                 url: '',
             });
         }
-        sendCommandFeedback(command, 'success', `Screen ${screenIndex} closed`);
+        sendCommandFeedback(command, 'success', `Screen ${screenIndex} closed`, 'screenClosed', {
+            screen: screenIndex,
+        });
     } catch (error) {
         sendCommandFeedback(
             command,
             'error',
-            `Error closing screen ${screenIndex}: ${error.message}`
+            `Error closing screen ${screenIndex}: ${error.message}`,
+            'screenCloseFailed',
+            { screen: screenIndex, reason: error.message }
         );
     }
 }
@@ -596,7 +617,13 @@ function handleRefreshScreen(command) {
     try {
         const win = context.managedWindows.get(screenIndex);
         if (!win || win.isDestroyed()) {
-            sendCommandFeedback(command, 'error', `Screen ${screenIndex} has no active content`);
+            sendCommandFeedback(
+                command,
+                'error',
+                `Screen ${screenIndex} has no active content`,
+                'screenNoContent',
+                { screen: screenIndex }
+            );
             return;
         }
         if (isWrapperUrl(win.webContents.getURL())) {
@@ -605,12 +632,20 @@ function handleRefreshScreen(command) {
         } else {
             win.webContents.reload();
         }
-        sendCommandFeedback(command, 'success', `Screen ${screenIndex} reloaded`);
+        sendCommandFeedback(
+            command,
+            'success',
+            `Screen ${screenIndex} reloaded`,
+            'screenReloaded',
+            { screen: screenIndex }
+        );
     } catch (error) {
         sendCommandFeedback(
             command,
             'error',
-            `Error reloading screen ${screenIndex}: ${error.message}`
+            `Error reloading screen ${screenIndex}: ${error.message}`,
+            'screenReloadFailed',
+            { screen: screenIndex, reason: error.message }
         );
     }
 }
@@ -634,9 +669,15 @@ function handleIdentifyScreen(command) {
         height: targetDisplay.bounds.height,
         frame: false,
         transparent: true,
+        backgroundColor: '#00000000',
+        hasShadow: false,
+        show: false,
         alwaysOnTop: true,
         skipTaskbar: true,
         webPreferences: {
+            // Own partition: process-per-site (services/gpu.js) would otherwise fold this
+            // window into the opaque kiosk renderer, breaking transparency.
+            partition: 'identify-overlay',
             preload: path.join(__dirname, '../identify-preload.js'),
             nodeIntegration: false,
             contextIsolation: true,
@@ -648,6 +689,10 @@ function handleIdentifyScreen(command) {
     identifyWin.loadFile(path.join(__dirname, '../identify.html'));
     identifyWin.webContents.on('did-finish-load', () => {
         identifyWin.webContents.send('set-identifier', identifierText);
+    });
+    // Showing only once painted avoids the white frame a transparent window flashes first.
+    identifyWin.once('ready-to-show', () => {
+        if (!identifyWin.isDestroyed()) identifyWin.show();
     });
 
     context.identifyWindows.set(screenIndex, identifyWin);
@@ -668,7 +713,7 @@ async function handleGetLogs(command) {
     try {
         const existingFiles = logFiles.filter((f) => fs.existsSync(f.path));
         if (existingFiles.length === 0) {
-            sendCommandFeedback(command, 'error', 'No log files found.');
+            sendCommandFeedback(command, 'error', 'No log files found.', 'noLogFiles');
             return;
         }
 
@@ -707,7 +752,8 @@ async function handleGetLogs(command) {
             sendCommandFeedback(
                 command,
                 'success',
-                `Logs ready. Download URL: ${response.data.downloadUrl}`
+                `Logs ready. Download URL: ${response.data.downloadUrl}`,
+                'logsReady'
             );
         } else {
             throw new Error('Invalid server response');
@@ -716,7 +762,13 @@ async function handleGetLogs(command) {
         if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
     } catch (error) {
         log.error('[COMMAND]: Error in GetLogs:', error);
-        sendCommandFeedback(command, 'error', `Error processing logs: ${error.message}`);
+        sendCommandFeedback(
+            command,
+            'error',
+            `Error processing logs: ${error.message}`,
+            'logsFailed',
+            { reason: error.message }
+        );
         if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
     }
 }
