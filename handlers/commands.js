@@ -675,8 +675,6 @@ function handleIdentifyScreen(command) {
         alwaysOnTop: true,
         skipTaskbar: true,
         webPreferences: {
-            // Own partition: process-per-site (services/gpu.js) would otherwise fold this
-            // window into the opaque kiosk renderer, breaking transparency.
             partition: 'identify-overlay',
             preload: path.join(__dirname, '../identify-preload.js'),
             nodeIntegration: false,
@@ -709,6 +707,8 @@ async function handleGetLogs(command) {
     const logFiles = getAllLogPaths();
     const date = new Date().toISOString().split('T')[0];
     const zipPath = path.join(getLogDir(), `all-logs-${context.deviceId}-${date}.zip`);
+    const limitMb = Math.round(CONSTANTS.LOG_UPLOAD_MAX_BYTES / (1024 * 1024));
+    let sizeMb = 0;
 
     try {
         const existingFiles = logFiles.filter((f) => fs.existsSync(f.path));
@@ -731,15 +731,29 @@ async function handleGetLogs(command) {
             archive.finalize();
         });
 
-        log.info(`[COMMAND]: Uploading all logs: ${zipPath}`);
+        const zipBytes = fs.statSync(zipPath).size;
+        sizeMb = Math.round(zipBytes / (1024 * 1024));
+        if (zipBytes > CONSTANTS.LOG_UPLOAD_MAX_BYTES) {
+            log.error(`[COMMAND]: Log archive is ${sizeMb} MB, over the ${limitMb} MB limit`);
+            sendCommandFeedback(
+                command,
+                'error',
+                `Log archive too large: ${sizeMb} MB (limit ${limitMb} MB).`,
+                'logsTooLarge',
+                { sizeMb, limitMb }
+            );
+            fs.unlinkSync(zipPath);
+            return;
+        }
+
+        log.info(`[COMMAND]: Uploading all logs: ${zipPath} (${sizeMb} MB)`);
 
         const fileContent = fs.readFileSync(zipPath);
         const FormData = require('form-data');
         const form = new FormData();
         form.append('logFile', fileContent, { filename: path.basename(zipPath) });
 
-        const constants = require('../config/constants');
-        const uploadUrl = `${constants.getServerUrl()}/api/logs/upload-debug`;
+        const uploadUrl = `${getServerUrl()}/api/logs/upload-debug`;
 
         const response = await axios.post(uploadUrl, form, {
             headers: {
@@ -762,13 +776,23 @@ async function handleGetLogs(command) {
         if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
     } catch (error) {
         log.error('[COMMAND]: Error in GetLogs:', error);
-        sendCommandFeedback(
-            command,
-            'error',
-            `Error processing logs: ${error.message}`,
-            'logsFailed',
-            { reason: error.message }
-        );
+        if (error.response?.status === 413) {
+            sendCommandFeedback(
+                command,
+                'error',
+                `Log archive too large: ${sizeMb} MB (limit ${limitMb} MB).`,
+                'logsTooLarge',
+                { sizeMb, limitMb }
+            );
+        } else {
+            sendCommandFeedback(
+                command,
+                'error',
+                `Error processing logs: ${error.message}`,
+                'logsFailed',
+                { reason: error.message }
+            );
+        }
         if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
     }
 }

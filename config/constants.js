@@ -23,8 +23,6 @@ const STATE_FILE_PATH = path.join(CONFIG_DIR, 'state.json');
 const DISPLAYS_FILE_PATH = path.join(CONFIG_DIR, 'displays.json');
 const CONTENT_DIR = path.join(CONFIG_DIR, 'content');
 
-// Created here because state.js/displaySlots.js write into it directly on first boot,
-// before any consumer that mkdirs its own subdirectory has run.
 try {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
 } catch (e) {
@@ -43,11 +41,10 @@ const CONSTANTS = {
     RETRY_BACKOFF_BASE_MS: 30 * 1000,
     GC_INTERVAL_MS: 4 * 60 * 60 * 1000,
     SOCKET_RECONNECT_DELAY_MS: 3 * 1000,
-    // The network monitor pings /health every 5-15s and forces a reconnect, so the
-    // manager's own backoff only has to stay polite, not slow.
     SOCKET_RECONNECT_DELAY_MAX_MS: 30 * 1000,
     CIRCUIT_BREAKER_THRESHOLD: 10,
     FALLBACK_DELAY_MS: 4000,
+    LOG_UPLOAD_MAX_BYTES: 200 * 1024 * 1024,
 };
 
 let AGENT_VERSION = 'Unknown';
