@@ -24,6 +24,7 @@ function parseDailyTime(value) {
 }
 
 function restartApp(reason) {
+    if (require('./updater').installPendingUpdate(`scheduled restart ${reason}`)) return;
     log.warn(`[RESTART]: Scheduled app restart (${reason}). Relaunching.`);
     app.relaunch();
     app.exit(0);

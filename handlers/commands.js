@@ -701,32 +701,45 @@ function handleIdentifyScreen(command) {
     }, 10000);
 }
 
+const DEFAULT_LOG_DAYS = 3;
+const LOG_UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
+
+// Success is the upload itself; only failures send feedback.
 async function handleGetLogs(command) {
-    const { getAllLogPaths, getLogDir } = require('../utils/logConfig');
+    const { getLogPathsForDays, getLogDir } = require('../utils/logConfig');
     const archiver = require('archiver');
-    const logFiles = getAllLogPaths();
-    const date = new Date().toISOString().split('T')[0];
-    const zipPath = path.join(getLogDir(), `all-logs-${context.deviceId}-${date}.zip`);
+    const FormData = require('form-data');
+    const days = Math.min(Math.max(Number(command.days) || DEFAULT_LOG_DAYS, 1), 30);
+    const zipPath = path.join(getLogDir(), `logs-${command.commandId}.zip`);
     const limitMb = Math.round(CONSTANTS.LOG_UPLOAD_MAX_BYTES / (1024 * 1024));
     let sizeMb = 0;
 
+    const removeZip = () => {
+        try {
+            if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+        } catch (e) {
+            log.warn(`[COMMAND]: Could not remove log archive: ${e.message}`);
+        }
+    };
+
     try {
-        const existingFiles = logFiles.filter((f) => fs.existsSync(f.path));
-        if (existingFiles.length === 0) {
-            sendCommandFeedback(command, 'error', 'No log files found.', 'noLogFiles');
+        const logFiles = getLogPathsForDays(days);
+        if (logFiles.length === 0) {
+            sendCommandFeedback(command, 'error', 'No log files found.', 'noLogFiles', { days });
             return;
         }
 
-        log.info(`[COMMAND]: Compressing ${existingFiles.length} log files into zip archive`);
+        log.info(`[COMMAND]: Archiving ${logFiles.length} log file(s) from the last ${days} day(s)`);
 
         await new Promise((resolve, reject) => {
             const output = fs.createWriteStream(zipPath);
-            const archive = archiver('zip', { zlib: { level: 9 } });
+            const archive = archiver('zip', { zlib: { level: 6 } });
             output.on('close', resolve);
             archive.on('error', reject);
             archive.pipe(output);
-            for (const entry of existingFiles) {
-                archive.file(entry.path, { name: entry.path.slice(getLogDir().length + 1) });
+            // Already gzipped.
+            for (const file of logFiles) {
+                archive.file(file.path, { name: file.name, store: file.compressed });
             }
             archive.finalize();
         });
@@ -742,40 +755,28 @@ async function handleGetLogs(command) {
                 'logsTooLarge',
                 { sizeMb, limitMb }
             );
-            fs.unlinkSync(zipPath);
             return;
         }
 
-        log.info(`[COMMAND]: Uploading all logs: ${zipPath} (${sizeMb} MB)`);
+        log.info(`[COMMAND]: Uploading log archive (${sizeMb} MB)`);
 
-        const fileContent = fs.readFileSync(zipPath);
-        const FormData = require('form-data');
+        // requestId must precede the file.
         const form = new FormData();
-        form.append('logFile', fileContent, { filename: path.basename(zipPath) });
-
-        const uploadUrl = `${getServerUrl()}/api/logs/upload-debug`;
-
-        const response = await axios.post(uploadUrl, form, {
-            headers: {
-                ...form.getHeaders(),
-                Authorization: `Bearer ${context.agentToken}`,
-            },
+        form.append('requestId', command.commandId);
+        form.append('logFile', fs.createReadStream(zipPath), {
+            filename: path.basename(zipPath),
+            knownLength: zipBytes,
         });
 
-        if (response.data && response.data.success) {
-            sendCommandFeedback(
-                command,
-                'success',
-                `Logs ready. Download URL: ${response.data.downloadUrl}`,
-                'logsReady'
-            );
-        } else {
-            throw new Error('Invalid server response');
-        }
-
-        if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+        await axios.post(`${getServerUrl()}/api/logs/upload`, form, {
+            headers: { ...form.getHeaders(), Authorization: `Bearer ${context.agentToken}` },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity,
+            timeout: LOG_UPLOAD_TIMEOUT_MS,
+        });
+        log.info('[COMMAND]: Log archive uploaded.');
     } catch (error) {
-        log.error('[COMMAND]: Error in GetLogs:', error);
+        log.error('[COMMAND]: Error in GetLogs:', error.message);
         if (error.response?.status === 413) {
             sendCommandFeedback(
                 command,
@@ -793,7 +794,8 @@ async function handleGetLogs(command) {
                 { reason: error.message }
             );
         }
-        if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+    } finally {
+        removeZip();
     }
 }
 

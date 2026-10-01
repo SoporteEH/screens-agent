@@ -44,34 +44,22 @@ function pingServer() {
     });
 }
 
-function pingInternet() {
-    return new Promise((resolve) => {
-        try {
-            const client = https;
-            const req = client.request(
-                {
-                    hostname: '1.1.1.1',
-                    port: 443,
-                    path: '/',
-                    method: 'HEAD',
-                    timeout: 4000,
-                },
-                (res) => {
-                    res.resume();
-                    resolve(true);
-                }
-            );
+// Via Chromium (net.fetch) so the system proxy applies, as it does for the content.
+const INTERNET_PROBES = ['https://www.gstatic.com/generate_204', 'https://1.1.1.1/'];
+const PROBE_TIMEOUT_MS = 4000;
 
-            req.on('error', () => resolve(false));
-            req.on('timeout', () => {
-                req.destroy();
-                resolve(false);
-            });
-            req.end();
-        } catch (e) {
-            resolve(false);
-        }
-    });
+function probe(target) {
+    const timeout = new Promise((resolve) => setTimeout(() => resolve(false), PROBE_TIMEOUT_MS));
+    const request = net
+        .fetch(target, { method: 'HEAD', cache: 'no-store' })
+        .then(() => true)
+        .catch(() => false);
+    return Promise.race([request, timeout]);
+}
+
+async function pingInternet() {
+    const results = await Promise.all(INTERNET_PROBES.map(probe));
+    return results.some(Boolean);
 }
 
 const STABLE_INTERVAL_MS = 15_000;
@@ -88,8 +76,9 @@ function startNetworkMonitoring(handlers) {
         if (stopped) return;
 
         const osOnline = net.isOnline();
-        const internetReachable = osOnline ? await pingInternet() : false;
-        const serverReachable = internetReachable ? await pingServer() : false;
+        const [internetReachable, serverReachable] = osOnline
+            ? await Promise.all([pingInternet(), pingServer()])
+            : [false, false];
 
         const hasStateChanged =
             internetReachable !== lastState.internetReachable ||

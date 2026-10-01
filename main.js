@@ -186,6 +186,10 @@ async function bootstrap() {
                     if (actions[command.action]) actions[command.action](command);
                 },
                 onAssetsUpdated: () => assetsService.syncLocalAssets(context.agentToken),
+                onUnauthorized: async () => {
+                    const { refreshAfterRejection } = require('./services/auth');
+                    if (await refreshAfterRejection()) context.socket?.forceReconnect?.();
+                },
                 onDeviceInfo: (device) => {
                     log.info('[SOCKET]: Device info received:', device.name);
                     const { setDeviceName, getDeviceName } = require('./services/identity');

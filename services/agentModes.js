@@ -80,7 +80,8 @@ const startNormalMode = async (context) => {
         restoreAllContent();
     }
 
-    connectSocket(config.agentToken);
+    // The startup refresh may have replaced it.
+    connectSocket(context.agentToken);
     initializeMonitors(context);
 
     const updateDelay =

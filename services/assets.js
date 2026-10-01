@@ -47,13 +47,28 @@ function getDirSizeBytes(dir) {
     }, 0);
 }
 
+// Streamed: assets are videos of up to 100 MB.
 function md5OfFile(filePath) {
-    const hash = crypto.createHash('md5');
-    hash.update(fs.readFileSync(filePath));
-    return hash.digest('hex');
+    return new Promise((resolve, reject) => {
+        const hash = crypto.createHash('md5');
+        fs.createReadStream(filePath)
+            .on('data', (chunk) => hash.update(chunk))
+            .on('end', () => resolve(hash.digest('hex')))
+            .on('error', reject);
+    });
 }
 
-async function syncDir(assets, targetDir, remotePath) {
+// Catches downloads truncated by a power loss.
+function isIncomplete(filePath, asset) {
+    if (typeof asset.size !== 'number') return false;
+    try {
+        return fs.statSync(filePath).size !== asset.size;
+    } catch (_) {
+        return true;
+    }
+}
+
+async function syncDir(assets, targetDir, remotePath, agentToken) {
     if (!fs.existsSync(targetDir)) {
         fs.mkdirSync(targetDir, { recursive: true });
     }
@@ -71,7 +86,11 @@ async function syncDir(assets, targetDir, remotePath) {
         }
     }
 
-    const filesToDownload = assets.filter((a) => !localFiles.includes(a.serverFilename));
+    const filesToDownload = assets.filter(
+        (a) =>
+            !localFiles.includes(a.serverFilename) ||
+            isIncomplete(path.join(targetDir, a.serverFilename), a)
+    );
 
     // Track size incrementally instead of re-walking the dir per download.
     const maxBytes = getMaxStorageBytes();
@@ -96,28 +115,36 @@ async function syncDir(assets, targetDir, remotePath) {
         log.debug(`[SYNC]: Downloading: ${asset.originalFilename}`);
         const url = `${SERVER_URL}${remotePath}${asset.serverFilename}`;
         const destPath = path.join(targetDir, asset.serverFilename);
+        // Only a complete, verified file gets the final name.
+        const partPath = `${destPath}.part`;
 
         try {
             const client = getHttpClient();
-            const res = await client.get(url, { responseType: 'stream' });
+            const res = await client.get(url, {
+                responseType: 'stream',
+                headers: { Authorization: `Bearer ${agentToken}` },
+            });
 
-            const fileStream = fs.createWriteStream(destPath);
+            const fileStream = fs.createWriteStream(partPath);
             await new Promise((resolve, reject) => {
+                res.data.on('error', reject);
                 res.data.pipe(fileStream);
                 fileStream.on('finish', resolve);
                 fileStream.on('error', reject);
             });
 
-            if (asset.md5) {
-                const actualMd5 = md5OfFile(destPath);
-                if (actualMd5 !== asset.md5) {
+            // `checksum` is the MD5.
+            if (asset.checksum && /^[a-f0-9]{32}$/i.test(asset.checksum)) {
+                const actualMd5 = await md5OfFile(partPath);
+                if (actualMd5 !== asset.checksum) {
                     log.error(
-                        `[SYNC]: MD5 mismatch for ${asset.originalFilename}. Expected: ${asset.md5}, got: ${actualMd5}. Discarding.`
+                        `[SYNC]: MD5 mismatch for ${asset.originalFilename}. Expected: ${asset.checksum}, got: ${actualMd5}. Discarding.`
                     );
-                    fs.unlinkSync(destPath);
+                    fs.unlinkSync(partPath);
                     continue;
                 }
             }
+            fs.renameSync(partPath, destPath);
 
             try {
                 currentSize += fs.statSync(destPath).size;
@@ -126,13 +153,35 @@ async function syncDir(assets, targetDir, remotePath) {
             }
             log.debug(`[SYNC]: Completed: ${asset.originalFilename}`);
         } catch (err) {
-            log.error(`[SYNC]: Error downloading ${asset.originalFilename}:`, err);
-            if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+            log.error(`[SYNC]: Error downloading ${asset.originalFilename}:`, err.message);
+            if (fs.existsSync(partPath)) fs.unlinkSync(partPath);
         }
     }
 }
 
+// One sync at a time; a request during a run triggers one more.
+let syncRunning = false;
+let syncPending = false;
+
 async function syncLocalAssets(agentToken) {
+    if (syncRunning) {
+        syncPending = true;
+        return false;
+    }
+    syncRunning = true;
+    try {
+        let result;
+        do {
+            syncPending = false;
+            result = await runSync(agentToken);
+        } while (syncPending);
+        return result;
+    } finally {
+        syncRunning = false;
+    }
+}
+
+async function runSync(agentToken) {
     log.info('[SYNC]: Initiating asset synchronization...');
 
     try {
@@ -145,7 +194,7 @@ async function syncLocalAssets(agentToken) {
 
         log.info(`[SYNC]: ${generalAssets.length} general assets`);
 
-        await syncDir(generalAssets, CONTENT_DIR, '/local-assets/');
+        await syncDir(generalAssets, CONTENT_DIR, '/local-assets/', agentToken);
 
         log.info('[SYNC]: Synchronization completed.');
         return true;

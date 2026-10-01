@@ -70,37 +70,59 @@ const errorTransport = new DailyRotateFile({
     format: winston.format.combine(warnAndAbove, fileFormat),
 });
 
+// One batch a minute; repeats collapse; a failed send is dropped (lines are on disk).
+const REMOTE_FLUSH_INTERVAL_MS = 60 * 1000;
+const REMOTE_MAX_DISTINCT = 200;
+const REMOTE_MAX_PER_BATCH = 50;
+const REMOTE_MAX_MESSAGE_CHARS = 1000;
+
 class ServerLogTransport extends winston.Transport {
     constructor(opts) {
         super({ ...opts, level: 'warn' });
+        this.buffer = new Map();
+        this.dropped = 0;
+        this.timer = setInterval(() => this.flush(), REMOTE_FLUSH_INTERVAL_MS);
+        this.timer.unref?.();
     }
 
     log(info, callback) {
-        setTimeout(() => {
-            try {
-                const { SERVER_URL, AGENT_VERSION } = require('../config/constants');
-                const { loadConfig } = require('./configManager');
-                const { getHttpClient } = require('./httpClient');
+        const message = String(info.message).slice(0, REMOTE_MAX_MESSAGE_CHARS);
+        const key = `${info.level}|${message}`;
+        const entry = this.buffer.get(key);
+        if (entry) entry.count++;
+        else if (this.buffer.size < REMOTE_MAX_DISTINCT) {
+            this.buffer.set(key, { level: info.level, message, count: 1 });
+        } else this.dropped++;
+        callback();
+    }
 
-                if (!SERVER_URL) return callback();
-                const config = loadConfig();
-                if (!config.deviceId || !config.agentToken) return callback();
+    flush() {
+        if (this.buffer.size === 0 && this.dropped === 0) return;
+        const all = Array.from(this.buffer.values());
+        const entries = all.slice(0, REMOTE_MAX_PER_BATCH);
+        const dropped = this.dropped + (all.length - entries.length);
+        this.buffer.clear();
+        this.dropped = 0;
 
-                const client = getHttpClient();
-                client.post('/api/logs', {
-                    level: info.level,
-                    message: info.message,
-                    deviceId: config.deviceId,
-                    agentVersion: AGENT_VERSION,
-                    timestamp: new Date().toISOString(),
-                }, {
-                    headers: { Authorization: `Bearer ${config.agentToken}` },
-                }).catch(() => { });
-            } catch (e) {
-                void e;
-            }
-            callback();
-        }, 0);
+        try {
+            const { SERVER_URL, AGENT_VERSION } = require('../config/constants');
+            const { loadConfig } = require('./configManager');
+            const { getHttpClient } = require('./httpClient');
+
+            if (!SERVER_URL) return;
+            const config = loadConfig();
+            if (!config.deviceId || !config.agentToken) return;
+
+            getHttpClient()
+                .post(
+                    '/api/logs',
+                    { entries, dropped, agentVersion: AGENT_VERSION },
+                    { headers: { Authorization: `Bearer ${config.agentToken}` } }
+                )
+                .catch(() => {});
+        } catch (e) {
+            void e;
+        }
     }
 }
 
@@ -193,17 +215,24 @@ function getGeneralLogPath() {
     return path.join(LOG_DIR, 'general.log');
 }
 
-// Used by GetLogs to build the log zip.
-function getAllLogPaths() {
+const LOG_FILE_DATE_RE = /^(general|error)-(\d{4}-\d{2}-\d{2})\.log(\.\d+)?(\.gz)?$/;
+
+function getLogPathsForDays(days) {
+    const today = new Date();
+    const oldest = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (days - 1));
+    const pad = (n) => String(n).padStart(2, '0');
+    const cutoff = `${oldest.getFullYear()}-${pad(oldest.getMonth() + 1)}-${pad(oldest.getDate())}`;
     try {
-        const files = fs.readdirSync(LOG_DIR);
-        return files
-            .filter((f) => (f.startsWith('general') || f.startsWith('error')) && (f.endsWith('.log') || f.endsWith('.gz')))
-            .map((f) => ({
-                name: f.replace('.log', '').replace('.gz', ''),
-                path: path.join(LOG_DIR, f),
+        return fs
+            .readdirSync(LOG_DIR)
+            .map((name) => ({ name, match: name.match(LOG_FILE_DATE_RE) }))
+            .filter(({ match }) => match && match[2] >= cutoff)
+            .map(({ name }) => ({
+                name,
+                path: path.join(LOG_DIR, name),
+                compressed: name.endsWith('.gz'),
             }));
-    } catch (err) {
+    } catch {
         return [];
     }
 }
@@ -239,6 +268,6 @@ module.exports = {
     briefError,
     getLogDir,
     getGeneralLogPath,
-    getAllLogPaths,
+    getLogPathsForDays,
     cleanupOldLogs,
 };

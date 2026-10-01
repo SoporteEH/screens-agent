@@ -2,6 +2,7 @@ const fs = require('fs');
 const { log } = require('../utils/logConfig');
 const { STATE_FILE_PATH } = require('../config/constants');
 const { encryptCredentials, decryptCredentials } = require('../utils/configManager');
+const { writeFileAtomic } = require('../utils/atomicWrite');
 
 // Credentials stored encrypted
 function loadLastState() {
@@ -34,7 +35,7 @@ function loadLastState() {
 
             // Only rewrite the file for the legacy string->object migration.
             if (needsStructuralMigration) {
-                fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(persistedState, null, 2));
+                writeFileAtomic(STATE_FILE_PATH, JSON.stringify(persistedState, null, 2));
             }
             return migratedState;
         }
@@ -78,7 +79,7 @@ function migrateStateEncryption() {
         }
 
         if (migrated > 0) {
-            fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2));
+            writeFileAtomic(STATE_FILE_PATH, JSON.stringify(state, null, 2));
             log.info(
                 `[STATE]: Re-encrypted plaintext credentials for ${migrated} screen(s) in state.json`
             );
@@ -102,7 +103,7 @@ function cleanOrphanedState(validSlotIds) {
     }
 
     try {
-        fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(cleanedState, null, 2));
+        writeFileAtomic(STATE_FILE_PATH, JSON.stringify(cleanedState, null, 2));
     } catch (error) {
         log.error('[STATE]: Error cleaning orphaned state:', error);
     }
@@ -112,7 +113,7 @@ function cleanOrphanedState(validSlotIds) {
 
 function clearAllState() {
     try {
-        fs.writeFileSync(STATE_FILE_PATH, JSON.stringify({}));
+        writeFileAtomic(STATE_FILE_PATH, JSON.stringify({}));
         log.info('[STATE]: All screen state cleared.');
     } catch (error) {
         log.error('[STATE]: Error clearing state file:', error);
@@ -220,7 +221,7 @@ function _saveCurrentState(
     }
 
     try {
-        fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2));
+        writeFileAtomic(STATE_FILE_PATH, JSON.stringify(state, null, 2));
         log.debug(
             `[STATE]: State saved for screen ${screenIndex}: ${url || '(empty)'}${refreshInterval ? ` (auto-refresh: ${refreshInterval}s)` : ''}`
         );

@@ -10,6 +10,27 @@ let checksumRetries = 0;
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 let updateCheckTimer = null;
 
+// Routine updates wait for the quiet hours; forced ones install at once.
+const INSTALL_WINDOW_START_HOUR = 3;
+const INSTALL_WINDOW_END_HOUR = 6;
+let installRequested = false;
+let installWindowTimer = null;
+let downloadedVersion = null;
+
+function inInstallWindow(date = new Date()) {
+    const hour = date.getHours();
+    return hour >= INSTALL_WINDOW_START_HOUR && hour < INSTALL_WINDOW_END_HOUR;
+}
+
+function installNow(reason) {
+    if (installWindowTimer) {
+        clearInterval(installWindowTimer);
+        installWindowTimer = null;
+    }
+    log.info(`[UPDATER]: Installing update (${reason}).`);
+    setTimeout(() => autoUpdater.quitAndInstall(true, true), 5000);
+}
+
 // Dev builds only run updates if dev-app-update.yml exists; otherwise electron-updater spams ENOENT.
 const DEV_UPDATE_CONFIG = path.join(__dirname, '..', 'dev-app-update.yml');
 function updatesEnabled() {
@@ -144,12 +165,25 @@ async function checkForUpdates() {
 
     autoUpdater.on('update-downloaded', (info) => {
         log.info('[UPDATER]: Update downloaded:', info.version);
+        downloadedVersion = info.version;
+        if (installRequested || inInstallWindow()) {
+            setUpdateState('downloaded', {
+                message: 'Update downloaded. Restarting...',
+                version: info.version,
+            });
+            installNow(installRequested ? 'forced' : 'install window');
+            return;
+        }
+
         setUpdateState('downloaded', {
-            message: 'Update downloaded. Restarting...',
+            message: `Update downloaded. It will install between ${INSTALL_WINDOW_START_HOUR}:00 and ${INSTALL_WINDOW_END_HOUR}:00.`,
             version: info.version,
         });
-
-        setTimeout(() => autoUpdater.quitAndInstall(true, true), 5000);
+        if (!installWindowTimer) {
+            installWindowTimer = setInterval(() => {
+                if (inInstallWindow()) installNow('install window');
+            }, 60 * 1000);
+        }
     });
 
     autoUpdater.disableWebInstaller = false;
@@ -172,6 +206,13 @@ async function checkForUpdates() {
     }
 }
 
+// app.exit() skips autoInstallOnAppQuit, so a scheduled restart installs it here.
+function installPendingUpdate(reason) {
+    if (!downloadedVersion) return false;
+    installNow(`${reason}, ${downloadedVersion}`);
+    return true;
+}
+
 function isUpdating() {
     return isCheckingForUpdate;
 }
@@ -187,6 +228,7 @@ async function handleForceUpdate() {
     }
     log.info('[UPDATER]: Forcing update check...');
 
+    installRequested = true;
     isCheckingForUpdate = true;
     await checkForUpdates();
 
@@ -235,4 +277,5 @@ module.exports = {
     handleForceUpdate,
     handleSetChannel,
     getUpdateState,
+    installPendingUpdate,
 };

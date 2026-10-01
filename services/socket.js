@@ -4,6 +4,8 @@ const { SERVER_URL, CONSTANTS } = require('../config/constants');
 
 // Bounds how often an external trigger may abort the manager's backoff.
 const FORCE_RECONNECT_MIN_INTERVAL_MS = 10 * 1000;
+// Another machine holds this identity: step aside.
+const DUPLICATE_BACKOFF_MS = 10 * 60 * 1000;
 
 function connectToSocketServer(token, handlers) {
     let consecutiveFailures = 0;
@@ -11,6 +13,8 @@ function connectToSocketServer(token, handlers) {
     let circuitBreakerTimer = null;
     let lastForcedAt = 0;
     let hasConnected = false;
+    let holdUntil = 0;
+    const onHold = () => Date.now() < holdUntil;
 
     const socket = io(SERVER_URL, {
         reconnection: true,
@@ -52,7 +56,7 @@ function connectToSocketServer(token, handlers) {
         log.info(`[SOCKET]: Disconnected: ${reason}`);
         if (handlers.onDisconnect) handlers.onDisconnect(reason);
 
-        if (reason === 'io server disconnect') {
+        if (reason === 'io server disconnect' && !onHold()) {
             socket.connect();
         }
     });
@@ -95,6 +99,8 @@ function connectToSocketServer(token, handlers) {
         }
 
         log.error(`[SOCKET]: Connection error: ${err.message}`);
+        // Expired or revoked token.
+        if (err.message === 'Unauthorized') handlers.onUnauthorized?.();
     });
 
     socket.io.on('reconnect_error', (err) => {
@@ -106,6 +112,18 @@ function connectToSocketServer(token, handlers) {
     socket.on('assets-updated', () => handlers.onAssetsUpdated?.());
     socket.on('force-reprovision', () => handlers.onForceReprovision?.());
     socket.on('reset-screens', () => handlers.onResetScreens?.());
+    socket.on('duplicate-device', () => {
+        log.error(
+            `[SOCKET]: Another machine is connected with this device identity (cloned disk image?). ` +
+                `Stepping aside for ${DUPLICATE_BACKOFF_MS / 60000} minutes; screens keep playing locally.`
+        );
+        holdUntil = Date.now() + DUPLICATE_BACKOFF_MS;
+        socket.disconnect();
+        setTimeout(() => {
+            holdUntil = 0;
+            socket.connect();
+        }, DUPLICATE_BACKOFF_MS);
+    });
 
     socket.clearCircuitBreaker = resetCircuitBreaker;
 
@@ -113,7 +131,7 @@ function connectToSocketServer(token, handlers) {
     // (it guards on _reconnecting), so a caller that just proved the server is up
     // has to drop that wait first. disconnect() cancels it; connect() then dials now.
     socket.forceReconnect = () => {
-        if (socket.connected) return false;
+        if (socket.connected || onHold()) return false;
 
         const now = Date.now();
         if (now - lastForcedAt < FORCE_RECONNECT_MIN_INTERVAL_MS) return false;

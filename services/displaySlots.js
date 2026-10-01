@@ -5,6 +5,7 @@ const { screen } = require('electron');
 const fs = require('fs');
 const { log } = require('../utils/logConfig');
 const { DISPLAYS_FILE_PATH, STATE_FILE_PATH } = require('../config/constants');
+const { writeFileAtomic } = require('../utils/atomicWrite');
 
 function loadSlots() {
     try {
@@ -22,7 +23,7 @@ function loadSlots() {
 
 function saveSlots(slots) {
     try {
-        fs.writeFileSync(
+        writeFileAtomic(
             DISPLAYS_FILE_PATH,
             JSON.stringify({ version: 1, slots }, null, 2)
         );

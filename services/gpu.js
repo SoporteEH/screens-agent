@@ -2,6 +2,7 @@ const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { log } = require('../utils/logConfig');
+const { writeFileAtomic } = require('../utils/atomicWrite');
 
 const GPU_CONFIG_FILE = path.join(app.getPath('userData'), 'gpu-config.json');
 
@@ -23,7 +24,7 @@ function readGpuConfig() {
 
 function writeGpuConfig(config) {
     try {
-        fs.writeFileSync(GPU_CONFIG_FILE, JSON.stringify(config, null, 2));
+        writeFileAtomic(GPU_CONFIG_FILE, JSON.stringify(config, null, 2));
         return true;
     } catch (e) {
         log.error('[GPU]: Error saving state:', e);
