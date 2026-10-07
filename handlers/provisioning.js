@@ -31,6 +31,7 @@ function startProvisioningMode() {
     let pendingServerUrl = '';
     let agentTokenNonce = '';
     let socket = null;
+    let linking = false;
 
     log.info(`[PROVISIONING]: Machine ID: ${deviceId}`);
 
@@ -110,6 +111,18 @@ function startProvisioningMode() {
             log.info('[PROVISIONING]: Received agent-token nonce.');
         });
 
+        // The handshake burned the setup code, so a reconnect would only be refused: stop and ask for a new one.
+        socket.on('disconnect', (reason) => {
+            if (linking || reason === 'io client disconnect') return;
+            log.warn(`[PROVISIONING]: Connection lost (${reason}). The setup code is spent.`);
+            socket.disconnect();
+            provisionWindow.webContents.send('provision-status', {
+                type: 'error',
+                message: 'Connection to the server was lost. Generate a new setup code and connect again.',
+                clearNonce: true,
+            });
+        });
+
         socket.on('connect_error', (error) => {
             log.error(`[PROVISIONING]: Connection error to ${pendingServerUrl}: ${error.message}`);
             provisionWindow.webContents.send('provision-status', {
@@ -120,6 +133,7 @@ function startProvisioningMode() {
 
         socket.on('provision-success', async () => {
             log.info('[PROVISIONING]: Successful linking detected. Requesting token...');
+            linking = true;
 
             try {
                 const response = await fetch(`${pendingServerUrl}/api/auth/agent-token`, {
@@ -145,6 +159,7 @@ function startProvisioningMode() {
                 app.relaunch();
                 app.exit(0);
             } catch (err) {
+                linking = false;
                 log.error('[PROVISIONING]: Failed to finalize linking:', err.message);
                 provisionWindow.webContents.send('provision-status', {
                     type: 'error',

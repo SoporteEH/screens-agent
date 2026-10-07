@@ -233,7 +233,7 @@
         });
 
         // Listen for pairing status
-        window.electron.on('provision-status', ({ type, message }) => {
+        window.electron.on('provision-status', ({ type, message, clearNonce }) => {
             statusMessage.innerText = message;
             statusMessage.style.color = type === 'error' ? '#ef4444' : (type === 'success' ? '#10b981' : 'var(--color-text-secondary)');
 
@@ -241,6 +241,9 @@
                 idSection.style.display = 'block';
                 serverUrlInput.parentElement.style.display = 'none';
             } else {
+                // A success may have hidden the form; any error must bring it back.
+                serverUrlInput.parentElement.style.display = '';
+                if (clearNonce) nonceInput.value = '';
                 connectBtn.disabled = false;
                 serverUrlInput.disabled = false;
                 nonceInput.disabled = false;
