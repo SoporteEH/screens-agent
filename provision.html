@@ -6,10 +6,7 @@
     <title>Device Setup</title>
     <style>
         .titlebar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
+            flex-shrink: 0;
             height: 32px;
             background-color: var(--color-bg-base);
             display: flex;
@@ -73,9 +70,6 @@
             fill: currentColor;
         }
 
-        body {
-            padding-top: 32px;
-        }
     </style>
     <link rel="stylesheet" href="css/theme.css">
     <style>
@@ -87,8 +81,6 @@
             --spacing-5: 16px;
             --spacing-10: 24px;
             --border-radius-lg: 6px;
-            --border-radius-xl: 8px;
-            --shadow-lg: 0 6px 20px rgba(0, 0, 0, 0.25);
         }
 
         * {
@@ -97,25 +89,40 @@
             padding: 0;
         }
 
+        /* The window is transparent: the rounded corners are drawn by .window, not by the OS. */
+        html,
+        body {
+            height: 100%;
+            background: transparent;
+        }
+
         body {
             font-family: var(--font-sans);
-            background-color: var(--color-bg-base);
             color: var(--color-text-primary);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
             text-align: center;
-            margin: 0;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
         }
 
+        .window {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--color-bg-base);
+            border: 1px solid var(--color-border);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .content {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
         .container {
-            background-color: var(--color-bg-surface);
             padding: var(--spacing-10);
-            border-radius: var(--border-radius-xl);
-            box-shadow: var(--shadow-lg);
             max-width: 90%;
         }
 
@@ -149,6 +156,7 @@
 </head>
 
 <body>
+    <div class="window">
     <div class="titlebar">
         <div class="titlebar-title">
             <div class="titlebar-icon"></div>
@@ -167,6 +175,7 @@
         </div>
     </div>
 
+    <main class="content">
     <div class="container" id="config-container">
         <h1>Device Setup</h1>
 
@@ -218,6 +227,8 @@
             <p style="font-size: 13px; margin-bottom: 8px;">Machine ID:</p>
             <div id="deviceId">Loading ID...</div>
         </div>
+    </div>
+    </main>
     </div>
     <script>
         const deviceIdElement = document.getElementById('deviceId');

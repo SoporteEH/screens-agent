@@ -49,7 +49,9 @@ function startProvisioningMode() {
             devTools: false,
         },
         title: 'Linking - ScreensWeb',
-        backgroundColor: '#0a0a0a',
+        // Transparent so provision.html can round the corners; Windows 10 never rounds a frameless window.
+        transparent: true,
+        backgroundColor: '#00000000',
         frame: false,
         resizable: false,
     });
