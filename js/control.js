@@ -99,10 +99,9 @@ function applyUpdateState(s) {
     } else if (state === 'downloading') {
         versionStatus.className = 'version-status update-available';
         versionStatusIcon.textContent = 'system_update_alt';
-        versionStatusText.textContent =
-            s.percent != null
-                ? `Descargando actualización… ${s.percent}%`
-                : 'Descargando actualización…';
+        versionStatusText.textContent = Number.isFinite(s.percent)
+            ? `Descargando actualización… ${s.percent}%`
+            : 'Descargando actualización…';
     } else if (state === 'downloaded') {
         versionStatus.className = 'version-status update-available';
         versionStatusIcon.textContent = 'system_update_alt';
@@ -117,7 +116,10 @@ function applyUpdateState(s) {
 }
 
 // Show last known verdict immediately, then trigger a re-check.
-window.electron.getUpdateState().then(applyUpdateState).catch(() => {});
+window.electron
+    .getUpdateState()
+    .then(applyUpdateState)
+    .catch(() => {});
 window.electron.sendAction('check-update');
 
 window.electron.onUpdateStatus((status) => {

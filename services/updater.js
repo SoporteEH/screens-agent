@@ -80,7 +80,7 @@ function configureUpdater() {
             log.warn(briefError(msg));
         },
         error: (msg) => log.error(briefError(msg)),
-        debug: (msg) => log.debug(msg)
+        debug: (msg) => log.debug(msg),
     };
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
@@ -140,13 +140,18 @@ async function checkForUpdates() {
                 autoUpdater.allowDowngrade = true;
                 setTimeout(() => autoUpdater.checkForUpdates(), 5000);
             } else {
-                log.error('[UPDATER]: Max checksum retries reached. Suspending updates for 12 hours.');
+                log.error(
+                    '[UPDATER]: Max checksum retries reached. Suspending updates for 12 hours.'
+                );
                 checksumRetries = 0;
                 // Reuses isCheckingForUpdate as a suspend flag for 12h.
                 isCheckingForUpdate = true;
-                setTimeout(() => {
-                    isCheckingForUpdate = false;
-                }, 12 * 60 * 60 * 1000);
+                setTimeout(
+                    () => {
+                        isCheckingForUpdate = false;
+                    },
+                    12 * 60 * 60 * 1000
+                );
             }
         }
     });
@@ -200,7 +205,7 @@ async function checkForUpdates() {
         log.info('[UPDATER]: Periodic update check started (every 60 min).');
         updateCheckTimer = setInterval(() => {
             if (!isCheckingForUpdate) {
-                autoUpdater.checkForUpdates().catch(() => { });
+                autoUpdater.checkForUpdates().catch(() => {});
             }
         }, UPDATE_CHECK_INTERVAL_MS);
     }

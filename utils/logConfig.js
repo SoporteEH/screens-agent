@@ -22,7 +22,6 @@ if (!fs.existsSync(LOG_DIR)) {
     fs.mkdirSync(LOG_DIR, { recursive: true });
 }
 
-
 const fileFormat = winston.format.combine(
     winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss.SSS' }),
     winston.format.printf(({ timestamp, level, message }) => {
@@ -172,7 +171,9 @@ function applyConfiguredLogLevel() {
 // Collapses HttpError-style multi-line dumps (headers, cookies) to their first line.
 function briefError(err) {
     if (!err) return 'unknown error';
-    const first = String(err.message || err).split('\n')[0].trim();
+    const first = String(err.message || err)
+        .split('\n')[0]
+        .trim();
     const name = err.name && err.name !== 'Error' ? `${err.name}: ` : '';
     return `${name}${first}`;
 }
@@ -253,10 +254,12 @@ function cleanupOldLogs() {
                     fs.unlinkSync(filePath);
                     console.log(`[CLEANUP]: Deleted old log file: ${file}`);
                 }
-            } catch (e) {
+            } catch {
+                // A file in use stays until the next cleanup.
             }
         });
-    } catch (err) {
+    } catch {
+        // No log directory yet.
     }
 }
 

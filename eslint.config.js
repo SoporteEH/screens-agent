@@ -34,12 +34,31 @@ export default [
         rules: {
             'prettier/prettier': 'warn',
             'no-console': 'off',
-            'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+            'no-unused-vars': [
+                'warn',
+                { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+            ],
             'no-undef': 'error',
             'prefer-const': 'warn',
             'no-var': 'warn',
             eqeqeq: ['warn', 'always'],
             curly: ['warn', 'all'],
+        },
+    },
+    {
+        // Renderer scripts loaded by the HTML pages, not by Node.
+        files: ['js/**/*.js'],
+        languageOptions: {
+            sourceType: 'script',
+            globals: {
+                window: 'readonly',
+                document: 'readonly',
+                globalThis: 'readonly',
+                Intl: 'readonly',
+                Image: 'readonly',
+                performance: 'readonly',
+                requestAnimationFrame: 'readonly',
+            },
         },
     },
     eslintConfigPrettier,

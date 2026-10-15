@@ -11,11 +11,9 @@ let appliedKey = null;
 let lastFiredKey = null;
 
 function scheduleKey(schedule) {
-    return [
-        schedule?.mode || 'off',
-        schedule?.intervalHours ?? '',
-        schedule?.dailyTime ?? '',
-    ].join('|');
+    return [schedule?.mode || 'off', schedule?.intervalHours ?? '', schedule?.dailyTime ?? ''].join(
+        '|'
+    );
 }
 
 function parseDailyTime(value) {
@@ -53,7 +51,9 @@ function applyRestartSchedule(schedule) {
     if (mode === 'interval') {
         const hours = Number(schedule.intervalHours);
         if (!Number.isFinite(hours) || hours < 1) {
-            log.warn(`[RESTART]: Ignoring interval schedule with invalid hours: ${schedule.intervalHours}`);
+            log.warn(
+                `[RESTART]: Ignoring interval schedule with invalid hours: ${schedule.intervalHours}`
+            );
             return;
         }
         const intervalMs = hours * 60 * 60 * 1000;

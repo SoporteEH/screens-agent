@@ -106,7 +106,10 @@ function main() {
         if (markerInLogFiles()) {
             finish(true, 'boot marker found in log file (process exited after booting)');
         } else {
-            finish(false, `process exited early (code=${code}, signal=${signal}) before reaching boot marker`);
+            finish(
+                false,
+                `process exited early (code=${code}, signal=${signal}) before reaching boot marker`
+            );
         }
     });
 

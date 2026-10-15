@@ -4,7 +4,6 @@ const path = require('path');
 const https = require('https');
 const { io } = require('socket.io-client');
 const { log } = require('../utils/logConfig');
-const { SERVER_URL } = require('../config/constants');
 const { saveConfig } = require('../utils/configManager');
 const { getMachineId } = require('../services/device');
 
@@ -73,10 +72,13 @@ function startProvisioningMode() {
 
         // Packaged builds must provision over HTTPS with a validated cert: first contact
         if (app.isPackaged && !isHttps && !isPrivateHost(pendingServerUrl)) {
-            log.error(`[PROVISIONING]: Rejected non-HTTPS server URL in packaged build: ${pendingServerUrl}`);
+            log.error(
+                `[PROVISIONING]: Rejected non-HTTPS server URL in packaged build: ${pendingServerUrl}`
+            );
             provisionWindow.webContents.send('provision-status', {
                 type: 'error',
-                message: 'The server URL must use HTTPS (plain HTTP is only allowed for local network addresses).',
+                message:
+                    'The server URL must use HTTPS (plain HTTP is only allowed for local network addresses).',
             });
             return;
         }
@@ -86,9 +88,10 @@ function startProvisioningMode() {
 
         const allowInsecureTLS =
             process.env.ALLOW_INSECURE_PROVISIONING_TLS === '1' && !app.isPackaged;
-        const httpsAgent = isHttps && allowInsecureTLS
-            ? new https.Agent({ rejectUnauthorized: false })
-            : undefined;
+        const httpsAgent =
+            isHttps && allowInsecureTLS
+                ? new https.Agent({ rejectUnauthorized: false })
+                : undefined;
 
         socket = io(pendingServerUrl, {
             auth: { provisioning: true, nonce },
@@ -120,7 +123,8 @@ function startProvisioningMode() {
             socket.disconnect();
             provisionWindow.webContents.send('provision-status', {
                 type: 'error',
-                message: 'Connection to the server was lost. Generate a new setup code and connect again.',
+                message:
+                    'Connection to the server was lost. Generate a new setup code and connect again.',
                 clearNonce: true,
             });
         });

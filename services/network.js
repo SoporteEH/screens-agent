@@ -1,10 +1,9 @@
 // Active detection: OS check + server ping.
 const { net } = require('electron');
 const { log } = require('../utils/logConfig');
-const { CONSTANTS, getServerUrl } = require('../config/constants');
+const { getServerUrl } = require('../config/constants');
 const http = require('http');
 const https = require('https');
-const url = require('url');
 
 function pingServer() {
     return new Promise((resolve) => {
@@ -38,7 +37,7 @@ function pingServer() {
                 resolve(false);
             });
             req.end();
-        } catch (e) {
+        } catch {
             resolve(false);
         }
     });
@@ -117,7 +116,9 @@ function startNetworkMonitoring(handlers) {
 
     setTimeout(runCheck, 1000);
 
-    return () => { stopped = true; };
+    return () => {
+        stopped = true;
+    };
 }
 
 module.exports = { startNetworkMonitoring, pingServer };

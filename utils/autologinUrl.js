@@ -1,8 +1,4 @@
-const AUTOLOGIN_HOSTS = new Set([
-    'lcr.sportradar.com',
-    'luckiatv.com',
-    'luckia-tv.com',
-]);
+const AUTOLOGIN_HOSTS = new Set(['lcr.sportradar.com', 'luckiatv.com', 'luckia-tv.com']);
 
 const AUTOLOGIN_DOMAIN_SUFFIXES = ['.luckiatv.com', '.luckia-tv.com'];
 

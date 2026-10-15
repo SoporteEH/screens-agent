@@ -11,9 +11,13 @@ async function refreshAgentToken(currentAgentToken) {
     log.info('[AUTH]: Refreshing agent token...');
     try {
         const client = getHttpClient();
-        const { data } = await client.post('/api/auth/agent-refresh', {}, {
-            headers: { Authorization: `Bearer ${currentAgentToken}` },
-        });
+        const { data } = await client.post(
+            '/api/auth/agent-refresh',
+            {},
+            {
+                headers: { Authorization: `Bearer ${currentAgentToken}` },
+            }
+        );
 
         const config = loadConfig();
         config.agentToken = data.token;
@@ -41,7 +45,8 @@ async function refreshIfNeeded({ force = false } = {}) {
         const remainingMs = decoded.exp * 1000 - Date.now();
         if (!force && remainingMs >= REFRESH_WHEN_REMAINING_MS) return false;
 
-        if (remainingMs <= 0) log.warn('[AUTH]: Token already expired, attempting recovery refresh...');
+        if (remainingMs <= 0)
+            log.warn('[AUTH]: Token already expired, attempting recovery refresh...');
         else if (force) log.warn('[AUTH]: Server rejected the token, attempting a refresh...');
         else log.info('[AUTH]: Token near expiration, refreshing...');
 

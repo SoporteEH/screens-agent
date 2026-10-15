@@ -13,7 +13,7 @@ function getHardwareKey() {
     try {
         const { machineIdSync } = require('node-machine-id');
         _hardwareKey = `screensweb-${machineIdSync({ original: true })}`;
-    } catch (e) {
+    } catch {
         _hardwareKey = null;
     }
     return _hardwareKey;
@@ -23,22 +23,26 @@ function initStore() {
     const hwKey = getHardwareKey();
 
     if (!hwKey) {
-        log.error('[CONFIG]: Hardware ID unavailable. The agent token will NOT be persisted — device requires re-provisioning after each restart.');
+        log.error(
+            '[CONFIG]: Hardware ID unavailable. The agent token will NOT be persisted — device requires re-provisioning after each restart.'
+        );
         _usingFallbackKey = true;
         return new Store({ name: 'config', encryptionKey: LEGACY_KEY, clearInvalidConfig: true });
     }
 
     // Non-destructive probe (clearInvalidConfig: false)
     try {
-        const hwStore = new Store({ name: 'config', encryptionKey: hwKey, clearInvalidConfig: false });
+        const hwStore = new Store({
+            name: 'config',
+            encryptionKey: hwKey,
+            clearInvalidConfig: false,
+        });
         const data = hwStore.store;
 
         if (data && Object.keys(data).length > 0) {
             return hwStore;
         }
-    } catch (_) {
-
-    }
+    } catch (_) {}
 
     let legacyData = null;
     try {
@@ -51,11 +55,13 @@ function initStore() {
         if (data && Object.keys(data).length > 0) {
             legacyData = { ...data };
         }
-    } catch (_) {
-        
-    }
+    } catch (_) {}
 
-    const finalStore = new Store({ name: 'config', encryptionKey: hwKey, clearInvalidConfig: true });
+    const finalStore = new Store({
+        name: 'config',
+        encryptionKey: hwKey,
+        clearInvalidConfig: true,
+    });
 
     if (legacyData) {
         Object.entries(legacyData).forEach(([k, v]) => finalStore.set(k, v));

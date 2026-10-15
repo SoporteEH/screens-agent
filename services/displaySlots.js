@@ -23,10 +23,7 @@ function loadSlots() {
 
 function saveSlots(slots) {
     try {
-        writeFileAtomic(
-            DISPLAYS_FILE_PATH,
-            JSON.stringify({ version: 1, slots }, null, 2)
-        );
+        writeFileAtomic(DISPLAYS_FILE_PATH, JSON.stringify({ version: 1, slots }, null, 2));
     } catch (error) {
         log.error('[SLOTS]: Error saving displays file:', error);
     }
@@ -129,8 +126,7 @@ function pickSlotForDisplay(display, freeSlotIds, slots) {
         const slot = slots[slotId];
         if (typeof slot.x === 'number') {
             const dist =
-                Math.abs(slot.x - display.bounds.x) +
-                Math.abs((slot.y ?? 0) - display.bounds.y);
+                Math.abs(slot.x - display.bounds.x) + Math.abs((slot.y ?? 0) - display.bounds.y);
             if (dist < bestDist) {
                 bestDist = dist;
                 best = slotId;
@@ -213,10 +209,7 @@ async function reconcileDisplays(hardwareIdToDisplayMap) {
     }
 
     // Overflow: genuinely new displays get a brand-new slot number
-    let maxSlot = Object.keys(slots).reduce(
-        (max, id) => Math.max(max, Number(id) || 0),
-        0
-    );
+    let maxSlot = Object.keys(slots).reduce((max, id) => Math.max(max, Number(id) || 0), 0);
     for (const display of unmatched) {
         maxSlot += 1;
         const slotId = String(maxSlot);

@@ -1,0 +1,3 @@
+# Prettier and ESLint expect LF; without this, Windows checkouts (core.autocrlf) turn every line
+# into a lint warning.
+* text=auto eol=lf
