@@ -43,10 +43,27 @@
         .status-dot.server-down     { background: #9ca3af; }
         .status-dot.offline         { background: #b55353; }
         .status-dot.content-stalled { background: #d08c2e; }
+
+        /* Playlist layers (js/playlist-engine.js): the newest layer sits on top. */
+        #playlistRoot { position: absolute; inset: 0; background: #000; display: none; }
+        .pl-layer { position: absolute; inset: 0; background: #000; opacity: 0; }
+        .pl-layer img, .pl-layer video, .pl-layer iframe {
+            display: block; width: 100%; height: 100%; border: 0; object-fit: contain; background: #000;
+        }
+        .pl-layer.pl-fade { transition: opacity 0.6s ease-in-out; }
+        .pl-layer.pl-slide { opacity: 1; transform: translateX(100%); transition: transform 0.6s ease-in-out; }
+        .pl-layer.pl-shown { opacity: 1; transform: none; }
+        .pl-layer.pl-leave-slide { transform: translateX(-100%); transition: transform 0.6s ease-in-out; }
+        .pl-layer.pl-leave-black { opacity: 0; transition: opacity 0.3s ease-in; }
     </style>
+    <script src="js/playlist-schedule.js"></script>
+    <script src="js/playlist-sequencer.js"></script>
+    <script src="js/media-watchdog.js"></script>
+    <script src="js/playlist-engine.js"></script>
 </head>
 <body>
     <iframe id="contentFrame" style="display:none;" allow="autoplay; fullscreen; encrypted-media"></iframe>
+    <div id="playlistRoot"></div>
 
     <div class="no-content" id="noContent">
         <h1>SIN CONTENIDO ASIGNADO</h1>
@@ -64,6 +81,30 @@
         let frame = document.getElementById('contentFrame');
         const noContent = document.getElementById('noContent');
         const statusDot = document.getElementById('statusDot');
+        const playlistRoot = document.getElementById('playlistRoot');
+
+        const playlist = PlaylistEngine.create(playlistRoot, {
+            onHealth: (state) => setContentState(state === 'stalled' ? 'stalled' : 'ok'),
+            onEmpty: (empty) => {
+                noContent.style.display = empty ? '' : 'none';
+            },
+            onNowPlaying: (info) => window.playerAPI.reportNowPlaying({ ...info, screenIndex }),
+        });
+
+        // Single-content frames go away while a playlist plays, and the other way round.
+        function leaveSingleContent() {
+            generation++;
+            document.querySelectorAll('body > iframe').forEach((f) => {
+                f.src = 'about:blank';
+                f.style.display = 'none';
+            });
+        }
+
+        function leavePlaylist() {
+            if (!playlist.isActive()) return;
+            playlist.stop();
+            playlistRoot.style.display = 'none';
+        }
 
         const STATUS_TITLES = {
             connected: 'Connected',
@@ -88,6 +129,7 @@
         function setStatus(state) {
             serverState = state;
             renderStatus();
+            playlist.setNetwork(state);
         }
 
         function setContentState(state) {
@@ -120,6 +162,7 @@
         let generation = 0;
 
         function showContent(url) {
+            leavePlaylist();
             const gen = ++generation;
             const resolved = resolveUrl(url);
             if (!resolved) {
@@ -209,7 +252,8 @@
             const midnight = new Date(now);
             midnight.setHours(24, 0, 5, 0);
             setTimeout(() => {
-                if (activeUrl) showContent(assignedUrl || activeUrl);
+                // A playlist re-reads its own rules every minute.
+                if (activeUrl && !playlist.isActive()) showContent(assignedUrl || activeUrl);
                 scheduleMidnightRefresh();
             }, midnight - now);
         }
@@ -222,8 +266,18 @@
             if (isFirst) console.log('[PLAYER] Initialized for screen=' + idx);
         });
 
-        window.playerAPI.onShow(({ url, contentName, fallbackUrl: fb }) => {
+        window.playerAPI.onShow(({ url, contentName, fallbackUrl: fb, playlist: manifest }) => {
             fallbackUrl = fb || null;
+            if (manifest) {
+                if (!playlist.isActive()) leaveSingleContent();
+                assignedUrl = url || '';
+                activeUrl = assignedUrl;
+                noContent.style.display = 'none';
+                playlistRoot.style.display = 'block';
+                // Idempotent: the engine ignores a manifest identical to the one it plays.
+                playlist.load(manifest, fallbackUrl);
+                return;
+            }
             const target = url || '';
             // Idempotent: recovery and reconciliation re-push
             const healthy = activeUrl === (resolveUrl(target) || '') && contentState !== 'stalled';
@@ -235,7 +289,13 @@
 
         window.playerAPI.onStatus(({ state }) => setStatus(state));
 
+        window.playerAPI.onItemFailed(({ url }) => playlist.itemFailed(url));
+
         window.playerAPI.onRefresh(() => {
+            if (playlist.isActive()) {
+                playlist.refresh();
+                return;
+            }
             if (assignedUrl || activeUrl) {
                 console.log('[PLAYER] Refresh requested');
                 contentRetries = 0;

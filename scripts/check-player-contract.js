@@ -22,6 +22,16 @@ if (fs.existsSync(playerPath)) {
     check(html.includes("' [stalled]'"), "player.html lost the ' [stalled]' title contract");
     check(html.includes('MAX_CONTENT_RETRIES'), 'player.html lost the content retry logic');
     check(!/fetch\s*\(/.test(html), 'player.html must not call the server (no fetch)');
+    // Playlists play offline only if their engine ships inside the app.
+    for (const script of [
+        'js/playlist-schedule.js',
+        'js/playlist-sequencer.js',
+        'js/media-watchdog.js',
+        'js/playlist-engine.js',
+    ]) {
+        check(html.includes(`src="${script}"`), `player.html must load ${script}`);
+        check(fs.existsSync(path.join(root, script)), `${script} is missing`);
+    }
 }
 
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));

@@ -4,14 +4,13 @@ const { log } = require('../utils/logConfig');
 const { CONTENT_DIR, CONFIG_DIR } = require('../config/constants');
 
 const CAROUSEL_HTML_PATH = path.join(CONFIG_DIR, 'offline-carousel.html');
-
+// Inlined: the generated page lives in userData, away from the app's own files.
+const WATCHDOG_SOURCE = fs.readFileSync(path.join(__dirname, '../js/media-watchdog.js'), 'utf8');
 
 function writeCarouselFile(html, itemCount) {
     try {
         if (fs.readFileSync(CAROUSEL_HTML_PATH, 'utf8') === html) return;
-    } catch (_e) {
-        
-    }
+    } catch (_e) {}
 
     const tmp = CAROUSEL_HTML_PATH + '.' + process.pid + '.tmp';
     try {
@@ -21,7 +20,9 @@ function writeCarouselFile(html, itemCount) {
         log.warn('[CAROUSEL]: Atomic write failed, falling back to in-place:', error.message);
         try {
             fs.unlinkSync(tmp);
-        } catch (_e) { /* nothing to clean up */ }
+        } catch (_e) {
+            /* nothing to clean up */
+        }
         fs.writeFileSync(CAROUSEL_HTML_PATH, html, 'utf8');
     }
 
@@ -36,7 +37,7 @@ function buildLocalCarouselUrl() {
         }
 
         const files = fs.readdirSync(CONTENT_DIR);
-        const mediaFiles = files.filter(f => {
+        const mediaFiles = files.filter((f) => {
             const ext = path.extname(f).toLowerCase();
             return ['.mp4', '.mkv', '.avi', '.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext);
         });
@@ -45,7 +46,9 @@ function buildLocalCarouselUrl() {
             log.warn('[CAROUSEL]: No media files found in CONTENT_DIR.');
             return null;
         }
-        const mediaUrls = mediaFiles.map(f => `file://${path.join(CONTENT_DIR, f).replace(/\\/g, '/')}`);
+        const mediaUrls = mediaFiles.map(
+            (f) => `file://${path.join(CONTENT_DIR, f).replace(/\\/g, '/')}`
+        );
 
         const htmlContent = `<!DOCTYPE html>
 <html lang="es">
@@ -73,16 +76,13 @@ function buildLocalCarouselUrl() {
     <!-- Status dot lives in the wrapper that iframes this page. -->
     <div id="container" class="media-container"></div>
 
+    <script>${WATCHDOG_SOURCE}</script>
     <script>
         const mediaUrls = ${JSON.stringify(mediaUrls)};
         const container = document.getElementById('container');
 
         const IMAGE_MS = 10000;
         const VIDEO_CEILING_MS = 600000;
-        const STALL_TICK_MS = 1000;
-        const STALL_GRACE_MS = 10000;
-        const FIRST_FRAME_GRACE_MS = 8000;
-        const FROZEN_GRACE_MS = 5000;
         const FAIL_RETRY_MS = 1000;
 
         // The wrapper forwards '[PLAYER]' console lines to the agent log; this page is
@@ -109,7 +109,7 @@ function buildLocalCarouselUrl() {
         let index = -1;
         let token = 0;
         let advanceTimer = null;
-        let stallTimer = null;
+        let stopWatch = null;
 
         function advance(t) {
             if (t !== token || items.length === 0) return;
@@ -128,17 +128,14 @@ function buildLocalCarouselUrl() {
             const el = item.el;
             el.onended = el.onerror = el.onloadedmetadata = null;
             el.classList.remove('active');
-            if (!item.isVideo || !el.getAttribute('src')) return;
-            el.pause();
-            // Hand the decoder back: sibling screens share one hardware decode engine.
-            el.removeAttribute('src');
-            el.load();
+            if (item.isVideo) MediaWatchdog.releaseVideo(el);
         }
 
         function show(i) {
             const t = ++token;
             clearTimeout(advanceTimer);
-            clearInterval(stallTimer);
+            if (stopWatch) stopWatch();
+            stopWatch = null;
             index = i;
 
             items.forEach(function (item, j) { if (j !== i) release(item); });
@@ -176,53 +173,11 @@ function buildLocalCarouselUrl() {
                 advance(t);
             }, VIDEO_CEILING_MS);
 
-            let lastTime = -1;
-            let clockIdle = 0;
-            let frames = 0;
-            let lastFrames = -1;
-            let frameIdle = 0;
-
-            if (el.requestVideoFrameCallback) {
-                const onFrame = function () {
-                    if (t !== token) return;
-                    frames++;
-                    el.requestVideoFrameCallback(onFrame);
-                };
-                el.requestVideoFrameCallback(onFrame);
-            }
-
-            stallTimer = setInterval(function () {
+            stopWatch = MediaWatchdog.watchVideo(el, function (reason) {
                 if (t !== token) return;
-
-                // 'ended' is not a guarantee: a decoder that never starts emits no event at all.
-                if (el.currentTime !== lastTime) {
-                    lastTime = el.currentTime;
-                    clockIdle = 0;
-                } else {
-                    clockIdle += STALL_TICK_MS;
-                    if (clockIdle >= STALL_GRACE_MS) {
-                        report('video ' + i + ' never advanced past ' + Math.round(el.currentTime) + 's');
-                        advance(t);
-                        return;
-                    }
-                }
-
-                // A running media clock is not proof the viewer sees motion: a starved
-                // decoder keeps time while presenting the same frame forever.
-                if (!el.requestVideoFrameCallback) return;
-                if (frames !== lastFrames) {
-                    lastFrames = frames;
-                    frameIdle = 0;
-                    return;
-                }
-                // Frames already seen means the decoder proved it works, so a shorter grace
-                // is safe; before the first one the wait has to cover a slow start.
-                frameIdle += STALL_TICK_MS;
-                if (frameIdle >= (frames > 0 ? FROZEN_GRACE_MS : FIRST_FRAME_GRACE_MS)) {
-                    report('video ' + i + ' picture frozen at ' + Math.round(el.currentTime) + 's');
-                    advance(t);
-                }
-            }, STALL_TICK_MS);
+                report('video ' + i + ' ' + reason);
+                advance(t);
+            });
         }
 
         // Random entry point: sibling screens otherwise open the same clip at the same instant.
@@ -237,7 +192,6 @@ function buildLocalCarouselUrl() {
 
         writeCarouselFile(htmlContent, mediaFiles.length);
         return 'file://' + CAROUSEL_HTML_PATH.replace(/\\/g, '/');
-
     } catch (error) {
         log.error('[CAROUSEL]: Error building local carousel:', error);
         return null;

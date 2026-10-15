@@ -1,6 +1,5 @@
-const { app, BrowserWindow, screen, net, ipcMain } = require('electron');
+const { app, BrowserWindow, net, ipcMain } = require('electron');
 const { log } = require('./utils/logConfig');
-const path = require('path');
 const fs = require('fs');
 
 try {
@@ -23,6 +22,8 @@ const context = {
     autoRefreshTimers: new Map(),
     fallbackTimers: new Map(),
     screenContent: new Map(),
+    // screenId -> what its playlist engine reported last (get_now_playing).
+    nowPlaying: new Map(),
     networkState: 'ONLINE',
 };
 
@@ -131,7 +132,9 @@ async function bootstrap() {
                     broadcastAppStatus();
                     context.broadcastPlayerStatus?.();
                     context.registerDevice();
-                    assetsService.syncLocalAssets(context.agentToken);
+                    assetsService
+                        .syncLocalAssets(context.agentToken)
+                        .then(() => context.refreshPlaylistScreens?.());
                 },
                 onDisconnect: (_reason) => {
                     context.isOnline = false;
@@ -182,17 +185,29 @@ async function bootstrap() {
                             context.registerDevice?.();
                         },
                         get_logs: commandHandlers.handleGetLogs,
+                        get_now_playing: commandHandlers.handleGetNowPlaying,
                     };
                     if (actions[command.action]) actions[command.action](command);
                 },
-                onAssetsUpdated: () => assetsService.syncLocalAssets(context.agentToken),
+                // Jittered: one change can tell a whole estate to sync at once, and every
+                // device downloading the same file in the same second saturates the tunnels.
+                onAssetsUpdated: () => {
+                    const delay = Math.floor(
+                        Math.random() * constants.CONSTANTS.ASSET_SYNC_JITTER_MS
+                    );
+                    setTimeout(() => {
+                        assetsService
+                            .syncLocalAssets(context.agentToken)
+                            .then(() => context.refreshPlaylistScreens?.());
+                    }, delay);
+                },
                 onUnauthorized: async () => {
                     const { refreshAfterRejection } = require('./services/auth');
                     if (await refreshAfterRejection()) context.socket?.forceReconnect?.();
                 },
                 onDeviceInfo: (device) => {
                     log.info('[SOCKET]: Device info received:', device.name);
-                    const { setDeviceName, getDeviceName } = require('./services/identity');
+                    const { setDeviceName } = require('./services/identity');
                     setDeviceName(device.name);
 
                     // Persists admin-configured screen count (for offline-targeted commands) and prunes slots above it.
@@ -304,7 +319,8 @@ async function bootstrap() {
                                     entry.credentials || null,
                                     entry.refreshInterval || 0,
                                     context.autoRefreshTimers,
-                                    context.managedWindows
+                                    context.managedWindows,
+                                    entry.playlist || null
                                 )
                             )
                         );
@@ -319,6 +335,7 @@ async function bootstrap() {
                                     url: entry.url,
                                     credentials: entry.credentials || null,
                                     refreshInterval: entry.refreshInterval || 0,
+                                    playlist: entry.playlist || null,
                                     silent: true,
                                 });
                             }, 500 * i);
@@ -357,6 +374,7 @@ async function bootstrap() {
 
         const { getWrapperUrl, isWrapperUrl } = require('./utils/wrapperUrl');
         const { isServerDependentUrl, resolveLocalContentUrl } = require('./utils/contentUrl');
+        const { isPlaylistUrl, resolveForRenderer } = require('./utils/playlistManifest');
 
         const playerStatus = () =>
             context.networkState === 'ONLINE'
@@ -373,11 +391,28 @@ async function bootstrap() {
             });
         };
 
+        // A playlist is played by the wrapper's engine under any network state; it falls back
+        // to the offline carousel only when none of its items can play.
+        context.playlistTarget = (url, manifest, contentName) => {
+            const { buildLocalCarouselUrl } = require('./services/localCarousel');
+            return {
+                url,
+                contentName: contentName || manifest?.name || '',
+                playlist: manifest,
+                fallbackUrl: buildLocalCarouselUrl() || null,
+            };
+        };
+
         // What a screen should show under the current network state. Offline targets
         // carry the carousel as fallback so the wrapper never holds a dark frame.
         context.resolveScreenTarget = (screenId) => {
             const screenIdStr = String(screenId);
-            const contentUrl = stateService.loadLastState()[screenIdStr]?.url || '';
+            const screenData = stateService.loadLastState()[screenIdStr] || {};
+            const contentUrl = screenData.url || '';
+
+            if (isPlaylistUrl(contentUrl) && screenData.playlist) {
+                return context.playlistTarget(contentUrl, screenData.playlist);
+            }
 
             if (context.networkState === 'ONLINE') return { url: contentUrl };
 
@@ -401,11 +436,36 @@ async function bootstrap() {
             wc.send('player:init', { screenIndex: screenIdStr });
             wc.send('player:status', { state: playerStatus() });
             wc.send('player:show', {
-                url: resolveLocalContentUrl(target.url) || '',
+                url: target.playlist ? target.url : resolveLocalContentUrl(target.url) || '',
                 contentName: target.contentName || '',
                 fallbackUrl: target.fallbackUrl || null,
+                playlist: resolveForRenderer(target.playlist),
             });
         };
+
+        // Files a playlist waits for arrive with the sync; re-pushing lets the engine see them.
+        // The engine ignores a push whose manifest and resolved files did not change.
+        context.refreshPlaylistScreens = () => {
+            context.screenContent.forEach((target, screenId) => {
+                if (!target?.playlist) return;
+                const win = context.managedWindows.get(screenId);
+                if (win && !win.isDestroyed() && isWrapperUrl(getLoadedUrl(win))) {
+                    context.pushPlayerState(screenId, win);
+                }
+            });
+        };
+
+        ipcMain.on('player:now-playing', (event, info) => {
+            for (const [screenId, win] of context.managedWindows) {
+                if (win && !win.isDestroyed() && win.webContents === event.sender) {
+                    context.nowPlaying.set(String(screenId), {
+                        ...info,
+                        screenIndex: String(screenId),
+                    });
+                    return;
+                }
+            }
+        });
 
         // Convergence point for every wrapper screen: records the target, then either
         // pushes it into the live wrapper (idempotent in the renderer) or (re)creates

@@ -3,8 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const { log } = require('../utils/logConfig');
 const axios = require('axios');
-const { CONTENT_DIR, getServerUrl, CONSTANTS } = require('../config/constants');
-const { isServerDependentUrl } = require('../utils/contentUrl');
+const { getServerUrl, CONSTANTS } = require('../config/constants');
+const { isServerDependentUrl, localAssetPath } = require('../utils/contentUrl');
 const { isWrapperUrl } = require('../utils/wrapperUrl');
 const { isAutologinUrl } = require('../utils/autologinUrl');
 
@@ -36,7 +36,7 @@ function initializeHandlers(ctx) {
     context = ctx;
 }
 
-function sendCommandFeedback(command, status, message, messageKey, messageParams) {
+function sendCommandFeedback(command, status, message, messageKey, messageParams, data) {
     if (!command || !command.commandId) return;
     if (command.silent) return;
 
@@ -48,6 +48,7 @@ function sendCommandFeedback(command, status, message, messageKey, messageParams
             status,
             message,
             ...(messageKey ? { messageKey, messageParams: messageParams || {} } : {}),
+            ...(data ? { data } : {}),
         });
         log.debug(`[FEEDBACK]: Sending feedback for commandId ${command.commandId}: ${status}`);
     }
@@ -211,6 +212,9 @@ function createContentWindow(display, urlToLoad, command, opts = {}) {
                 log.warn(
                     `[CONTENT]: Frame failed on screen ${screenIndex}: '${validatedURL}' — ${errorDescription} (${errorCode})`
                 );
+                // A playlist benches the item and moves on instead of holding a dead frame.
+                if (isWrapperWindow)
+                    win.webContents.send('player:item-failed', { url: validatedURL });
                 return;
             }
 
@@ -287,7 +291,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
     }
 
     const trimmedUrl = url.trim();
-    const allowedSchemes = ['http:', 'https:', 'local:'];
+    const allowedSchemes = ['http:', 'https:', 'local:', 'playlist:'];
     let parsedUrl;
     try {
         parsedUrl = new URL(trimmedUrl);
@@ -306,6 +310,17 @@ function handleShowUrl(command, _currentAttempt = 0) {
     if (context.retryManager.has(screenIndex)) {
         clearTimeout(context.retryManager.get(screenIndex).timerId);
         context.retryManager.delete(screenIndex);
+    }
+
+    // The API sends a null manifest for a playlist that is gone or inactive.
+    const isPlaylist = trimmedUrl.startsWith('playlist:');
+    const playlistManifest = isPlaylist ? command.playlist || null : null;
+    if (isPlaylist && !playlistManifest) {
+        log.warn(
+            `[COMMAND]: Playlist ${trimmedUrl} is no longer available. Clearing screen ${screenIndex}.`
+        );
+        handleCloseScreen({ ...command, action: 'close_screen' });
+        return;
     }
 
     const targetDisplay = context.hardwareIdToDisplayMap.get(screenIndex);
@@ -328,7 +343,8 @@ function handleShowUrl(command, _currentAttempt = 0) {
                 credentials,
                 refreshInterval || 0,
                 context.autoRefreshTimers,
-                context.managedWindows
+                context.managedWindows,
+                playlistManifest
             );
             log.info(
                 `[COMMAND]: Screen ${screenIndex} is disconnected. Content saved for reconnect: ${url}`
@@ -362,14 +378,16 @@ function handleShowUrl(command, _currentAttempt = 0) {
             credentials,
             refreshInterval || 0,
             context.autoRefreshTimers,
-            context.managedWindows
+            context.managedWindows,
+            playlistManifest
         );
     }
 
     const { net } = require('electron');
     const hasInternet = net.isOnline();
 
-    if (!hasInternet && !url.startsWith('local:')) {
+    // A playlist keeps going offline on its local files; only its web items wait.
+    if (!hasInternet && !url.startsWith('local:') && !isPlaylist) {
         const errorMsg = `Error: No connection. Cannot load URL '${url}'. Will retry when connection is restored.`;
         log.error(`[RESILIENCE]: ${errorMsg}`);
         sendCommandFeedback(command, 'error', errorMsg, 'noConnectionWillRetry', { url });
@@ -397,7 +415,9 @@ function handleShowUrl(command, _currentAttempt = 0) {
         // the recorded target instead of framing the wrapper inside itself.
         const target = isPlayerWrapperUrl
             ? context.resolveScreenTarget?.(screenIndex) || { url: '' }
-            : { url: trimmedUrl, contentName: contentName || '' };
+            : isPlaylist
+              ? context.playlistTarget(trimmedUrl, playlistManifest, contentName)
+              : { url: trimmedUrl, contentName: contentName || '' };
 
         // Live wrapper → crossfade push; missing/foreign window → wrapper recreation.
         const win = context.ensurePlayerScreen?.(screenIndex, target);
@@ -430,10 +450,20 @@ function handleShowUrl(command, _currentAttempt = 0) {
         return;
     }
 
+    if (isPlaylist) {
+        sendCommandFeedback(
+            command,
+            'error',
+            'Playlists need the player wrapper',
+            'playlistNeedsPlayer'
+        );
+        return;
+    }
+
     if (url.startsWith('local:')) {
-        const filename = path.basename(url.substring(6));
-        const filePath = path.join(CONTENT_DIR, filename);
-        if (!fs.existsSync(filePath)) {
+        const filePath = localAssetPath(url);
+        if (!filePath) {
+            const filename = url.slice('local:'.length);
             const errorMsg = `Error: Local asset not found: ${filename}.`;
             log.error(`[COMMAND]: ${errorMsg}`);
             sendCommandFeedback(command, 'error', errorMsg, 'localAssetNotFound', { filename });
@@ -580,6 +610,7 @@ function handleCloseScreen(command) {
         const win = context.managedWindows.get(screenIndex);
         if (win && !win.isDestroyed()) win.close();
         context.screenContent?.delete(String(screenIndex));
+        context.nowPlaying?.delete(String(screenIndex));
 
         if (context.saveCurrentState) {
             context.saveCurrentState(
@@ -610,6 +641,21 @@ function handleCloseScreen(command) {
             { screen: screenIndex, reason: error.message }
         );
     }
+}
+
+// What each playlist screen shows right now, as its engine last reported it. Asked on demand
+// rather than pushed on every rotation, which would be steady traffic for nothing.
+function handleGetNowPlaying(command) {
+    const screens = {};
+    for (const [screenId, target] of context.screenContent) {
+        if (!target?.playlist) continue;
+        screens[screenId] = context.nowPlaying.get(screenId) || {
+            playlistId: target.playlist.playlistId,
+            itemId: null,
+            state: 'starting',
+        };
+    }
+    sendCommandFeedback(command, 'success', 'Now playing', 'nowPlaying', {}, { screens });
 }
 
 function handleRefreshScreen(command) {
@@ -729,7 +775,9 @@ async function handleGetLogs(command) {
             return;
         }
 
-        log.info(`[COMMAND]: Archiving ${logFiles.length} log file(s) from the last ${days} day(s)`);
+        log.info(
+            `[COMMAND]: Archiving ${logFiles.length} log file(s) from the last ${days} day(s)`
+        );
 
         await new Promise((resolve, reject) => {
             const output = fs.createWriteStream(zipPath);
@@ -803,6 +851,7 @@ module.exports = {
     initializeHandlers,
     handleShowUrl,
     handleCloseScreen,
+    handleGetNowPlaying,
     handleIdentifyScreen,
     handleRefreshScreen,
     sendCommandFeedback,

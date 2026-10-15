@@ -2,7 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { log } = require('../utils/logConfig');
-const { SYNC_API_URL, CONTENT_DIR, SERVER_URL } = require('../config/constants');
+const { SYNC_API_URL, CONTENT_DIR, ASSET_INDEX_PATH, SERVER_URL } = require('../config/constants');
+const { writeFileAtomic } = require('../utils/atomicWrite');
 const { loadConfig } = require('../utils/configManager');
 const { getHttpClient } = require('../utils/httpClient');
 
@@ -68,7 +69,29 @@ function isIncomplete(filePath, asset) {
     }
 }
 
-async function syncDir(assets, targetDir, remotePath, agentToken) {
+// Files the last sync wanted but could not keep (storage cap, failed or refused download).
+let lastMissing = 0;
+
+function getStorageReport() {
+    return {
+        usedMB: Math.round(getDirSizeBytes(CONTENT_DIR) / (1024 * 1024)),
+        limitMB: Math.round(getMaxStorageBytes() / (1024 * 1024)),
+        missing: lastMissing,
+    };
+}
+
+// Files the playlists on screen play go first: under the storage cap they are the ones to keep.
+function playlistAssetIds() {
+    const { loadLastState } = require('./state');
+    const { localAssetIds } = require('../utils/playlistManifest');
+    const ids = new Set();
+    for (const entry of Object.values(loadLastState())) {
+        localAssetIds(entry?.playlist).forEach((id) => ids.add(id));
+    }
+    return ids;
+}
+
+async function syncDir(assets, targetDir, remotePath, agentToken, priorityIds = new Set()) {
     if (!fs.existsSync(targetDir)) {
         fs.mkdirSync(targetDir, { recursive: true });
     }
@@ -86,11 +109,16 @@ async function syncDir(assets, targetDir, remotePath, agentToken) {
         }
     }
 
-    const filesToDownload = assets.filter(
-        (a) =>
-            !localFiles.includes(a.serverFilename) ||
-            isIncomplete(path.join(targetDir, a.serverFilename), a)
-    );
+    const filesToDownload = assets
+        .filter(
+            (a) =>
+                !localFiles.includes(a.serverFilename) ||
+                isIncomplete(path.join(targetDir, a.serverFilename), a)
+        )
+        .sort(
+            (a, b) =>
+                Number(priorityIds.has(String(b._id))) - Number(priorityIds.has(String(a._id)))
+        );
 
     // Track size incrementally instead of re-walking the dir per download.
     const maxBytes = getMaxStorageBytes();
@@ -159,6 +187,21 @@ async function syncDir(assets, targetDir, remotePath, agentToken) {
     }
 }
 
+// The API names local content `local:<assetId>`; files on disk carry the serverFilename.
+function writeAssetIndex(assets) {
+    const index = {};
+    for (const asset of assets) {
+        if (asset._id && fs.existsSync(path.join(CONTENT_DIR, asset.serverFilename))) {
+            index[asset._id] = asset.serverFilename;
+        }
+    }
+    try {
+        writeFileAtomic(ASSET_INDEX_PATH, JSON.stringify(index));
+    } catch (err) {
+        log.error('[SYNC]: Could not write the asset index:', err.message);
+    }
+}
+
 // One sync at a time; a request during a run triggers one more.
 let syncRunning = false;
 let syncPending = false;
@@ -189,12 +232,17 @@ async function runSync(agentToken) {
         const res = await client.get(SYNC_API_URL, {
             headers: { Authorization: `Bearer ${agentToken}` },
         });
+        // The API already picked each file's rendition for this device's media profile.
         const assets = res.data;
-        const generalAssets = assets.filter((a) => a.assetType !== 'playlist');
 
-        log.info(`[SYNC]: ${generalAssets.length} general assets`);
+        log.info(`[SYNC]: ${assets.length} assets`);
 
-        await syncDir(generalAssets, CONTENT_DIR, '/local-assets/', agentToken);
+        await syncDir(assets, CONTENT_DIR, '/local-assets/', agentToken, playlistAssetIds());
+        writeAssetIndex(assets);
+        lastMissing = assets.filter(
+            (a) => !fs.existsSync(path.join(CONTENT_DIR, a.serverFilename))
+        ).length;
+        if (lastMissing > 0) log.warn(`[SYNC]: ${lastMissing} file(s) could not be stored.`);
 
         log.info('[SYNC]: Synchronization completed.');
         return true;
@@ -204,4 +252,4 @@ async function runSync(agentToken) {
     }
 }
 
-module.exports = { syncLocalAssets };
+module.exports = { syncLocalAssets, getStorageReport };

@@ -79,6 +79,8 @@ desktop shortcut, auto-starts with Windows, and opens provisioning on first run)
 | Command | What it does |
 |---|---|
 | `npm start` | Run the agent in development |
+| `npm test` | Unit tests (`node --test`): schedule rules, playlist sequencer, local file resolution |
+| `npm run test:contract` | Static checks on the player wrapper and its playlist engine |
 | `npm run build:prod` | Build the Windows installer (`dist/ScreensWebAgent-Setup-x.y.z.exe` + `latest.yml`) |
 
 ## Configuration
@@ -128,6 +130,23 @@ so a flapping network never restarts content that is already playing.
 `player:refresh` (re-set the iframe, no window reload). Offline targets carry the local
 carousel as `fallbackUrl` so a dead content URL degrades to the carousel, never to black.
 `scripts/check-player-contract.js` pins the wrapper's contract in CI.
+
+**Playlists** — a `show_url` for `playlist:<id>` carries the whole manifest (see the API's
+`documentation/PLAYLISTS.md`). It is stored in `state.json` with the screen and played by
+`js/playlist-engine.js` inside the wrapper, so a playlist keeps its schedule with the API down and
+after a reboot. Rules are evaluated against the PC clock every minute (`js/playlist-schedule.js`,
+byte-identical to the API's and tested against the same fixtures); `js/playlist-sequencer.js`
+picks the next item. Local files go to the wrapper as `file://` (resolved through
+`asset-index.json`); one not synced yet is skipped and the screens are re-pushed after every sync.
+Web items wait while there is no network, failed items are benched 5 minutes, and two videos
+never decode at once (fade through black). With nothing playable the engine shows the playlist's
+fallback, then the local carousel. The heartbeat reports the PC clock and storage so the panel can
+flag a wrong clock or a full disk; `get_now_playing` answers what each screen shows.
+
+**Local files** — the API names them `local:<assetId>` and lists, per device, the rendition its
+media profile gets (H.264 1080p or 720p). `asset-index.json` (outside `content/`, which the sync
+prunes) maps ids to files. Files the playlists on screen use download first; an `assets-updated`
+sync starts after up to 60s of jitter so an estate-wide change does not hit the tunnels at once.
 
 **Screen health** — a cross-origin frame reports no errors to the page embedding it, so the
 wrapper (`player.html`) watches for a frame that never fires `onload`: it retries 3 times,
@@ -186,7 +205,8 @@ screens-agent/
 ├── handlers/               # commands, ipc, provisioning
 ├── services/               # socket, network, assets, auth, updater, state, monitors, tray...
 ├── utils/                  # configManager (encrypted store), logConfig
-├── css/ js/                # control panel UI
+├── css/ js/                # control panel UI; js/ also holds the playlist engine, its
+│                           # sequencer and schedule rules, and the shared media watchdog
 ├── main.js                 # main process orchestrator
 ├── preload.js              # renderer bridge
 ├── *.html                  # control, fallback, identify, provision

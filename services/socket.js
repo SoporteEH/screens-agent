@@ -74,19 +74,25 @@ function connectToSocketServer(token, handlers) {
     socket.on('connect_error', (err) => {
         consecutiveFailures++;
 
-        if (circuitBreakerState !== 'OPEN' && consecutiveFailures >= CONSTANTS.CIRCUIT_BREAKER_THRESHOLD) {
+        if (
+            circuitBreakerState !== 'OPEN' &&
+            consecutiveFailures >= CONSTANTS.CIRCUIT_BREAKER_THRESHOLD
+        ) {
             circuitBreakerState = 'OPEN';
             log.warn(
                 `[CIRCUIT BREAKER]: OPEN — ${consecutiveFailures} consecutive failures. ` +
-                `Disconnecting and pausing for 5 minutes before next attempt.`
+                    `Disconnecting and pausing for 5 minutes before next attempt.`
             );
             socket.disconnect();
-            circuitBreakerTimer = setTimeout(() => {
-                circuitBreakerTimer = null;
-                circuitBreakerState = 'HALF_OPEN';
-                log.info('[CIRCUIT BREAKER]: HALF_OPEN — attempting reconnect after pause.');
-                socket.connect();
-            }, 5 * 60 * 1000);
+            circuitBreakerTimer = setTimeout(
+                () => {
+                    circuitBreakerTimer = null;
+                    circuitBreakerState = 'HALF_OPEN';
+                    log.info('[CIRCUIT BREAKER]: HALF_OPEN — attempting reconnect after pause.');
+                    socket.connect();
+                },
+                5 * 60 * 1000
+            );
         } else if (
             circuitBreakerState === 'OPEN' &&
             consecutiveFailures > CONSTANTS.CIRCUIT_BREAKER_THRESHOLD &&
@@ -94,7 +100,7 @@ function connectToSocketServer(token, handlers) {
         ) {
             log.warn(
                 `[CIRCUIT BREAKER]: Still open — ${consecutiveFailures} total failures. ` +
-                `Server still unreachable.`
+                    `Server still unreachable.`
             );
         }
 
@@ -146,9 +152,16 @@ function connectToSocketServer(token, handlers) {
     return socket;
 }
 
+// clientTime lets the API spot a wrong PC clock, which playlists depend on; storage tells the
+// panel when files could not all fit.
 function sendHeartbeat(socket, screenIds) {
     if (!socket?.connected) return;
-    socket.emit('heartbeat', { screenIds });
+    const { getStorageReport } = require('./assets');
+    socket.emit('heartbeat', {
+        screenIds,
+        clientTime: new Date().toISOString(),
+        storage: getStorageReport(),
+    });
     heartbeatLog.info(screenIds);
 }
 

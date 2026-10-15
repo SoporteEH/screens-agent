@@ -165,13 +165,16 @@ function rearmAutoRefreshTimers(managedWindows, autoRefreshTimers) {
 // Serializes writes to state.json
 let writeLock = Promise.resolve();
 
+// `playlist` is the manifest of a `playlist:` URL: state.json is what plays it after a reboot
+// with the API down.
 function saveCurrentState(
     screenIndex,
     url,
     credentials,
     refreshInterval,
     autoRefreshTimers,
-    managedWindows
+    managedWindows,
+    playlist = null
 ) {
     writeLock = writeLock
         .then(() =>
@@ -181,7 +184,8 @@ function saveCurrentState(
                 credentials,
                 refreshInterval,
                 autoRefreshTimers,
-                managedWindows
+                managedWindows,
+                playlist
             )
         )
         .catch(() => {});
@@ -194,7 +198,8 @@ function _saveCurrentState(
     credentials,
     refreshInterval,
     autoRefreshTimers,
-    managedWindows
+    managedWindows,
+    playlist
 ) {
     const state = loadRawState();
 
@@ -210,6 +215,7 @@ function _saveCurrentState(
             url: url,
             credentials: encryptedCredentials ?? credentials ?? null,
             refreshInterval: refreshInterval || 0,
+            ...(playlist ? { playlist } : {}),
             timestamp: new Date().toISOString(),
         };
 
@@ -272,6 +278,8 @@ function restoreLastState(hardwareIdToDisplayMap, handleShowUrlCallback) {
                 url: screenData.url,
                 credentials: screenData.credentials || null,
                 refreshInterval: screenData.refreshInterval || 0,
+                playlist: screenData.playlist || null,
+                silent: true,
             };
 
             setTimeout(() => {
@@ -305,7 +313,9 @@ function restoreAllContentImmediately(
 
     for (const [stableId, screenData] of Object.entries(lastState)) {
         if (screenData.url && hardwareIdToDisplayMap.has(stableId)) {
-            const isLocalContent = screenData.url.startsWith('local:');
+            // A playlist plays its local files offline; only its web items wait for the network.
+            const isLocalContent =
+                screenData.url.startsWith('local:') || screenData.url.startsWith('playlist:');
             const targetDisplay = hardwareIdToDisplayMap.get(stableId);
 
             if (!hasInternet && !isLocalContent) {
@@ -343,6 +353,8 @@ function restoreAllContentImmediately(
                         url: screenData.url,
                         credentials: screenData.credentials || null,
                         refreshInterval: screenData.refreshInterval || 0,
+                        playlist: screenData.playlist || null,
+                        silent: true,
                     });
                 }, 500 * restoredCount);
             }

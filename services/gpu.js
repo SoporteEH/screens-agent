@@ -60,7 +60,7 @@ function resetGpuState() {
     if (Object.keys(config).length === 0) {
         try {
             if (fs.existsSync(GPU_CONFIG_FILE)) fs.unlinkSync(GPU_CONFIG_FILE);
-        } catch (_e) { }
+        } catch (_e) {}
         return;
     }
     writeGpuConfig(config);
@@ -90,9 +90,7 @@ function configureGpu() {
     softwareVideoDecodeRequested = fromFile || fromEnv;
 
     const source = fromFile ? 'gpu-config.json' : fromEnv ? 'DISABLE_VIDEO_DECODE' : null;
-    log.info(
-        `[GPU]: Video decode requested: ${source ? `software (via ${source})` : 'hardware'}`
-    );
+    log.info(`[GPU]: Video decode requested: ${source ? `software (via ${source})` : 'hardware'}`);
     if (softwareVideoDecodeRequested) {
         app.commandLine.appendSwitch('disable-accelerated-video-decode');
     }
@@ -104,10 +102,22 @@ function configureGpu() {
     }
 
     app.commandLine.appendSwitch('enable-gpu-rasterization');
-    if (!softwareVideoDecodeRequested) app.commandLine.appendSwitch('enable-accelerated-video-decode');
+    if (!softwareVideoDecodeRequested)
+        app.commandLine.appendSwitch('enable-accelerated-video-decode');
     app.commandLine.appendSwitch('enable-zero-copy');
     app.commandLine.appendSwitch('use-angle', 'default');
     app.commandLine.appendSwitch('enable-webgl');
+}
+
+// Reported on registerDevice: the API picks the 720p renditions for machines like these.
+function getGpuCapabilities() {
+    const os = require('os');
+    return {
+        hardwareAcceleration: hardwareAccelerationRequested,
+        softwareVideoDecode: softwareVideoDecodeRequested,
+        totalMemMb: Math.round(os.totalmem() / (1024 * 1024)),
+        cpuCores: os.cpus().length,
+    };
 }
 
 function configureMemory() {
@@ -121,7 +131,10 @@ function configureMemory() {
         maxOldSpace = 512; // Mid-range (2GB RAM)
     }
 
-    app.commandLine.appendSwitch('js-flags', `--max-old-space-size=${maxOldSpace} --max-semi-space-size=8`);
+    app.commandLine.appendSwitch(
+        'js-flags',
+        `--max-old-space-size=${maxOldSpace} --max-semi-space-size=8`
+    );
     app.commandLine.appendSwitch('renderer-process-limit', '10');
     app.commandLine.appendSwitch('process-per-site');
     app.commandLine.appendSwitch('disable-site-isolation-trials');
@@ -143,7 +156,9 @@ function configureMemory() {
         app.commandLine.appendSwitch('force-prefers-reduced-motion');
     }
 
-    log.info(`[MEMORY]: Optimization applied (Max Old Space: ${maxOldSpace}MB). Total RAM: ${Math.round(totalMemMb)}MB`);
+    log.info(
+        `[MEMORY]: Optimization applied (Max Old Space: ${maxOldSpace}MB). Total RAM: ${Math.round(totalMemMb)}MB`
+    );
 }
 
 const GPU_INFO_TIMEOUT_MS = 5000;
@@ -160,8 +175,8 @@ function logGpuDiagnostics() {
             const features = app.getGPUFeatureStatus();
             log.info(
                 `[GPU]: Features — compositing: ${features.gpu_compositing}, ` +
-                `video_decode: ${features.video_decode}, rasterization: ${features.rasterization}, ` +
-                `webgl: ${features.webgl}`
+                    `video_decode: ${features.video_decode}, rasterization: ${features.rasterization}, ` +
+                    `webgl: ${features.webgl}`
             );
             // Otherwise the startup line claims acceleration a silent fallback already denied.
             if (hardwareAccelerationRequested && !/^enabled/.test(features.gpu_compositing || '')) {
@@ -218,6 +233,7 @@ module.exports = {
     resetGpuState,
     configureGpu,
     configureMemory,
+    getGpuCapabilities,
     logGpuDiagnostics,
     registerGpuCrashHandlers,
 };

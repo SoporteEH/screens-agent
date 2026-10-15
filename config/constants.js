@@ -1,4 +1,3 @@
-
 const { app } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -13,7 +12,8 @@ if (!SERVER_URL) {
     try {
         const packageJson = require('../package.json');
         SERVER_URL = packageJson.config?.serverUrl;
-    } catch (e) {
+    } catch {
+        // No baked-in server URL: provisioning supplies one.
     }
 }
 
@@ -22,6 +22,8 @@ const CONFIG_FILE_PATH = path.join(CONFIG_DIR, 'config.json');
 const STATE_FILE_PATH = path.join(CONFIG_DIR, 'state.json');
 const DISPLAYS_FILE_PATH = path.join(CONFIG_DIR, 'displays.json');
 const CONTENT_DIR = path.join(CONFIG_DIR, 'content');
+// Outside CONTENT_DIR: the sync deletes every file there that the server did not list.
+const ASSET_INDEX_PATH = path.join(CONFIG_DIR, 'asset-index.json');
 
 try {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
@@ -44,6 +46,7 @@ const CONSTANTS = {
     SOCKET_RECONNECT_DELAY_MAX_MS: 30 * 1000,
     CIRCUIT_BREAKER_THRESHOLD: 10,
     FALLBACK_DELAY_MS: 4000,
+    ASSET_SYNC_JITTER_MS: 60 * 1000,
     LOG_UPLOAD_MAX_BYTES: 200 * 1024 * 1024,
 };
 
@@ -51,7 +54,7 @@ let AGENT_VERSION = 'Unknown';
 try {
     const packageJson = require('../package.json');
     AGENT_VERSION = packageJson.version;
-} catch (e) {
+} catch {
     console.error('[CONFIG]: Failed to read version from package.json');
 }
 
@@ -68,6 +71,7 @@ module.exports = {
     STATE_FILE_PATH,
     DISPLAYS_FILE_PATH,
     CONTENT_DIR,
+    ASSET_INDEX_PATH,
     AGENT_REFRESH_URL,
     SYNC_API_URL,
     CONSTANTS,

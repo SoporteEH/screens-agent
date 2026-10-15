@@ -1,0 +1,427 @@
+{
+  "note": "Shared by screens-api, screens-agent and screens-front. Change all three copies together.",
+  "playlists": {
+    "scheduled": {
+      "mode": "scheduled",
+      "items": [
+        {
+          "id": "morning",
+          "window": {
+            "startTime": "09:00",
+            "endTime": "14:00",
+            "daysOfWeek": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          }
+        },
+        {
+          "id": "afternoon",
+          "window": {
+            "startTime": "14:00",
+            "endTime": "20:00"
+          }
+        },
+        {
+          "id": "fridayNight",
+          "window": {
+            "startTime": "22:00",
+            "endTime": "02:00",
+            "daysOfWeek": [
+              5
+            ]
+          }
+        },
+        {
+          "id": "always",
+          "window": {}
+        }
+      ]
+    },
+    "carousel": {
+      "mode": "carousel",
+      "items": [
+        {
+          "id": "morning",
+          "window": {
+            "startTime": "09:00",
+            "endTime": "14:00",
+            "daysOfWeek": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          }
+        },
+        {
+          "id": "afternoon",
+          "window": {
+            "startTime": "14:00",
+            "endTime": "20:00"
+          }
+        },
+        {
+          "id": "fridayNight",
+          "window": {
+            "startTime": "22:00",
+            "endTime": "02:00",
+            "daysOfWeek": [
+              5
+            ]
+          }
+        },
+        {
+          "id": "december",
+          "window": {
+            "startDate": "2026-12-01",
+            "endDate": "2026-12-31"
+          }
+        }
+      ]
+    },
+    "carouselFallback": {
+      "mode": "carousel",
+      "items": [
+        {
+          "id": "morning",
+          "window": {
+            "startTime": "09:00",
+            "endTime": "14:00",
+            "daysOfWeek": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          }
+        }
+      ],
+      "fallback": {
+        "id": "fallback"
+      }
+    },
+    "campaign": {
+      "mode": "carousel",
+      "validFrom": "2026-11-01T10:00",
+      "validUntil": "2026-11-08T22:30",
+      "items": [
+        {
+          "id": "always",
+          "window": {}
+        }
+      ],
+      "fallback": {
+        "id": "fallback"
+      }
+    }
+  },
+  "cases": [
+    {
+      "name": "weekday morning plays the first matching item",
+      "playlist": "scheduled",
+      "clock": {
+        "date": "2026-10-12",
+        "time": "10:00",
+        "day": 1,
+        "minutes": 600,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [
+          "morning",
+          "always"
+        ],
+        "state": "playing",
+        "items": [
+          "morning"
+        ],
+        "minutesUntilNextChange": 240
+      }
+    },
+    {
+      "name": "weekday-only window is skipped on Saturday",
+      "playlist": "scheduled",
+      "clock": {
+        "date": "2026-10-17",
+        "time": "10:00",
+        "day": 6,
+        "minutes": 600,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [
+          "always"
+        ],
+        "state": "playing",
+        "items": [
+          "always"
+        ],
+        "minutesUntilNextChange": 240
+      }
+    },
+    {
+      "name": "end time is exclusive, start time inclusive",
+      "playlist": "scheduled",
+      "clock": {
+        "date": "2026-10-12",
+        "time": "14:00",
+        "day": 1,
+        "minutes": 840,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [
+          "afternoon",
+          "always"
+        ],
+        "state": "playing",
+        "items": [
+          "afternoon"
+        ],
+        "minutesUntilNextChange": 360
+      }
+    },
+    {
+      "name": "overnight window open on its own day",
+      "playlist": "carousel",
+      "clock": {
+        "date": "2026-10-16",
+        "time": "23:30",
+        "day": 5,
+        "minutes": 1410,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [
+          "fridayNight"
+        ],
+        "state": "playing",
+        "items": [
+          "fridayNight"
+        ],
+        "minutesUntilNextChange": 30
+      }
+    },
+    {
+      "name": "overnight window continues after midnight",
+      "playlist": "carousel",
+      "clock": {
+        "date": "2026-10-17",
+        "time": "01:30",
+        "day": 6,
+        "minutes": 90,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [
+          "fridayNight"
+        ],
+        "state": "playing",
+        "items": [
+          "fridayNight"
+        ],
+        "minutesUntilNextChange": 30
+      }
+    },
+    {
+      "name": "overnight window does not open on another day",
+      "playlist": "carousel",
+      "clock": {
+        "date": "2026-10-17",
+        "time": "23:30",
+        "day": 6,
+        "minutes": 1410,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [],
+        "state": "empty",
+        "items": [],
+        "minutesUntilNextChange": 30
+      }
+    },
+    {
+      "name": "overnight tail belongs to the opening day",
+      "playlist": "carousel",
+      "clock": {
+        "date": "2026-10-18",
+        "time": "01:30",
+        "day": 0,
+        "minutes": 90,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [],
+        "state": "empty",
+        "items": [],
+        "minutesUntilNextChange": 30
+      }
+    },
+    {
+      "name": "overnight end is exclusive",
+      "playlist": "carousel",
+      "clock": {
+        "date": "2026-10-17",
+        "time": "02:00",
+        "day": 6,
+        "minutes": 120,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [],
+        "state": "empty",
+        "items": [],
+        "minutesUntilNextChange": 420
+      }
+    },
+    {
+      "name": "date range includes its last day",
+      "playlist": "carousel",
+      "clock": {
+        "date": "2026-12-31",
+        "time": "23:59",
+        "day": 4,
+        "minutes": 1439,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [
+          "december"
+        ],
+        "state": "playing",
+        "items": [
+          "december"
+        ],
+        "minutesUntilNextChange": 1
+      }
+    },
+    {
+      "name": "date range ends after its last day",
+      "playlist": "carousel",
+      "clock": {
+        "date": "2027-01-01",
+        "time": "00:00",
+        "day": 5,
+        "minutes": 0,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [],
+        "state": "empty",
+        "items": [],
+        "minutesUntilNextChange": 120
+      }
+    },
+    {
+      "name": "carousel plays every active item",
+      "playlist": "carousel",
+      "clock": {
+        "date": "2026-12-04",
+        "time": "15:00",
+        "day": 5,
+        "minutes": 900,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [
+          "afternoon",
+          "december"
+        ],
+        "state": "playing",
+        "items": [
+          "afternoon",
+          "december"
+        ],
+        "minutesUntilNextChange": 300
+      }
+    },
+    {
+      "name": "fallback when nothing is active",
+      "playlist": "carouselFallback",
+      "clock": {
+        "date": "2026-10-17",
+        "time": "10:00",
+        "day": 6,
+        "minutes": 600,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [],
+        "state": "fallback",
+        "items": [
+          "fallback"
+        ],
+        "minutesUntilNextChange": 240
+      }
+    },
+    {
+      "name": "before validFrom plays the fallback",
+      "playlist": "campaign",
+      "clock": {
+        "date": "2026-11-01",
+        "time": "09:59",
+        "day": 0,
+        "minutes": 599,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [
+          "always"
+        ],
+        "state": "outside-validity",
+        "items": [
+          "fallback"
+        ],
+        "minutesUntilNextChange": 1
+      }
+    },
+    {
+      "name": "validFrom is inclusive",
+      "playlist": "campaign",
+      "clock": {
+        "date": "2026-11-01",
+        "time": "10:00",
+        "day": 0,
+        "minutes": 600,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [
+          "always"
+        ],
+        "state": "playing",
+        "items": [
+          "always"
+        ],
+        "minutesUntilNextChange": 840
+      }
+    },
+    {
+      "name": "validUntil is exclusive",
+      "playlist": "campaign",
+      "clock": {
+        "date": "2026-11-08",
+        "time": "22:30",
+        "day": 0,
+        "minutes": 1350,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [
+          "always"
+        ],
+        "state": "outside-validity",
+        "items": [
+          "fallback"
+        ],
+        "minutesUntilNextChange": 90
+      }
+    }
+  ]
+}

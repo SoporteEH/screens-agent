@@ -5,6 +5,7 @@ const { app } = require('electron');
 const { loadLastState } = require('./state');
 const { getAllSlots } = require('./displaySlots');
 const { loadConfig } = require('../utils/configManager');
+const { getGpuCapabilities } = require('./gpu');
 
 function getMachineId() {
     try {
@@ -40,6 +41,10 @@ function registerDevice(socket, deviceId, hardwareIdToDisplayMap) {
                 : // Last known resolution; positive fallback keeps old-API zod happy.
                   { width: slot.width || 1920, height: slot.height || 1080 },
             currentUrl: lastState[slotId]?.url || '',
+            // Lets the API re-send a playlist edited while this device was away.
+            ...(lastState[slotId]?.playlist?.version
+                ? { playlistVersion: lastState[slotId].playlist.version }
+                : {}),
             connected: !!display,
             label: slot.label || '',
         };
@@ -53,6 +58,7 @@ function registerDevice(socket, deviceId, hardwareIdToDisplayMap) {
         screens: screenInfo,
         agentVersion: app.getVersion(),
         updateChannel,
+        capabilities: getGpuCapabilities(),
     });
 }
 
