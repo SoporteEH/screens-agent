@@ -121,13 +121,7 @@
             return { state: 'outside-validity', items: fallback };
         }
         const active = activeItems(playlist.items, clock);
-        if (active.length > 0) {
-            // Scheduled mode plays one item: the first matching one, so list order is priority.
-            return {
-                state: 'playing',
-                items: playlist.mode === 'scheduled' ? [active[0]] : active,
-            };
-        }
+        if (active.length > 0) return { state: 'playing', items: active };
         return { state: fallback.length ? 'fallback' : 'empty', items: fallback };
     }
 

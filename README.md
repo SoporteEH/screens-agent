@@ -141,7 +141,7 @@ picks the next item. Local files go to the wrapper as `file://` (resolved throug
 Web items wait while there is no network, failed items are benched 5 minutes, and two videos
 never decode at once (fade through black). With nothing playable the engine shows the playlist's
 fallback, then the local carousel. The heartbeat reports the PC clock and storage so the panel can
-flag a wrong clock or a full disk; `get_now_playing` answers what each screen shows.
+flag a wrong clock or a full disk.
 
 **Local files** — the API names them `local:<assetId>` and lists, per device, the rendition its
 media profile gets (H.264 1080p or 720p). `asset-index.json` (outside `content/`, which the sync

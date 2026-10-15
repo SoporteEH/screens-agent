@@ -610,7 +610,6 @@ function handleCloseScreen(command) {
         const win = context.managedWindows.get(screenIndex);
         if (win && !win.isDestroyed()) win.close();
         context.screenContent?.delete(String(screenIndex));
-        context.nowPlaying?.delete(String(screenIndex));
 
         if (context.saveCurrentState) {
             context.saveCurrentState(
@@ -641,21 +640,6 @@ function handleCloseScreen(command) {
             { screen: screenIndex, reason: error.message }
         );
     }
-}
-
-// What each playlist screen shows right now, as its engine last reported it. Asked on demand
-// rather than pushed on every rotation, which would be steady traffic for nothing.
-function handleGetNowPlaying(command) {
-    const screens = {};
-    for (const [screenId, target] of context.screenContent) {
-        if (!target?.playlist) continue;
-        screens[screenId] = context.nowPlaying.get(screenId) || {
-            playlistId: target.playlist.playlistId,
-            itemId: null,
-            state: 'starting',
-        };
-    }
-    sendCommandFeedback(command, 'success', 'Now playing', 'nowPlaying', {}, { screens });
 }
 
 function handleRefreshScreen(command) {
@@ -851,7 +835,6 @@ module.exports = {
     initializeHandlers,
     handleShowUrl,
     handleCloseScreen,
-    handleGetNowPlaying,
     handleIdentifyScreen,
     handleRefreshScreen,
     sendCommandFeedback,

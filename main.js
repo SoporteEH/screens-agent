@@ -1,4 +1,4 @@
-const { app, BrowserWindow, net, ipcMain } = require('electron');
+const { app, BrowserWindow, net } = require('electron');
 const { log } = require('./utils/logConfig');
 const fs = require('fs');
 
@@ -22,8 +22,6 @@ const context = {
     autoRefreshTimers: new Map(),
     fallbackTimers: new Map(),
     screenContent: new Map(),
-    // screenId -> what its playlist engine reported last (get_now_playing).
-    nowPlaying: new Map(),
     networkState: 'ONLINE',
 };
 
@@ -185,7 +183,6 @@ async function bootstrap() {
                             context.registerDevice?.();
                         },
                         get_logs: commandHandlers.handleGetLogs,
-                        get_now_playing: commandHandlers.handleGetNowPlaying,
                     };
                     if (actions[command.action]) actions[command.action](command);
                 },
@@ -454,18 +451,6 @@ async function bootstrap() {
                 }
             });
         };
-
-        ipcMain.on('player:now-playing', (event, info) => {
-            for (const [screenId, win] of context.managedWindows) {
-                if (win && !win.isDestroyed() && win.webContents === event.sender) {
-                    context.nowPlaying.set(String(screenId), {
-                        ...info,
-                        screenIndex: String(screenId),
-                    });
-                    return;
-                }
-            }
-        });
 
         // Convergence point for every wrapper screen: records the target, then either
         // pushes it into the live wrapper (idempotent in the renderer) or (re)creates

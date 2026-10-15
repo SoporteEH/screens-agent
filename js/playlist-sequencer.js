@@ -31,11 +31,9 @@
             if (!schedule.isWithinValidity(manifest, clock)) {
                 return { state: 'outside-validity', list: [] };
             }
-            const active = schedule.activeItems(manifest.items, clock).filter(canPlay);
-            // Scheduled mode shows one item; an unplayable first match yields to the next one.
             return {
                 state: 'playing',
-                list: manifest.mode === 'scheduled' ? active.slice(0, 1) : active,
+                list: schedule.activeItems(manifest.items, clock).filter(canPlay),
             };
         }
 
@@ -82,9 +80,6 @@
 
             const current = list.find((i) => i.id === currentId);
             if (current && reason === 'tick') return { action: 'keep', item: current, state };
-            if (manifest.mode === 'scheduled') {
-                return { action: current ? 'keep' : 'show', item: list[0], state };
-            }
             const item = following(list);
             return { action: item.id === currentId ? 'keep' : 'show', item, state };
         }

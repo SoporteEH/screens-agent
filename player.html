@@ -88,7 +88,6 @@
             onEmpty: (empty) => {
                 noContent.style.display = empty ? '' : 'none';
             },
-            onNowPlaying: (info) => window.playerAPI.reportNowPlaying({ ...info, screenIndex }),
         });
 
         // Single-content frames go away while a playlist plays, and the other way round.

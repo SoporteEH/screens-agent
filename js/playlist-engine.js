@@ -83,24 +83,12 @@
             return el;
         }
 
-        function nowPlaying(entry, state) {
-            hooks.onNowPlaying &&
-                hooks.onNowPlaying({
-                    playlistId: manifest ? manifest.playlistId : null,
-                    version: manifest ? manifest.version : null,
-                    itemId: entry.idle ? null : entry.item.id,
-                    name: entry.idle ? null : entry.item.name || null,
-                    type: entry.item.type,
-                    state,
-                    since: new Date().toISOString(),
-                });
-        }
-
+        // Re-armed on every round of the same item, so the page refresh lives apart (reveal).
         function armTimers(entry, t) {
-            clearTimers();
+            clearTimeout(itemTimer);
+            itemTimer = null;
             const item = entry.item;
-            const rotates =
-                manifest && manifest.mode !== 'scheduled' && !entry.isFallback && !entry.idle;
+            const rotates = !entry.isFallback && !entry.idle;
 
             if (item.type === 'video') {
                 entry.el.onended = function () {
@@ -131,15 +119,10 @@
                     },
                     Math.max(1, item.durationSeconds || 10) * 1000
                 );
-            } else if (item.type === 'web' && item.refreshInterval > 0) {
-                // Shown for hours: honour the content's own refresh, as a single screen would.
-                refreshTimer = setInterval(function () {
-                    if (t === token && entry.el) entry.el.src = item.src;
-                }, item.refreshInterval * 1000);
             }
         }
 
-        function reveal(entry, outgoing, t, state) {
+        function reveal(entry, outgoing, t) {
             if (t !== token || entry.revealed) return;
             entry.revealed = true;
             failures = 0;
@@ -167,17 +150,23 @@
                 });
             }
             armTimers(entry, t);
-            nowPlaying(entry, state);
+            // A page alone in its slot, or the fallback, may stay for hours: honour the content's
+            // own refresh, as a single screen would.
+            if (entry.item.type === 'web' && entry.item.refreshInterval > 0) {
+                refreshTimer = setInterval(function () {
+                    if (t === token && entry.el) entry.el.src = entry.item.src;
+                }, entry.item.refreshInterval * 1000);
+            }
             log('showing "' + (entry.item.name || entry.item.src) + '"');
         }
 
-        function mount(entry, outgoing, t, state) {
+        function mount(entry, outgoing, t) {
             const el = entry.el;
             container.appendChild(entry.layer);
             entry.layer.appendChild(el);
 
             const loaded = function () {
-                reveal(entry, outgoing, t, state);
+                reveal(entry, outgoing, t);
             };
             if (el.tagName === 'IMG') {
                 el.onload = loaded;
@@ -225,13 +214,6 @@
                     teardown(current);
                     current = null;
                     hooks.onEmpty && hooks.onEmpty(true);
-                    hooks.onNowPlaying &&
-                        hooks.onNowPlaying({
-                            playlistId: manifest ? manifest.playlistId : null,
-                            itemId: null,
-                            state,
-                            since: new Date().toISOString(),
-                        });
                     log('nothing can play now (' + state + ')');
                     return;
                 }
@@ -264,11 +246,11 @@
                 setTimeout(function () {
                     if (t !== token) return;
                     teardown(outgoing);
-                    mount(entry, null, t, state);
+                    mount(entry, null, t);
                 }, BLACK_MS);
                 return;
             }
-            mount(entry, outgoing, t, state);
+            mount(entry, outgoing, t);
         }
 
         function restart(entry, t) {

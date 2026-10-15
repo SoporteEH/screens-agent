@@ -1,8 +1,8 @@
 {
   "note": "Shared by screens-api, screens-agent and screens-front. Change all three copies together.",
   "playlists": {
-    "scheduled": {
-      "mode": "scheduled",
+    "dayparts": {
+      "mode": "carousel",
       "items": [
         {
           "id": "morning",
@@ -123,8 +123,8 @@
   },
   "cases": [
     {
-      "name": "weekday morning plays the first matching item",
-      "playlist": "scheduled",
+      "name": "weekday morning plays every matching item",
+      "playlist": "dayparts",
       "clock": {
         "date": "2026-10-12",
         "time": "10:00",
@@ -139,14 +139,15 @@
         ],
         "state": "playing",
         "items": [
-          "morning"
+          "morning",
+          "always"
         ],
         "minutesUntilNextChange": 240
       }
     },
     {
       "name": "weekday-only window is skipped on Saturday",
-      "playlist": "scheduled",
+      "playlist": "dayparts",
       "clock": {
         "date": "2026-10-17",
         "time": "10:00",
@@ -167,7 +168,7 @@
     },
     {
       "name": "end time is exclusive, start time inclusive",
-      "playlist": "scheduled",
+      "playlist": "dayparts",
       "clock": {
         "date": "2026-10-12",
         "time": "14:00",
@@ -182,7 +183,8 @@
         ],
         "state": "playing",
         "items": [
-          "afternoon"
+          "afternoon",
+          "always"
         ],
         "minutesUntilNextChange": 360
       }

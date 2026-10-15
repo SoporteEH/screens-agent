@@ -121,36 +121,6 @@ describe('carousel', () => {
     });
 });
 
-describe('scheduled', () => {
-    test('shows the first active item, and the next one when that one cannot play', () => {
-        const seq = createSequencer(schedule);
-        seq.setManifest(
-            manifest({
-                mode: 'scheduled',
-                items: [item('morning', { startTime: '09:00', endTime: '14:00' }), item('allday')],
-            })
-        );
-        assert.equal(seq.decide(MONDAY_10, all, 'tick').item.id, 'morning');
-        assert.equal(seq.decide(MONDAY_10, (i) => i.id !== 'morning', 'tick').item.id, 'allday');
-    });
-
-    test('switches when the window closes', () => {
-        const seq = createSequencer(schedule);
-        seq.setManifest(
-            manifest({
-                mode: 'scheduled',
-                items: [item('morning', { startTime: '09:00', endTime: '14:00' }), item('allday')],
-            })
-        );
-        seq.markShown(seq.decide(MONDAY_10, all, 'tick').item);
-        const at14 = { ...MONDAY_10, time: '14:00', minutes: 840 };
-        assert.deepEqual(
-            [seq.decide(at14, all, 'tick').action, seq.decide(at14, all, 'tick').item.id],
-            ['show', 'allday']
-        );
-    });
-});
-
 describe('fallback', () => {
     const fallback = { id: 'fallback', src: 'local:f', window: {} };
 
