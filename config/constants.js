@@ -18,7 +18,6 @@ if (!SERVER_URL) {
 }
 
 const CONFIG_DIR = path.join(app.getPath('userData'), 'ScreensWeb');
-const CONFIG_FILE_PATH = path.join(CONFIG_DIR, 'config.json');
 const STATE_FILE_PATH = path.join(CONFIG_DIR, 'state.json');
 const DISPLAYS_FILE_PATH = path.join(CONFIG_DIR, 'displays.json');
 const CONTENT_DIR = path.join(CONFIG_DIR, 'content');
@@ -67,7 +66,6 @@ module.exports = {
     SERVER_URL,
     getServerUrl,
     CONFIG_DIR,
-    CONFIG_FILE_PATH,
     STATE_FILE_PATH,
     DISPLAYS_FILE_PATH,
     CONTENT_DIR,

@@ -28,7 +28,7 @@ const context = {
 async function bootstrap() {
     try {
         const constants = require('./config/constants');
-        const { loadConfig, saveConfig } = require('./utils/configManager');
+        const { loadConfig, saveConfig, deleteConfig } = require('./utils/configManager');
         const {
             configureGpu,
             configureMemory,
@@ -250,13 +250,12 @@ async function bootstrap() {
                     context.managedWindows.forEach((win) => {
                         if (win && !win.isDestroyed()) win.close();
                     });
+                    deleteConfig();
                     try {
-                        if (fs.existsSync(constants.CONFIG_FILE_PATH))
-                            fs.unlinkSync(constants.CONFIG_FILE_PATH);
                         if (fs.existsSync(constants.STATE_FILE_PATH))
                             fs.unlinkSync(constants.STATE_FILE_PATH);
                     } catch (e) {
-                        log.error('Error unlinking config:', e);
+                        log.error('Error unlinking state:', e);
                     }
                     app.relaunch();
                     app.exit(0);
