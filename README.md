@@ -64,12 +64,13 @@ npm start
 ```
 
 First run launches **provisioning mode**. It shows the device ID and asks for the server URL
-plus a **setup code** — a single-use nonce an admin generates in the panel (Devices → Generate
-nonce, valid 15 min). Without it the handshake is refused: the device ID alone is not enough
-to obtain a token.
+plus a **setup code** — a single-use nonce an admin or support generates in the panel (open the
+salon → "Agregar dispositivo", step 1 "Código de configuración"; valid 15 min). Without it the
+handshake is refused: the device ID alone is not enough to obtain a token. Step 2 of the same
+dialog links the device ID to the salon.
 
 Once configured the agent starts in normal mode and connects automatically. Hot reload is not
-supported (restart the app). Logs: `%APPDATA%\ScreensWeb\logs\`.
+supported (restart the app). Logs: `%APPDATA%\local-agent\logs\`.
 
 For end users: download the latest `.exe` from GitHub Releases and run it (installs, adds a
 desktop shortcut, auto-starts with Windows, and opens provisioning on first run).
@@ -79,18 +80,28 @@ desktop shortcut, auto-starts with Windows, and opens provisioning on first run)
 | Command | What it does |
 |---|---|
 | `npm start` | Run the agent in development |
-| `npm test` | Unit tests (`node --test`): schedule rules, playlist sequencer, local file resolution |
+| `npm run lint` | ESLint |
+| `npm test` | Unit tests (`node --test`): schedule rules against the shared fixtures, playlist sequencer, manifest and local file resolution |
 | `npm run test:contract` | Static checks on the player wrapper and its playlist engine |
-| `npm run build:prod` | Build the Windows installer (`dist/ScreensWebAgent-Setup-x.y.z.exe` + `latest.yml`) |
+| `npm run build:prod` | Inject `SERVER_URL` and the theme, build the Windows installer (`dist/ScreensWebAgent-Setup-x.y.z.exe` + `latest.yml`), restore `package.json` |
 
 ## Configuration
 
-The backend URL is the only required setting: `.env` `SERVER_URL` in dev; baked at build time
-(`package.json` `extraMetadata` / GitHub Secrets) in production.
+The backend URL is the only required setting: `.env` `SERVER_URL` in dev; baked at build time in
+production (`scripts/inject-config.js` writes `package.json` `config.serverUrl` from the
+`SERVER_URL` secret or variable). The provisioning screen can override it.
 
-Runtime config is stored **encrypted** (AES-256-GCM, key derived from the device hardware ID) at
-`%APPDATA%\ScreensWeb\config.json` — holds `deviceId`, `agentToken`, `serverUrl`, `maxStorageMB`.
-Delete it to return to provisioning mode.
+Everything lives in the app's userData folder, `%APPDATA%\local-agent` (Electron names it after
+the package name, also in installed builds):
+
+| Path | What |
+|---|---|
+| `config.json` | Encrypted by electron-store (AES-256-CBC, key derived from the hardware ID): `deviceId`, `agentToken`, `serverUrl`, `updateChannel`, `expectedScreens`, `restartSchedule`, `maxStorageMB`. Delete it to return to provisioning mode |
+| `ScreensWeb\state.json` | What each screen shows (playlist manifests included); autologin credentials AES-256-GCM encrypted |
+| `ScreensWeb\displays.json` | Monitor ↔ slot map |
+| `ScreensWeb\content\`, `ScreensWeb\asset-index.json` | Synced local files and their index |
+| `gpu-config.json` | GPU switches (see below) |
+| `logs\` | `general-YYYY-MM-DD.log` and `error-YYYY-MM-DD.log`, rotated daily, kept 30 days |
 
 | Setting | Default | Where |
 |---|---|---|
@@ -161,15 +172,16 @@ That pause is overridden the moment the network monitor proves the server answer
 `socket.forceReconnect()` drops the manager's pending backoff and dials immediately, because
 `socket.connect()` alone is a no-op while a reconnection is already scheduled.
 
-| Consecutive failures | Retry interval |
+| Consecutive failures | Retry interval (±50%) |
 |---|---|
-| 1–4 | 3s → 9s → 27s |
-| 5+ | 30s (cap) |
+| 1–4 | 3s → 6s → 12s → 24s |
+| 5–9 | 30s (cap) |
 | 10+ (open) | 5 min, unless the monitor forces it sooner |
 
 ## Security
 
-- Config and autologin site credentials encrypted with AES-256-GCM using a hardware-derived key.
+- Config encrypted by electron-store and autologin site credentials with AES-256-GCM, both with
+  a key derived from the hardware ID. Without a readable hardware ID the token is not persisted.
 - **Transport** is the site's OpenVPN tunnel, whose certificate is issued by Luckia's PKI and
   installed by a technician. The agent neither presents nor validates a client certificate:
   this application does no mTLS of its own.
@@ -182,8 +194,9 @@ That pause is overridden the moment the network monitor proves the server answer
 ## Auto-update
 
 `electron-updater` pulls from GitHub Releases. On startup the agent waits a random 15–60s (to
-avoid a thundering herd), reads its channel file, downloads in the background, and installs
-silently.
+avoid a thundering herd), reads its channel file and downloads in the background. A routine
+update installs silently between 03:00 and 06:00, or at a scheduled restart; `force_update`
+installs at once.
 
 | Channel | File | Audience |
 |---|---|---|
@@ -201,29 +214,34 @@ silently.
 
 ```
 screens-agent/
-├── config/constants.js     # URLs, timeouts, paths
+├── config/                 # constants (URLs, timeouts, paths), agentThemes
 ├── handlers/               # commands, ipc, provisioning
-├── services/               # socket, network, assets, auth, updater, state, monitors, tray...
-├── utils/                  # configManager (encrypted store), logConfig
+├── services/               # socket, network, assets, auth, updater, state, monitors, displaySlots,
+│                           # localCarousel, screenWatchdog, restartScheduler, gpu, tray...
+├── utils/                  # configManager (encrypted store), logConfig, atomicWrite, playlistManifest...
 ├── css/ js/                # control panel UI; js/ also holds the playlist engine, its
 │                           # sequencer and schedule rules, and the shared media watchdog
+├── scripts/                # inject/restore config, player contract check, smoke test
+├── tests/                  # node --test suites and the shared schedule fixtures
 ├── main.js                 # main process orchestrator
-├── preload.js              # renderer bridge
+├── player.html             # content wrapper (with player-preload.js)
+├── preload.js, identify-preload.js # renderer bridges
 ├── *.html                  # control, fallback, identify, provision
 └── package.json
 ```
 
 ## Troubleshooting
 
-Logs: `%APPDATA%\ScreensWeb\logs\main.log`.
+Logs: `%APPDATA%\local-agent\logs\general-<date>.log` (warnings and errors also in
+`error-<date>.log`). Staff can pull them remotely from the panel (device → logs).
 
 - **Won't start**: another instance running (single-instance lock), or corrupted config → delete
-  `%APPDATA%\ScreensWeb\config.json`.
-  
+  `%APPDATA%\local-agent\config.json`.
+
 Reset (Windows shell):
 
 ```cmd
-rmdir /s "%APPDATA%\ScreensWeb"                  :: full reset → provisioning mode
-del "%APPDATA%\ScreensWeb\state.json"            :: clear screen state only
-rmdir /s "%APPDATA%\ScreensWeb\content"          :: clear local assets (re-download next sync)
+del "%APPDATA%\local-agent\config.json"                   :: back to provisioning mode
+del "%APPDATA%\local-agent\ScreensWeb\state.json"         :: clear screen state only
+rmdir /s "%APPDATA%\local-agent\ScreensWeb\content"       :: clear local assets (re-download next sync)
 ```
