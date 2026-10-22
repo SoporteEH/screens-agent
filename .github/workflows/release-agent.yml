@@ -134,6 +134,6 @@ jobs:
 
       - name: Build and Release (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: npx electron-builder --linux deb AppImage --arm64 --armv7l --x64 --publish always
+        run: npx electron-builder --linux deb AppImage --arm64 --x64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
