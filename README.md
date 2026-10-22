@@ -1,247 +1,179 @@
 # ScreensWeb Agent
 
-![Electron](https://img.shields.io/badge/electron-41-blue)
+![Electron](https://img.shields.io/badge/electron-44-blue)
 ![Node](https://img.shields.io/badge/node-22%2B-green)
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
 
-Desktop player (Electron) for **ScreensWeb**. Runs on each venue PC, connects to the backend over
-the site's OpenVPN tunnel, and shows content full-screen in kiosk mode on every attached monitor.
-Auto-updates from GitHub Releases.
+Desktop player (Electron) for **ScreensWeb**. It runs on each venue PC (Windows 10/11, 64-bit),
+connects to the API over the site's OpenVPN tunnel and shows content full-screen, in kiosk mode, on
+every attached monitor:
 
-## Table of Contents
+- runs the API's commands in real time (`show_url`, `close_screen`, `refresh_screen`,
+  `identify_screen`, `force_update`, `reboot_device`, `set_channel`, `get_logs`);
+- keys monitor slots `"1".."N"` by id: a monitor switched off keeps its slot as `Disconnected`
+  instead of shifting its neighbours;
+- plays playlists and synced local files offline, and falls back to a local carousel when the
+  network or the server fails, so a screen never goes black;
+- updates itself from GitHub Releases.
 
-- [What it is](#what-it-is)
-- [Architecture](#architecture)
-- [Requirements](#requirements)
-- [Quick start (dev)](#quick-start-dev)
-- [Common commands](#common-commands)
-- [Configuration](#configuration)
-- [Resilience](#resilience)
-- [Security](#security)
-- [Auto-update](#auto-update)
-- [Project structure](#project-structure)
-- [Troubleshooting](#troubleshooting)
+## Run locally
 
-## What it is
-
-One of the three ScreensWeb pieces (`screens-api`, `screens-front`, `screens-agent`). The agent:
-
-- Keeps a persistent WebSocket connection to the backend and runs its commands in real time
-  (`show_url`, `close_screen`, `refresh_screen`, `identify_screen`, `force_update`,
-  `reboot_device`, `set_channel`, `get_logs`).
-- Detects and manages the attached physical displays, shown full-screen in kiosk mode. Slots
-  are keyed `"1".."N"` by id, not by array position: a monitor that is switched off keeps its
-  slot marked `Disconnected` instead of shifting its neighbours.
-- Falls back to a local carousel on network/server failure — screens never go black.
-- Syncs local assets for offline playback and auto-updates itself.
-
-## Architecture
-
-```
-ScreensWeb Backend (API + Socket.IO)
-        │ WebSocket (WSS/WS)
-ScreensWeb Agent (Electron)
-  ├── Main: connection, commands, network monitoring, state
-  └── Renderers: content windows, identify overlay, provisioning UI
-        │ display output
-Physical monitors
-```
-
-## Requirements
-
-- **Windows 10/11** (64-bit)
-- **Node.js 22+** and **npm 10+** (dev only; this repo uses npm, not pnpm)
-- Network access to the ScreensWeb backend
-
-## Quick start (dev)
+Needs Node.js 22+ and **npm** 10+ (not pnpm: electron-builder packages the dependencies with npm).
 
 ```bash
-git clone <repository>
-cd screens-agent
 npm install
 echo "SERVER_URL=http://localhost:3000" > .env
-npm start
+npm start   # the first run downloads Electron
 ```
 
-First run launches **provisioning mode**. It shows the device ID and asks for the server URL
-plus a **setup code** — a single-use nonce an admin or support generates in the panel (open the
-salon → "Agregar dispositivo", step 1 "Código de configuración"; valid 15 min). Without it the
-handshake is refused: the device ID alone is not enough to obtain a token. Step 2 of the same
-dialog links the device ID to the salon.
+The first launch opens the **setup screen**: it shows the device ID and asks for the server URL and
+a **setup code**, which admin or support generate in the panel (salon → "Agregar dispositivo", step
+1; single use, 15 minutes). Step 2 of that dialog links the device ID to the salon. The agent then
+restarts in normal mode. There is no hot reload.
 
-Once configured the agent starts in normal mode and connects automatically. Hot reload is not
-supported (restart the app). Logs: `%APPDATA%\local-agent\logs\`.
+Installed builds: run the `.exe` from GitHub Releases. It installs, adds a desktop shortcut, starts
+with Windows and opens the setup screen on first run.
 
-For end users: download the latest `.exe` from GitHub Releases and run it (installs, adds a
-desktop shortcut, auto-starts with Windows, and opens provisioning on first run).
-
-## Common commands
-
-| Command | What it does |
-|---|---|
-| `npm start` | Run the agent in development |
-| `npm run lint` | ESLint |
-| `npm test` | Unit tests (`node --test`): schedule rules against the shared fixtures, playlist sequencer, manifest and local file resolution |
-| `npm run test:contract` | Static checks on the player wrapper and its playlist engine |
-| `npm run build:prod` | Inject `SERVER_URL` and the theme, build the Windows installer (`dist/ScreensWebAgent-Setup-x.y.z.exe` + `latest.yml`), restore `package.json` |
+| Command                 | What it does                                                                                                                           |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm start`             | Run the agent                                                                                                                          |
+| `npm run lint`          | ESLint                                                                                                                                 |
+| `npm run format`        | Prettier; `npm run format:check` only checks                                                                                           |
+| `npm test`              | `node --test`: schedule rules against the shared fixtures, playlist sequencer, manifest and local file resolution                      |
+| `npm run test:contract` | Static checks on the player wrapper and its playlist engine                                                                            |
+| `npm run build:prod`    | Inject `SERVER_URL` and the theme, build the installer (`dist/ScreensWebAgent-Setup-x.y.z.exe` + `latest.yml`), restore `package.json` |
 
 ## Configuration
 
-The backend URL is the only required setting: `.env` `SERVER_URL` in dev; baked at build time in
-production (`scripts/inject-config.js` writes `package.json` `config.serverUrl` from the
-`SERVER_URL` secret or variable). The provisioning screen can override it.
+`SERVER_URL` is the only required setting: `.env` in development, baked into `package.json`
+(`config.serverUrl`) by `scripts/inject-config.js` for production builds. The setup screen can
+override it.
 
-Everything lives in the app's userData folder, `%APPDATA%\local-agent` (Electron names it after
-the package name, also in installed builds):
+Everything lives in `%APPDATA%\local-agent` (Electron's userData, named after the package, also in
+installed builds):
 
-| Path | What |
-|---|---|
-| `config.json` | Encrypted by electron-store (AES-256-CBC, key derived from the hardware ID): `deviceId`, `agentToken`, `serverUrl`, `updateChannel`, `expectedScreens`, `restartSchedule`, `maxStorageMB`. Delete it to return to provisioning mode |
-| `ScreensWeb\state.json` | What each screen shows (playlist manifests included); autologin credentials AES-256-GCM encrypted |
-| `ScreensWeb\displays.json` | Monitor ↔ slot map |
-| `ScreensWeb\content\`, `ScreensWeb\asset-index.json` | Synced local files and their index |
-| `gpu-config.json` | GPU switches (see below) |
-| `logs\` | `general-YYYY-MM-DD.log` and `error-YYYY-MM-DD.log`, rotated daily, kept 30 days |
+| Path                                                 | Contents                                                                                                                                                                                          |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config.json`                                        | electron-store, encrypted with a hardware-derived key: `deviceId`, `agentToken`, `serverUrl`, `updateChannel`, `expectedScreens`, `restartSchedule`, `maxStorageMB`. Delete it to provision again |
+| `ScreensWeb\state.json`                              | What each screen shows, playlist manifests included; autologin credentials encrypted                                                                                                              |
+| `ScreensWeb\displays.json`                           | Monitor ↔ slot map                                                                                                                                                                                |
+| `ScreensWeb\content\`, `ScreensWeb\asset-index.json` | Synced local files and their index                                                                                                                                                                |
+| `gpu-config.json`                                    | GPU switches                                                                                                                                                                                      |
+| `logs\`                                              | `general-YYYY-MM-DD.log`, `error-YYYY-MM-DD.log`; daily, kept 30 days                                                                                                                             |
 
-| Setting | Default | Where |
-|---|---|---|
-| `maxStorageMB` | `500` | config — local asset storage cap |
-| `DISABLE_GPU` | unset | env — disable hardware acceleration entirely |
-| `GPU_SAFE_MODE` | unset | env — keep acceleration but skip forced GPU switches (Chromium blocklist decides) |
-| `softwareVideoDecode` | `false` | `gpu-config.json` (userData) — software video decode; for GPUs whose single decode engine starves with several screens. Survives updates and GPU-crash resets; `DISABLE_VIDEO_DECODE=true` is the env equivalent |
-| `REDUCED_MOTION` | unset | env — force `prefers-reduced-motion` in content pages |
-| `SOCKET_RECONNECT_DELAY_MS` | `3000` | `config/constants.js` — base reconnect delay |
-| `SOCKET_RECONNECT_DELAY_MAX_MS` | `30000` | `config/constants.js` — max backoff between reconnect attempts |
-| `CIRCUIT_BREAKER_THRESHOLD` | `10` | `config/constants.js` — failures before circuit opens |
+| Setting                                                                                   | Default               | Where / effect                                                                                                                                                                             |
+| ----------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `maxStorageMB`                                                                            | `500`                 | config: local file storage cap                                                                                                                                                             |
+| `softwareVideoDecode`                                                                     | `false`               | `gpu-config.json`: software decode, for GPUs whose single decode engine starves with several screens. Survives updates and GPU-crash resets; env `DISABLE_VIDEO_DECODE=true` does the same |
+| `DISABLE_GPU`                                                                             | unset                 | env: no hardware acceleration                                                                                                                                                              |
+| `GPU_SAFE_MODE`                                                                           | unset                 | env: keep acceleration, skip the forced GPU switches                                                                                                                                       |
+| `REDUCED_MOTION`                                                                          | unset                 | env: force `prefers-reduced-motion` in content pages                                                                                                                                       |
+| `SOCKET_RECONNECT_DELAY_MS`, `SOCKET_RECONNECT_DELAY_MAX_MS`, `CIRCUIT_BREAKER_THRESHOLD` | `3000`, `30000`, `10` | `config/constants.js`                                                                                                                                                                      |
 
 ## Resilience
 
-**Offline recovery** — screens always show something:
+| Situation                           | Behaviour                                                |
+| ----------------------------------- | -------------------------------------------------------- |
+| Server down, external URL on screen | Keeps playing; the window is not reloaded                |
+| Server down, internal URL on screen | Local carousel after 4 s                                 |
+| Internet lost                       | Local carousel; a playlist keeps playing its local files |
+| Internet back, server still down    | External URLs restored; carousel for internal ones       |
+| Server back                         | Socket reconnects, the assigned URLs are restored        |
 
-| Case | Situation | Behavior |
-|---|---|---|
-| 1A | Server down, external URL on screen | Keep playing — the window is left untouched, not reloaded |
-| 1B | Server down, internal URL on screen | Local carousel after 4s |
-| 2 | Internet lost | All screens → local carousel |
-| 3 | Internet back, server still down | Restore external URLs; carousel for internal |
-| 4 | Server back | Reconnect socket, restore the assigned URLs |
+The network is checked every 15 s when stable, 5 s when degraded.
 
-Network is checked every 15s when stable, 5s when degraded.
-
-`inspectScreen()` in `main.js` is the single predicate deciding whether a screen is showing what
-it should. The watchdog, the offline handler and both recovery paths all ask it, so they cannot
-disagree. The wrapper is local, so "on the wrapper and not stalled" is healthy under any network
-state; recovery is an idempotent `player:show` push the renderer ignores when nothing changed,
-so a flapping network never restarts content that is already playing.
-
-**Player wrapper** — `player.html`, shipped with the agent and loaded as `file://` with
-`player-preload.js`. The main process drives it over IPC: `player:init` (screen number),
-`player:show` (`{url, contentName, fallbackUrl}` — idempotent, re-pushed on every wrapper
-`did-finish-load`), `player:status` (`connected`/`server-down`/`offline` for the dot) and
-`player:refresh` (re-set the iframe, no window reload). Offline targets carry the local
-carousel as `fallbackUrl` so a dead content URL degrades to the carousel, never to black.
-`scripts/check-player-contract.js` pins the wrapper's contract in CI.
-
-**Playlists** — a `show_url` for `playlist:<id>` carries the whole manifest (see the API's
-`documentation/PLAYLISTS.md`). It is stored in `state.json` with the screen and played by
-`js/playlist-engine.js` inside the wrapper, so a playlist keeps its schedule with the API down and
-after a reboot. Rules are evaluated against the PC clock every minute (`js/playlist-schedule.js`,
-byte-identical to the API's and tested against the same fixtures); `js/playlist-sequencer.js`
-picks the next item. Local files go to the wrapper as `file://` (resolved through
-`asset-index.json`); one not synced yet is skipped and the screens are re-pushed after every sync.
-Web items wait while there is no network, failed items are benched 5 minutes, and two videos
-never decode at once (fade through black). With nothing playable the engine shows the playlist's
-fallback, then the local carousel. The heartbeat reports the PC clock and storage so the panel can
-flag a wrong clock or a full disk.
-
-**Local files** — the API names them `local:<assetId>` and lists, per device, the rendition its
-media profile gets (H.264 1080p or 720p). `asset-index.json` (outside `content/`, which the sync
-prunes) maps ids to files. Files the playlists on screen use download first; an `assets-updated`
-sync starts after up to 60s of jitter so an estate-wide change does not hit the tunnels at once.
-
-**Screen health** — a cross-origin frame reports no errors to the page embedding it, so the
-wrapper (`player.html`) watches for a frame that never fires `onload`: it retries 3 times,
-then appends `[stalled]` to `document.title`. The agent reads that with
-`webContents.getTitle()`, which is the only way a black screen behind a correctly-loaded
-wrapper becomes visible. Frame-level load failures are logged as `[CONTENT]: Frame failed`.
-
-**Reconnection** — exponential backoff with ±50% jitter, capped at 30s, never giving up. After
-10 consecutive failures the circuit opens (`[CIRCUIT BREAKER]: OPEN`) and pauses for 5 minutes.
-
-That pause is overridden the moment the network monitor proves the server answers `/health`:
-`socket.forceReconnect()` drops the manager's pending backoff and dials immediately, because
-`socket.connect()` alone is a no-op while a reconnection is already scheduled.
-
-| Consecutive failures | Retry interval (±50%) |
-|---|---|
-| 1–4 | 3s → 6s → 12s → 24s |
-| 5–9 | 30s (cap) |
-| 10+ (open) | 5 min, unless the monitor forces it sooner |
+- **One health predicate.** `inspectScreen()` in `main.js` decides whether a screen shows what it
+  should; the watchdog, the offline handler and both recovery paths ask it. Recovery is an
+  idempotent `player:show` the wrapper ignores when nothing changed, so a flapping network never
+  restarts content already playing.
+- **Player wrapper.** `player.html` (with `player-preload.js`) ships in the agent, loads as
+  `file://` and is driven over IPC: `player:init` (screen number), `player:show`
+  (`{ url, contentName, fallbackUrl, playlist }`, re-pushed on every `did-finish-load`),
+  `player:status` (`connected`, `server-down`, `offline`) and `player:refresh` (resets the iframe
+  without reloading the window). Offline targets carry the local carousel as `fallbackUrl`.
+  `scripts/check-player-contract.js` pins this contract in CI.
+- **Screen health.** A cross-origin frame reports no errors to its parent, so the wrapper watches
+  for a frame that never fires `onload`, retries 3 times and then appends `[stalled]` to
+  `document.title`; the agent reads it with `webContents.getTitle()`. Frame load failures are
+  logged as `[CONTENT]: Frame failed`.
+- **Playlists.** The manifest arrives with `show_url` of `playlist:<id>`, is stored in `state.json`
+  and is played by `js/playlist-engine.js` inside the wrapper, so it keeps its schedule with the API
+  down and after a reboot. Rules, ordering and fallbacks:
+  `screens-api/documentation/PLAYLISTS.md`. The heartbeat reports the PC clock and storage so the
+  panel can flag a wrong clock or a full disk.
+- **Local files.** The API names them `local:<assetId>` and lists, per device, the rendition of its
+  media profile (H.264 1080p or 720p). `asset-index.json` maps ids to files (it sits outside
+  `content\`, which the sync prunes). Files of the playlists on screen download first; an
+  `assets-updated` sync waits up to 60 s of jitter so an estate-wide change does not hit every
+  tunnel at once.
+- **Reconnection.** Exponential backoff, never giving up: 3 → 6 → 12 → 24 s, then 30 s (±50%).
+  After 10 consecutive failures the circuit opens (`[CIRCUIT BREAKER]: OPEN`) for 5 minutes, unless
+  the network monitor sees the server answer `/health`: `socket.forceReconnect()` then dials at once
+  (`socket.connect()` is a no-op while a reconnection is scheduled).
 
 ## Security
 
-- Config encrypted by electron-store and autologin site credentials with AES-256-GCM, both with
-  a key derived from the hardware ID. Without a readable hardware ID the token is not persisted.
-- **Transport** is the site's OpenVPN tunnel, whose certificate is issued by Luckia's PKI and
-  installed by a technician. The agent neither presents nor validates a client certificate:
-  this application does no mTLS of its own.
-- **Identity** is a device JWT (RS256, 180-day life, refreshed once fewer than 90 days remain).
-  An admin can revoke a single device: the live socket is cut immediately and the agent is told
-  to re-provision. Commands are validated with Zod schemas.
-- Chromium hardening: `nodeIntegration: false`, `contextIsolation: true`, `webSecurity: true`.
-- Single-instance lock; renderer memory auto-reload above 800MB; caches cleared every 4h.
+- `config.json` (electron-store) and the autologin credentials in `state.json` (AES-256-GCM) are
+  encrypted with a key derived from the hardware ID; without a readable hardware ID the token is
+  not persisted.
+- Transport is the site's OpenVPN tunnel; the agent presents no client certificate. Identity is a
+  device JWT (180 days, refreshed once fewer than 90 remain); revoking a device cuts its socket and
+  sends it back to setup.
+- Only `http`, `https`, `local:` and `playlist:` URLs are accepted. Content windows run with
+  `nodeIntegration: false`, `contextIsolation: true`, `webSecurity: true` and `sandbox: true`.
+- Web permissions are denied except `fullscreen` and `mediaKeySystem` (what the wrapper delegates to
+  its frames), and no page gets a HID, USB or serial device (`services/permissions.js`). Denials are
+  logged once per origin as `[PERMISSIONS]`.
+- Single-instance lock; a renderer above 800 MB is reloaded; content pages' `localStorage` and
+  `sessionStorage` are cleared every 4 h.
+
+Full model: `screens-api/documentation/SECURITY.md`.
 
 ## Auto-update
 
-`electron-updater` pulls from GitHub Releases. On startup the agent waits a random 15–60s (to
-avoid a thundering herd), reads its channel file and downloads in the background. A routine
-update installs silently between 03:00 and 06:00, or at a scheduled restart; `force_update`
-installs at once.
+`electron-updater` checks GitHub Releases on startup (so a build that fails to load can still be
+replaced), again 15–60 s after entering normal mode, and then hourly; downloads run in the
+background. A routine update installs silently between 03:00 and 06:00 or at a scheduled restart;
+`force_update` installs at once.
 
-| Channel | File | Audience |
-|---|---|---|
-| `latest` | `latest.yml` | All devices (default) |
-| `beta` | `beta.yml` | Canary devices |
+| Channel  | File         | Devices       |
+| -------- | ------------ | ------------- |
+| `latest` | `latest.yml` | All (default) |
+| `beta`   | `beta.yml`   | Canary        |
 
-- A device's channel lives in its encrypted config and is switched remotely with
-  `{ "action": "set_channel", "channel": "beta" }` (or `"latest"`).
-- **Release**: bump `package.json` version and push a tag (`vX.Y.Z`, or `vX.Y.Z-beta.N` for
-  beta). CI builds, runs a smoke test that boots the binary, and only publishes if it passes.
-- **Rollback**: `allowDowngrade` is on — publish/point the channel file to an older version and
-  agents move back on the next check.
+- The channel is stored in the encrypted config and switched remotely with `set_channel`.
+- **Release**: push a tag `vX.Y.Z` (or `vX.Y.Z-beta.N`); the workflow takes the version from it,
+  builds, boots the binary in a smoke test and publishes only if it passes.
+- **Rollback**: `allowDowngrade` is on; point the channel file to an older version and agents move
+  back on the next check.
 
 ## Structure
 
 ```
 screens-agent/
-├── config/                 # constants (URLs, timeouts, paths), agentThemes
-├── handlers/               # commands, ipc, provisioning
-├── services/               # socket, network, assets, auth, updater, state, monitors, displaySlots,
-│                           # localCarousel, screenWatchdog, restartScheduler, gpu, tray...
-├── utils/                  # configManager (encrypted store), logConfig, atomicWrite, playlistManifest...
-├── css/ js/                # control panel UI; js/ also holds the playlist engine, its
-│                           # sequencer and schedule rules, and the shared media watchdog
-├── scripts/                # inject/restore config, player contract check, smoke test
-├── tests/                  # node --test suites and the shared schedule fixtures
-├── main.js                 # main process orchestrator
-├── player.html             # content wrapper (with player-preload.js)
-├── preload.js, identify-preload.js # renderer bridges
-├── *.html                  # control, fallback, identify, provision
-└── package.json
+├── config/        # constants (URLs, timeouts, paths), agentThemes
+├── handlers/      # commands, ipc, provisioning
+├── services/      # socket, network, assets, auth, updater, state, monitors, displaySlots,
+│                  # localCarousel, screenWatchdog, restartScheduler, gpu, permissions, tray…
+├── utils/         # configManager (encrypted store), logConfig, atomicWrite, playlistManifest…
+├── css/, js/      # control panel UI; js/ also holds the playlist engine, sequencer, schedule
+│                  # rules and the shared media watchdog
+├── scripts/       # inject/restore config, player contract check, smoke test
+├── tests/         # node --test suites and the shared schedule fixtures
+├── main.js        # main process
+├── player.html    # content wrapper (with player-preload.js)
+├── preload.js, identify-preload.js   # renderer bridges
+└── *.html         # control, fallback, identify, provision
 ```
 
 ## Troubleshooting
 
 Logs: `%APPDATA%\local-agent\logs\general-<date>.log` (warnings and errors also in
-`error-<date>.log`). Staff can pull them remotely from the panel (device → logs).
-
-- **Won't start**: another instance running (single-instance lock), or corrupted config → delete
-  `%APPDATA%\local-agent\config.json`.
-
-Reset (Windows shell):
+`error-<date>.log`); staff can pull them from the panel (device → logs). If the agent will not
+start, another instance is running or the config is corrupt.
 
 ```cmd
-del "%APPDATA%\local-agent\config.json"                   :: back to provisioning mode
-del "%APPDATA%\local-agent\ScreensWeb\state.json"         :: clear screen state only
-rmdir /s "%APPDATA%\local-agent\ScreensWeb\content"       :: clear local assets (re-download next sync)
+del "%APPDATA%\local-agent\config.json"                :: back to the setup screen
+del "%APPDATA%\local-agent\ScreensWeb\state.json"      :: clear screen state only
+rmdir /s "%APPDATA%\local-agent\ScreensWeb\content"    :: clear local files (re-downloaded on the next sync)
 ```
