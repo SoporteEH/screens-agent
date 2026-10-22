@@ -4,5 +4,11 @@
   "tabWidth": 4,
   "trailingComma": "es5",
   "printWidth": 100,
-  "endOfLine": "lf"
+  "endOfLine": "lf",
+  "overrides": [
+    {
+      "files": "*.json",
+      "options": { "tabWidth": 2 }
+    }
+  ]
 }
