@@ -1,6 +1,7 @@
-// Playlist time rules. Kept dependency-free and byte-identical in three places — this file,
-// screens-agent/js/playlist-schedule.js and screens-front/src/lib/playlist-schedule.js — and
-// each repo runs playlist-schedule.fixtures.json against its copy, so they cannot drift.
+// Playlist time rules. Dependency-free and byte-identical in four copies:
+// screens-api/utils/playlistSchedule.js, screens-agent/js/playlist-schedule.js,
+// screens-front/src/lib/playlist-schedule.js and screens-front/public/play/assets/ (the banner
+// player). Each repo runs playlist-schedule.fixtures.json against its copy, so they cannot drift.
 //
 // All times are the salon's wall clock: "HH:mm", dates "YYYY-MM-DD", validity bounds
 // "YYYY-MM-DDTHH:mm". Nothing here converts time zones; the caller builds the clock.
@@ -84,8 +85,9 @@
 
     function isWindowActive(window, clock) {
         const w = window || {};
-        if (!w.startTime || !w.endTime)
+        if (!w.startTime || !w.endTime) {
             return dayAllowed(w, clock.day) && dateAllowed(w, clock.date);
+        }
 
         const start = toMinutes(w.startTime);
         const end = toMinutes(w.endTime);
@@ -142,8 +144,9 @@
             }
         });
         [playlist.validFrom, playlist.validUntil].forEach((bound) => {
-            if (bound && bound.slice(0, 10) === clock.date)
+            if (bound && bound.slice(0, 10) === clock.date) {
                 consider(toMinutes(bound.slice(11, 16)));
+            }
         });
         return Math.min.apply(null, candidates);
     }

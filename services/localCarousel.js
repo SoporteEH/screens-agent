@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { log } = require('../utils/logConfig');
 const { CONTENT_DIR, CONFIG_DIR } = require('../config/constants');
+const { writeFileAtomic } = require('../utils/atomicWrite');
 
 const CAROUSEL_HTML_PATH = path.join(CONFIG_DIR, 'offline-carousel.html');
 // Inlined: the generated page lives in userData, away from the app's own files.
@@ -10,19 +11,14 @@ const WATCHDOG_SOURCE = fs.readFileSync(path.join(__dirname, '../js/media-watchd
 function writeCarouselFile(html, itemCount) {
     try {
         if (fs.readFileSync(CAROUSEL_HTML_PATH, 'utf8') === html) return;
-    } catch (_e) {}
+    } catch {
+        // Not written yet.
+    }
 
-    const tmp = CAROUSEL_HTML_PATH + '.' + process.pid + '.tmp';
     try {
-        fs.writeFileSync(tmp, html, 'utf8');
-        fs.renameSync(tmp, CAROUSEL_HTML_PATH);
+        writeFileAtomic(CAROUSEL_HTML_PATH, html);
     } catch (error) {
         log.warn('[CAROUSEL]: Atomic write failed, falling back to in-place:', error.message);
-        try {
-            fs.unlinkSync(tmp);
-        } catch (_e) {
-            /* nothing to clean up */
-        }
         fs.writeFileSync(CAROUSEL_HTML_PATH, html, 'utf8');
     }
 

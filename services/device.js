@@ -62,16 +62,16 @@ function registerDevice(socket, deviceId, hardwareIdToDisplayMap) {
     });
 }
 
-function handleRebootDevice() {
-    const platform = process.platform;
-    let command = '';
+const REBOOT_COMMANDS = {
+    win32: 'shutdown /r /t 0',
+    darwin: 'sudo reboot || systemctl reboot',
+    linux: 'sudo reboot || systemctl reboot',
+};
 
-    if (platform === 'win32') {
-        command = 'shutdown /r /t 0';
-    } else if (platform === 'darwin' || platform === 'linux') {
-        command = 'sudo reboot || systemctl reboot';
-    } else {
-        log.error(`[DEVICE]: Platform ${platform} not supported for reboot.`);
+function handleRebootDevice() {
+    const command = REBOOT_COMMANDS[process.platform];
+    if (!command) {
+        log.error(`[DEVICE]: Platform ${process.platform} not supported for reboot.`);
         return;
     }
 

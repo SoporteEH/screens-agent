@@ -3,7 +3,8 @@ const { loadConfig } = require('./configManager');
 
 let _client = null;
 
-// Shared axios instance pointed at the configured server.
+// Shared axios instance pointed at the configured server. A new server URL comes with a
+// re-provisioning, which restarts the agent.
 function getHttpClient() {
     if (_client) return _client;
 
@@ -16,9 +17,4 @@ function getHttpClient() {
     return _client;
 }
 
-/** Drops the cached client so a later call picks up a changed serverUrl. */
-function resetHttpClient() {
-    _client = null;
-}
-
-module.exports = { getHttpClient, resetHttpClient };
+module.exports = { getHttpClient };

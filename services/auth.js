@@ -45,10 +45,13 @@ async function refreshIfNeeded({ force = false } = {}) {
         const remainingMs = decoded.exp * 1000 - Date.now();
         if (!force && remainingMs >= REFRESH_WHEN_REMAINING_MS) return false;
 
-        if (remainingMs <= 0)
+        if (remainingMs <= 0) {
             log.warn('[AUTH]: Token already expired, attempting recovery refresh...');
-        else if (force) log.warn('[AUTH]: Server rejected the token, attempting a refresh...');
-        else log.info('[AUTH]: Token near expiration, refreshing...');
+        } else if (force) {
+            log.warn('[AUTH]: Server rejected the token, attempting a refresh...');
+        } else {
+            log.info('[AUTH]: Token near expiration, refreshing...');
+        }
 
         const newToken = await refreshAgentToken(currentToken);
         if (newToken === currentToken) return false;
@@ -81,7 +84,6 @@ async function refreshAfterRejection() {
 }
 
 module.exports = {
-    refreshAgentToken,
     startTokenRefreshLoop,
     refreshAfterRejection,
 };

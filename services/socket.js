@@ -71,6 +71,7 @@ function connectToSocketServer(token, handlers) {
         log.debug(`[SOCKET]: Reconnecting attempt #${n}...`);
     });
 
+    // Fires on every failed attempt, reconnections included: the one place they are logged.
     socket.on('connect_error', (err) => {
         consecutiveFailures++;
 
@@ -107,10 +108,6 @@ function connectToSocketServer(token, handlers) {
         log.error(`[SOCKET]: Connection error: ${err.message}`);
         // Expired or revoked token.
         if (err.message === 'Unauthorized') handlers.onUnauthorized?.();
-    });
-
-    socket.io.on('reconnect_error', (err) => {
-        log.error(`[SOCKET]: Reconnection error: ${err.message}`);
     });
 
     socket.on('command', (cmd) => handlers.onCommand?.(cmd));

@@ -1,10 +1,15 @@
 const fs = require('fs');
+const path = require('path');
+const { net } = require('electron');
 const { log } = require('../utils/logConfig');
 const { STATE_FILE_PATH } = require('../config/constants');
 const { encryptCredentials, decryptCredentials } = require('../utils/configManager');
 const { writeFileAtomic } = require('../utils/atomicWrite');
+const { isWrapperUrl } = require('../utils/wrapperUrl');
+const { loadSlots } = require('./displaySlots');
+const { buildLocalCarouselUrl } = require('./localCarousel');
 
-// Credentials stored encrypted
+// Credentials are stored encrypted and come back decrypted.
 function loadLastState() {
     try {
         if (fs.existsSync(STATE_FILE_PATH)) {
@@ -89,7 +94,7 @@ function migrateStateEncryption() {
     }
 }
 
-// Removes slots no longer in the slot map;
+// Drops the entries of slots that are no longer in the slot map.
 function cleanOrphanedState(validSlotIds) {
     const state = loadRawState();
     const cleanedState = {};
@@ -120,7 +125,6 @@ function clearAllState() {
     }
 }
 
-// intervalSeconds is in seconds
 function setupAutoRefresh(screenIndex, intervalSeconds, managedWindows, autoRefreshTimers) {
     const intervalMs = intervalSeconds * 1000 + Math.floor(Math.random() * 15000);
     const intervalMin = Math.round(intervalSeconds / 60);
@@ -133,7 +137,6 @@ function setupAutoRefresh(screenIndex, intervalSeconds, managedWindows, autoRefr
         const win = managedWindows.get(screenIndex);
         if (win && !win.isDestroyed()) {
             log.debug(`[AUTO-REFRESH]: Reloading screen ${screenIndex} (every ${intervalMin}min)`);
-            const { isWrapperUrl } = require('../utils/wrapperUrl');
             if (isWrapperUrl(win.webContents.getURL())) {
                 // Refresh the content frame, not the wrapper: no black flash.
                 win.webContents.send('player:refresh');
@@ -188,6 +191,7 @@ function saveCurrentState(
                 playlist
             )
         )
+        // A failed write (already logged) must not block the ones queued after it.
         .catch(() => {});
     return writeLock;
 }
@@ -212,7 +216,7 @@ function _saveCurrentState(
     if (url) {
         const encryptedCredentials = credentials ? encryptCredentials(credentials) : null;
         state[screenIndex] = {
-            url: url,
+            url,
             credentials: encryptedCredentials ?? credentials ?? null,
             refreshInterval: refreshInterval || 0,
             ...(playlist ? { playlist } : {}),
@@ -236,12 +240,8 @@ function _saveCurrentState(
     }
 }
 
-const { net } = require('electron');
-const path = require('path');
-
 function restoreLastState(hardwareIdToDisplayMap, handleShowUrlCallback) {
     log.info('[STATE]: Initiating state restoration...');
-    const { loadSlots } = require('./displaySlots');
     const lastState = cleanOrphanedState(Object.keys(loadSlots()));
 
     if (Object.keys(lastState).length === 0) {
@@ -249,7 +249,7 @@ function restoreLastState(hardwareIdToDisplayMap, handleShowUrlCallback) {
         return;
     }
 
-    // Log screens/urls only never the decrypted credentials.
+    // Screens and URLs only: never the decrypted credentials.
     log.info(
         '[STATE]: Restoring last known state:',
         JSON.stringify(
@@ -270,7 +270,7 @@ function restoreLastState(hardwareIdToDisplayMap, handleShowUrlCallback) {
     for (const [stableId, screenData] of Object.entries(lastState)) {
         if (hardwareIdToDisplayMap.has(stableId)) {
             log.info(
-                `[STATE]: Restoring screen ${stableId} with URL: ${screenData.url}${screenData.refreshInterval ? ` (auto-refresh: ${screenData.refreshInterval}min)` : ''}`
+                `[STATE]: Restoring screen ${stableId} with URL: ${screenData.url}${screenData.refreshInterval ? ` (auto-refresh: ${screenData.refreshInterval}s)` : ''}`
             );
             const command = {
                 action: 'show_url',
@@ -337,7 +337,6 @@ function restoreAllContentImmediately(
                         refreshInterval: screenData.refreshInterval || 0,
                     };
 
-                    const { buildLocalCarouselUrl } = require('./localCarousel');
                     const carouselUrl = buildLocalCarouselUrl();
                     const pathToLoad = carouselUrl || fallbackPath;
 
@@ -366,10 +365,8 @@ function restoreAllContentImmediately(
 
 module.exports = {
     loadLastState,
-    cleanOrphanedState,
     clearAllState,
     migrateStateEncryption,
-    setupAutoRefresh,
     rearmAutoRefreshTimers,
     saveCurrentState,
     restoreLastState,

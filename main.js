@@ -1,5 +1,5 @@
 const { app, BrowserWindow, net } = require('electron');
-const { log } = require('./utils/logConfig');
+const { log, cleanupOldLogs, applyConfiguredLogLevel } = require('./utils/logConfig');
 const fs = require('fs');
 
 try {
@@ -25,8 +25,10 @@ const context = {
     networkState: 'ONLINE',
 };
 
-async function bootstrap() {
+function bootstrap() {
     try {
+        // Required inside the try: a module that fails to load lands in the recovery window,
+        // while the updater started above fetches a fixed build.
         const constants = require('./config/constants');
         const { loadConfig, saveConfig, deleteConfig } = require('./utils/configManager');
         const {
@@ -35,23 +37,35 @@ async function bootstrap() {
             logGpuDiagnostics,
             registerGpuCrashHandlers,
         } = require('./services/gpu');
+        const { restrictWebPermissions } = require('./services/permissions');
         const { registerIpcHandlers } = require('./handlers/ipc');
         const { startNormalMode, startProvisioningMode } = require('./services/agentModes');
         const {
             startProvisioningMode: startProvisioningHandler,
         } = require('./handlers/provisioning');
         const { createTray, updateControlWindow } = require('./services/tray');
-        const { getDeviceName } = require('./services/identity');
+        const { getDeviceName, setDeviceName } = require('./services/identity');
+        const { refreshAfterRejection } = require('./services/auth');
+        const { handleForceUpdate, handleSetChannel } = require('./services/updater');
+        const { applyRestartSchedule } = require('./services/restartScheduler');
+        const {
+            applyExpectedScreens,
+            clearSlots,
+            reconcileDisplays,
+        } = require('./services/displaySlots');
+        const { buildLocalCarouselUrl } = require('./services/localCarousel');
         const commandHandlers = require('./handlers/commands');
         const stateService = require('./services/state');
-        const { cleanupOldLogs, applyConfiguredLogLevel } = require('./utils/logConfig');
-
-        cleanupOldLogs();
-        applyConfiguredLogLevel();
-
         const socketService = require('./services/socket');
         const deviceService = require('./services/device');
         const assetsService = require('./services/assets');
+        const { getWrapperUrl, isWrapperUrl } = require('./utils/wrapperUrl');
+        const { isServerDependentUrl, resolveLocalContentUrl } = require('./utils/contentUrl');
+        const { isPlaylistUrl, resolveForRenderer } = require('./utils/playlistManifest');
+        const { isAutologinUrl, isSameSite } = require('./utils/autologinUrl');
+
+        cleanupOldLogs();
+        applyConfiguredLogLevel();
 
         const gotTheLock = app.requestSingleInstanceLock();
         if (!gotTheLock) {
@@ -69,23 +83,16 @@ async function bootstrap() {
 
         deviceService.setupAutostart();
 
-        const broadcastAppStatus = () => {
-            const statusInfo = {
-                serverUrl: constants.getServerUrl(),
-                version: constants.AGENT_VERSION,
-                status: context.isOnline ? 'Online' : 'Offline',
-                deviceName: getDeviceName(),
-            };
-            updateControlWindow(statusInfo);
-        };
-
-        registerIpcHandlers(constants.getServerUrl, constants.AGENT_VERSION, () => ({
-            isOnline: context.getIsOnline?.() ?? context.isOnline,
+        // What the control panel shows.
+        const appStatus = () => ({
+            version: constants.AGENT_VERSION,
+            status: context.isOnline ? 'Online' : 'Offline',
             deviceName: getDeviceName(),
-        }));
+        });
+        const broadcastAppStatus = () => updateControlWindow(appStatus());
 
-        // isOnline is a plain boolean; expose a getter for consumers needing a function ref.
-        context.getIsOnline = () => context.isOnline;
+        registerIpcHandlers();
+
         context.saveCurrentState = stateService.saveCurrentState;
         context.handleShowUrl = (cmd, att) => commandHandlers.handleShowUrl(cmd, att);
         commandHandlers.initializeHandlers(context);
@@ -134,7 +141,7 @@ async function bootstrap() {
                         .syncLocalAssets(context.agentToken)
                         .then(() => context.refreshPlaylistScreens?.());
                 },
-                onDisconnect: (_reason) => {
+                onDisconnect: () => {
                     context.isOnline = false;
                     broadcastAppStatus();
                     context.onNetworkOffline('SOCKET_DISCONNECT');
@@ -142,7 +149,6 @@ async function bootstrap() {
                 // 'connect' fires on reconnections too and already re-registers the
                 // device; this handler only repairs what is on the screens.
                 onReconnect: () => {
-                    const { loadConfig } = require('./utils/configManager');
                     const onlineConfig = loadConfig();
                     const serverUrl = onlineConfig.serverUrl || constants.getServerUrl();
 
@@ -176,9 +182,9 @@ async function bootstrap() {
                         identify_screen: commandHandlers.handleIdentifyScreen,
                         refresh_screen: commandHandlers.handleRefreshScreen,
                         reboot_device: deviceService.handleRebootDevice,
-                        force_update: require('./services/updater').handleForceUpdate,
+                        force_update: handleForceUpdate,
                         set_channel: (cmd) => {
-                            require('./services/updater').handleSetChannel(cmd);
+                            handleSetChannel(cmd);
                             // Reports the new channel immediately so the admin panel doesn't wait for a reconnect.
                             context.registerDevice?.();
                         },
@@ -199,12 +205,10 @@ async function bootstrap() {
                     }, delay);
                 },
                 onUnauthorized: async () => {
-                    const { refreshAfterRejection } = require('./services/auth');
                     if (await refreshAfterRejection()) context.socket?.forceReconnect?.();
                 },
                 onDeviceInfo: (device) => {
                     log.info('[SOCKET]: Device info received:', device.name);
-                    const { setDeviceName } = require('./services/identity');
                     setDeviceName(device.name);
 
                     // Persists admin-configured screen count (for offline-targeted commands) and prunes slots above it.
@@ -214,7 +218,6 @@ async function bootstrap() {
                             : null;
                         saveConfig({ expectedScreens });
                         if (expectedScreens) {
-                            const { applyExpectedScreens } = require('./services/displaySlots');
                             const removed = applyExpectedScreens(
                                 expectedScreens,
                                 Array.from(context.hardwareIdToDisplayMap.keys())
@@ -235,7 +238,6 @@ async function bootstrap() {
                     }
 
                     try {
-                        const { applyRestartSchedule } = require('./services/restartScheduler');
                         const restartSchedule = device.restartSchedule || { mode: 'off' };
                         saveConfig({ restartSchedule });
                         applyRestartSchedule(restartSchedule);
@@ -252,8 +254,7 @@ async function bootstrap() {
                     });
                     deleteConfig();
                     try {
-                        if (fs.existsSync(constants.STATE_FILE_PATH))
-                            fs.unlinkSync(constants.STATE_FILE_PATH);
+                        fs.rmSync(constants.STATE_FILE_PATH, { force: true });
                     } catch (e) {
                         log.error('Error unlinking state:', e);
                     }
@@ -265,11 +266,6 @@ async function bootstrap() {
                         '[SOCKET]: Reset-screens received. Re-seeding slots from connected monitors.'
                     );
                     try {
-                        const {
-                            clearSlots,
-                            reconcileDisplays,
-                        } = require('./services/displaySlots');
-
                         // Snapshot slot->display and content so each monitor's content follows it (by display.id) into its new slot.
                         const oldMap = new Map(context.hardwareIdToDisplayMap);
                         const oldState = stateService.loadLastState();
@@ -368,10 +364,6 @@ async function bootstrap() {
             }
         };
 
-        const { getWrapperUrl, isWrapperUrl } = require('./utils/wrapperUrl');
-        const { isServerDependentUrl, resolveLocalContentUrl } = require('./utils/contentUrl');
-        const { isPlaylistUrl, resolveForRenderer } = require('./utils/playlistManifest');
-
         const playerStatus = () =>
             context.networkState === 'ONLINE'
                 ? 'connected'
@@ -389,15 +381,12 @@ async function bootstrap() {
 
         // A playlist is played by the wrapper's engine under any network state; it falls back
         // to the offline carousel only when none of its items can play.
-        context.playlistTarget = (url, manifest, contentName) => {
-            const { buildLocalCarouselUrl } = require('./services/localCarousel');
-            return {
-                url,
-                contentName: contentName || manifest?.name || '',
-                playlist: manifest,
-                fallbackUrl: buildLocalCarouselUrl() || null,
-            };
-        };
+        context.playlistTarget = (url, manifest, contentName) => ({
+            url,
+            contentName: contentName || manifest?.name || '',
+            playlist: manifest,
+            fallbackUrl: buildLocalCarouselUrl() || null,
+        });
 
         // What a screen should show under the current network state. Offline targets
         // carry the carousel as fallback so the wrapper never holds a dark frame.
@@ -412,7 +401,6 @@ async function bootstrap() {
 
             if (context.networkState === 'ONLINE') return { url: contentUrl };
 
-            const { buildLocalCarouselUrl } = require('./services/localCarousel');
             const carousel = buildLocalCarouselUrl() || '';
             const playable =
                 context.networkState !== 'NO_INTERNET' &&
@@ -504,7 +492,6 @@ async function bootstrap() {
 
         // Terminal state: the local carousel cannot fail to load.
         context.loadOfflineCarousel = (screenId) => {
-            const { buildLocalCarouselUrl } = require('./services/localCarousel');
             log.info(`[NETWORK]: Screen ${screenId} → local carousel.`);
             context.ensurePlayerScreen(screenId, { url: buildLocalCarouselUrl() || '' });
         };
@@ -515,7 +502,6 @@ async function bootstrap() {
         };
 
         context.applyOnlineScreen = (screenId) => {
-            const { loadConfig } = require('./utils/configManager');
             const screenIdStr = String(screenId);
             const onlineConfig = loadConfig();
             const serverUrl = onlineConfig.serverUrl || constants.getServerUrl();
@@ -563,8 +549,6 @@ async function bootstrap() {
 
         // Shared by the network handlers and the watchdog so the two cannot disagree.
         context.inspectScreen = (screenId, win, online) => {
-            const { isAutologinUrl, isSameSite } = require('./utils/autologinUrl');
-            const { loadConfig } = require('./utils/configManager');
             const screenIdStr = String(screenId);
             const cfg = loadConfig();
             const serverUrl = cfg.serverUrl || constants.getServerUrl();
@@ -658,7 +642,6 @@ async function bootstrap() {
 
             if (context.socket && !context.socket.connected) context.socket.forceReconnect?.();
 
-            const { loadConfig } = require('./utils/configManager');
             const onlineConfig = loadConfig();
             const serverUrl = onlineConfig.serverUrl || constants.getServerUrl();
 
@@ -685,52 +668,14 @@ async function bootstrap() {
             }
         };
 
-        app.whenReady().then(async () => {
+        app.whenReady().then(() => {
             logGpuDiagnostics();
+            restrictWebPermissions();
 
             // Must run before any state read.
             stateService.migrateStateEncryption();
 
-            createTray(constants.getServerUrl(), constants.AGENT_VERSION);
-
-            const serverArg = process.argv.find((arg) => arg.startsWith('--server='));
-            const tokenArg = process.argv.find((arg) => arg.startsWith('--token='));
-            const nonceArg = process.argv.find((arg) => arg.startsWith('--nonce='));
-
-            if (serverArg) {
-                const serverUrl = serverArg.split('=')[1];
-                let agentToken = tokenArg ? tokenArg.split('=')[1] : null;
-                const provisionNonce = nonceArg ? nonceArg.split('=')[1] : '';
-                const { getMachineId } = require('./services/device');
-                const deviceId = getMachineId();
-
-                log.info(
-                    `[INIT]: CLI Provisioning detected. Server: ${serverUrl}. Device ID: ${deviceId}`
-                );
-
-                if (!agentToken || agentToken.split('.').length !== 3) {
-                    log.info(
-                        '[INIT]: Provided token is missing or invalid. Attempting to fetch real JWT from server...'
-                    );
-                    try {
-                        const axios = require('axios');
-                        const response = await axios.post(`${serverUrl}/api/auth/agent-token`, {
-                            deviceId,
-                            nonce: provisionNonce,
-                        });
-                        agentToken = response.data.token;
-                        log.info('[INIT]: Successfully retrieved JWT from server via CLI.');
-                    } catch (e) {
-                        log.error('[INIT]: Error fetching agent-token:', e.message);
-                    }
-                }
-
-                saveConfig({
-                    serverUrl,
-                    agentToken,
-                    deviceId,
-                });
-            }
+            createTray(appStatus);
 
             const initialConfig = loadConfig();
             if (!initialConfig.deviceId || !initialConfig.agentToken) {
@@ -746,11 +691,9 @@ async function bootstrap() {
             }
         });
 
-        app.on('window-all-closed', () => {
-            if (context.provisionWindow && !context.provisionWindow.isDestroyed()) {
-                app.quit();
-            }
-        });
+        // Closing every window (all screens off, setup dismissed) must not quit: the agent
+        // lives in the tray.
+        app.on('window-all-closed', () => {});
     } catch (error) {
         log.error('FATAL BOOTSTRAP ERROR:', error);
         showErrorWindow(error);
@@ -790,8 +733,8 @@ process.on('uncaughtException', (err) => {
     log.error('[PROCESS]: Uncaught Exception', err);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-    log.error('[PROCESS]: Unhandled Rejection at:', promise, 'reason:', reason);
+process.on('unhandledRejection', (reason) => {
+    log.error('[PROCESS]: Unhandled Rejection:', reason);
 });
 
 bootstrap();

@@ -59,8 +59,10 @@ function resetGpuState() {
 
     if (Object.keys(config).length === 0) {
         try {
-            if (fs.existsSync(GPU_CONFIG_FILE)) fs.unlinkSync(GPU_CONFIG_FILE);
-        } catch (_e) {}
+            fs.rmSync(GPU_CONFIG_FILE, { force: true });
+        } catch (err) {
+            log.warn('[GPU]: Could not remove gpu-config.json:', err.message);
+        }
         return;
     }
     writeGpuConfig(config);
@@ -102,8 +104,9 @@ function configureGpu() {
     }
 
     app.commandLine.appendSwitch('enable-gpu-rasterization');
-    if (!softwareVideoDecodeRequested)
+    if (!softwareVideoDecodeRequested) {
         app.commandLine.appendSwitch('enable-accelerated-video-decode');
+    }
     app.commandLine.appendSwitch('enable-zero-copy');
     app.commandLine.appendSwitch('use-angle', 'default');
     app.commandLine.appendSwitch('enable-webgl');
@@ -228,9 +231,6 @@ function registerGpuCrashHandlers() {
 }
 
 module.exports = {
-    hasGpuFailed,
-    markGpuAsFailed,
-    resetGpuState,
     configureGpu,
     configureMemory,
     getGpuCapabilities,

@@ -1,15 +1,14 @@
 const { ipcMain, app } = require('electron');
 const { log } = require('../utils/logConfig');
-const { openControlWindow } = require('../services/tray');
 const { handleForceUpdate, getUpdateState } = require('../services/updater');
 
-const registerIpcHandlers = (getServerUrl, AGENT_VERSION, getStatus) => {
+// The control panel's buttons (js/control.js).
+const registerIpcHandlers = () => {
     ipcMain.on('agent-action', (event, { action }) => {
         log.debug(`[IPC]: Action received: ${action}`);
 
         switch (action) {
             case 'restart':
-            case 'restart-agent':
                 log.info('[IPC]: Restarting agent...');
                 app.relaunch();
                 app.exit(0);
@@ -19,20 +18,10 @@ const registerIpcHandlers = (getServerUrl, AGENT_VERSION, getStatus) => {
                 handleForceUpdate();
                 break;
             case 'quit':
-            case 'quit-agent':
                 log.info('[IPC]: Closing agent...');
-                app.isQuitting = true;
                 app.quit();
                 break;
-            case 'open-control':
-                const status = typeof getStatus === 'function' ? getStatus() : { isOnline: true };
-                openControlWindow(getServerUrl(), AGENT_VERSION, status);
-                break;
         }
-    });
-
-    ipcMain.handle('get-app-version', () => {
-        return AGENT_VERSION;
     });
 
     ipcMain.handle('get-update-state', () => getUpdateState());

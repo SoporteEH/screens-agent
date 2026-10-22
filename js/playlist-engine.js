@@ -133,8 +133,9 @@
             entry.layer.classList.add('pl-' + transition);
             requestAnimationFrame(function () {
                 entry.layer.classList.add('pl-shown');
-                if (outgoing && transition === 'slide')
+                if (outgoing && transition === 'slide') {
                     outgoing.layer.classList.add('pl-leave-slide');
+                }
             });
             entry.prev = null;
             setTimeout(

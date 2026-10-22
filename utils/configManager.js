@@ -42,7 +42,9 @@ function initStore() {
         if (data && Object.keys(data).length > 0) {
             return hwStore;
         }
-    } catch (_) {}
+    } catch {
+        // Not readable with the device key: try the legacy one.
+    }
 
     let legacyData = null;
     try {
@@ -55,7 +57,9 @@ function initStore() {
         if (data && Object.keys(data).length > 0) {
             legacyData = { ...data };
         }
-    } catch (_) {}
+    } catch {
+        // Nothing to migrate.
+    }
 
     const finalStore = new Store({
         name: 'config',

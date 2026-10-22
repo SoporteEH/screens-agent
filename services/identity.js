@@ -1,27 +1,12 @@
+// Shown in the control panel; the server's device name replaces it on connect.
 let deviceName = 'PC CUOTAS';
-let deviceId = null;
 
 function setDeviceName(name) {
-    if (name) {
-        deviceName = name;
-    }
+    if (name) deviceName = name;
 }
 
 function getDeviceName() {
     return deviceName;
 }
 
-function setDeviceId(id) {
-    deviceId = id;
-}
-
-function getDeviceId() {
-    return deviceId;
-}
-
-module.exports = {
-    setDeviceName,
-    getDeviceName,
-    setDeviceId,
-    getDeviceId,
-};
+module.exports = { setDeviceName, getDeviceName };

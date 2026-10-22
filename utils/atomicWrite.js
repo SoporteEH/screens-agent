@@ -7,11 +7,7 @@ function writeFileAtomic(filePath, data) {
         fs.writeFileSync(tmp, data);
         fs.renameSync(tmp, filePath);
     } catch (error) {
-        try {
-            fs.unlinkSync(tmp);
-        } catch (_e) {
-            /* nothing to clean up */
-        }
+        fs.rmSync(tmp, { force: true });
         throw error;
     }
 }

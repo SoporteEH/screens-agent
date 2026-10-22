@@ -6,6 +6,8 @@ const { SYNC_API_URL, CONTENT_DIR, ASSET_INDEX_PATH, SERVER_URL } = require('../
 const { writeFileAtomic } = require('../utils/atomicWrite');
 const { loadConfig } = require('../utils/configManager');
 const { getHttpClient } = require('../utils/httpClient');
+const { localAssetIds } = require('../utils/playlistManifest');
+const { loadLastState } = require('./state');
 
 const DEFAULT_MAX_STORAGE_MB = 500;
 
@@ -15,26 +17,18 @@ function getMaxStorageBytes() {
     return mb * 1024 * 1024;
 }
 
+// What the API accepts and its media pipeline produces; nothing scriptable (HTML, SVG).
 const ALLOWED_EXTENSIONS = new Set([
     '.jpg',
     '.jpeg',
     '.png',
     '.gif',
     '.webp',
-    '.svg',
-    '.bmp',
     '.mp4',
     '.webm',
     '.mov',
-    '.avi',
     '.mkv',
-    '.mp3',
-    '.wav',
-    '.ogg',
-    '.aac',
     '.pdf',
-    '.html',
-    '.htm',
 ]);
 
 function getDirSizeBytes(dir) {
@@ -42,7 +36,7 @@ function getDirSizeBytes(dir) {
     return fs.readdirSync(dir).reduce((total, file) => {
         try {
             return total + fs.statSync(path.join(dir, file)).size;
-        } catch (_) {
+        } catch {
             return total;
         }
     }, 0);
@@ -64,7 +58,7 @@ function isIncomplete(filePath, asset) {
     if (typeof asset.size !== 'number') return false;
     try {
         return fs.statSync(filePath).size !== asset.size;
-    } catch (_) {
+    } catch {
         return true;
     }
 }
@@ -82,8 +76,6 @@ function getStorageReport() {
 
 // Files the playlists on screen play go first: under the storage cap they are the ones to keep.
 function playlistAssetIds() {
-    const { loadLastState } = require('./state');
-    const { localAssetIds } = require('../utils/playlistManifest');
     const ids = new Set();
     for (const entry of Object.values(loadLastState())) {
         localAssetIds(entry?.playlist).forEach((id) => ids.add(id));
@@ -176,8 +168,8 @@ async function syncDir(assets, targetDir, remotePath, agentToken, priorityIds = 
 
             try {
                 currentSize += fs.statSync(destPath).size;
-            } catch (_) {
-                /* size tracking is best-effort; limit re-checked on next sync */
+            } catch {
+                // Best effort: the next sync checks the limit again.
             }
             log.debug(`[SYNC]: Completed: ${asset.originalFilename}`);
         } catch (err) {

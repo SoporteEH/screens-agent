@@ -1,12 +1,13 @@
 const { Tray, Menu, app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { log } = require('../utils/logConfig');
-const { getDeviceName } = require('./identity');
+const { handleForceUpdate } = require('./updater');
 
 let tray = null;
 let controlWindow = null;
 
-function createTray(serverUrl, version) {
+// getStatus returns what the control panel shows: { version, status, deviceName }.
+function createTray(getStatus) {
     if (tray) return tray;
 
     try {
@@ -14,9 +15,9 @@ function createTray(serverUrl, version) {
         tray = new Tray(iconPath);
 
         const contextMenu = Menu.buildFromTemplate([
-            { label: `ScreensWeb Agent v${version}`, enabled: false },
+            { label: `ScreensWeb Agent v${getStatus().version}`, enabled: false },
             { type: 'separator' },
-            { label: 'Open Control Panel', click: () => openControlWindow(serverUrl, version) },
+            { label: 'Open Control Panel', click: () => openControlWindow(getStatus) },
             { type: 'separator' },
             {
                 label: 'Restart Agent',
@@ -26,16 +27,12 @@ function createTray(serverUrl, version) {
                     app.exit(0);
                 },
             },
-            {
-                label: 'Check for Updates',
-                click: () => require('./updater').handleForceUpdate(),
-            },
+            { label: 'Check for Updates', click: () => handleForceUpdate() },
             { type: 'separator' },
             {
                 label: 'Exit',
                 click: () => {
                     log.info('[TRAY]: Exiting...');
-                    app.isQuitting = true;
                     app.quit();
                 },
             },
@@ -56,7 +53,7 @@ function updateControlWindow(info) {
     }
 }
 
-function openControlWindow(serverUrl, version, initialStatus = { isOnline: true }) {
+function openControlWindow(getStatus) {
     if (controlWindow) {
         controlWindow.focus();
         return;
@@ -81,12 +78,7 @@ function openControlWindow(serverUrl, version, initialStatus = { isOnline: true 
     controlWindow.loadFile(path.join(__dirname, '..', 'control.html'));
 
     controlWindow.webContents.on('did-finish-load', () => {
-        controlWindow.webContents.send('agent-info', {
-            serverUrl: serverUrl || 'Unknown',
-            version: version || '1.0.0',
-            status: initialStatus.isOnline ? 'Online' : 'Offline',
-            deviceName: initialStatus.deviceName || getDeviceName(),
-        });
+        controlWindow.webContents.send('agent-info', getStatus());
     });
 
     controlWindow.on('closed', () => {
@@ -104,8 +96,4 @@ function openControlWindow(serverUrl, version, initialStatus = { isOnline: true 
     });
 }
 
-module.exports = {
-    createTray,
-    openControlWindow,
-    updateControlWindow,
-};
+module.exports = { createTray, updateControlWindow };

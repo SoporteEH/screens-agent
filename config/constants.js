@@ -2,9 +2,10 @@ const { app } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+require('dotenv').config({ path: path.join(__dirname, '..', '.env'), quiet: true });
 
 const { loadConfig } = require('../utils/configManager');
+const { log } = require('../utils/logConfig');
 const config = loadConfig();
 let SERVER_URL = config.serverUrl || process.env.SERVER_URL;
 
@@ -27,10 +28,9 @@ const ASSET_INDEX_PATH = path.join(CONFIG_DIR, 'asset-index.json');
 try {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
 } catch (e) {
-    console.error('[CONFIG]: Failed to create config directory:', e.message);
+    log.error('[CONFIG]: Failed to create config directory:', e.message);
 }
 
-const AGENT_REFRESH_URL = SERVER_URL ? `${SERVER_URL}/api/auth/agent-refresh` : '';
 const SYNC_API_URL = SERVER_URL ? `${SERVER_URL}/api/users/me/local-assets` : '';
 
 const CONSTANTS = {
@@ -54,7 +54,7 @@ try {
     const packageJson = require('../package.json');
     AGENT_VERSION = packageJson.version;
 } catch {
-    console.error('[CONFIG]: Failed to read version from package.json');
+    log.error('[CONFIG]: Failed to read version from package.json');
 }
 
 function getServerUrl() {
@@ -70,7 +70,6 @@ module.exports = {
     DISPLAYS_FILE_PATH,
     CONTENT_DIR,
     ASSET_INDEX_PATH,
-    AGENT_REFRESH_URL,
     SYNC_API_URL,
     CONSTANTS,
     AGENT_VERSION,

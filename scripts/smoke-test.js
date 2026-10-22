@@ -32,8 +32,8 @@ function markerInLogFiles() {
                     return true;
                 }
             }
-        } catch (_) {
-            // ignore unreadable candidate dirs
+        } catch {
+            // An unreadable candidate dir: try the next one.
         }
     }
     return false;
@@ -47,8 +47,8 @@ function killTree(pid) {
         } else {
             process.kill(pid, 'SIGKILL');
         }
-    } catch (_) {
-        // process already gone
+    } catch {
+        // Already gone.
     }
 }
 

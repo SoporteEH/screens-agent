@@ -11,7 +11,9 @@ function resolveLogDir() {
         if (app && typeof app.getPath === 'function') {
             return app.getPath('logs');
         }
-    } catch (_) {}
+    } catch {
+        // Outside Electron (node:test, scripts).
+    }
     const base = process.env.APPDATA || path.join(os.homedir(), '.config');
     return path.join(base, 'screensWeb', 'logs');
 }
@@ -119,8 +121,8 @@ class ServerLogTransport extends winston.Transport {
                     { headers: { Authorization: `Bearer ${config.agentToken}` } }
                 )
                 .catch(() => {});
-        } catch (e) {
-            void e;
+        } catch {
+            // Shipping logs must never throw into the logger.
         }
     }
 }
@@ -160,7 +162,9 @@ function applyConfiguredLogLevel() {
     if (!level) {
         try {
             level = require('./configManager').loadConfig().logLevel;
-        } catch (_) {}
+        } catch {
+            // Default level.
+        }
     }
     if (level !== 'debug' && level !== 'info' && level !== 'warn') return DEFAULT_FILE_LEVEL;
     generalTransport.level = level;
@@ -192,28 +196,8 @@ const heartbeatLog = {
     },
 };
 
-const updaterLog = {
-    _lastUpdateCheck: 0,
-
-    logCheck(version) {
-        const now = Date.now();
-        if (now - this._lastUpdateCheck > 10 * 60 * 1000) {
-            log.info(`[UPDATER]: Periodic check - Current version: ${version}`);
-            this._lastUpdateCheck = now;
-        }
-    },
-
-    logUpdate(message) {
-        log.info(`[UPDATER]: ${message}`);
-    },
-};
-
 function getLogDir() {
     return LOG_DIR;
-}
-
-function getGeneralLogPath() {
-    return path.join(LOG_DIR, 'general.log');
 }
 
 const LOG_FILE_DATE_RE = /^(general|error)-(\d{4}-\d{2}-\d{2})\.log(\.\d+)?(\.gz)?$/;
@@ -252,7 +236,7 @@ function cleanupOldLogs() {
                 const stats = fs.statSync(filePath);
                 if (now - stats.mtimeMs > maxAge) {
                     fs.unlinkSync(filePath);
-                    console.log(`[CLEANUP]: Deleted old log file: ${file}`);
+                    log.info(`[CLEANUP]: Deleted old log file: ${file}`);
                 }
             } catch {
                 // A file in use stays until the next cleanup.
@@ -266,11 +250,9 @@ function cleanupOldLogs() {
 module.exports = {
     log,
     heartbeatLog,
-    updaterLog,
     applyConfiguredLogLevel,
     briefError,
     getLogDir,
-    getGeneralLogPath,
     getLogPathsForDays,
     cleanupOldLogs,
 };

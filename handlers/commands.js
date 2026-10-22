@@ -1,35 +1,36 @@
-const { BrowserWindow } = require('electron');
+const { BrowserWindow, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { log } = require('../utils/logConfig');
+const { log, getLogPathsForDays, getLogDir } = require('../utils/logConfig');
 const axios = require('axios');
 const { getServerUrl, CONSTANTS } = require('../config/constants');
+const { loadConfig } = require('../utils/configManager');
+const { hasSlot, ensureSlot } = require('../services/displaySlots');
 const { isServerDependentUrl, localAssetPath } = require('../utils/contentUrl');
 const { isWrapperUrl } = require('../utils/wrapperUrl');
-const { isAutologinUrl } = require('../utils/autologinUrl');
+const { isAutologinUrl, isSameSite } = require('../utils/autologinUrl');
 
 let context = {};
 const isLinux = process.platform === 'linux';
+
+function originOf(url) {
+    try {
+        return new URL(url).origin;
+    } catch {
+        return null;
+    }
+}
 
 function isNavigationAllowed(targetUrl, currentUrl) {
     if (!targetUrl) return false;
     if (/^(file:|about:|data:|blob:|local:)/i.test(targetUrl)) return true;
     if (isAutologinUrl(targetUrl)) return true;
 
-    let target;
-    try {
-        target = new URL(targetUrl);
-    } catch {
-        return false;
-    }
-    try {
-        if (currentUrl && new URL(currentUrl).origin === target.origin) return true;
-    } catch {}
-    try {
-        const serverUrl = getServerUrl();
-        if (serverUrl && new URL(serverUrl).origin === target.origin) return true;
-    } catch {}
-    return false;
+    const target = originOf(targetUrl);
+    if (!target) return false;
+    if (currentUrl && originOf(currentUrl) === target) return true;
+    const serverUrl = getServerUrl();
+    return !!serverUrl && originOf(serverUrl) === target;
 }
 
 function initializeHandlers(ctx) {
@@ -213,8 +214,9 @@ function createContentWindow(display, urlToLoad, command, opts = {}) {
                     `[CONTENT]: Frame failed on screen ${screenIndex}: '${validatedURL}' — ${errorDescription} (${errorCode})`
                 );
                 // A playlist benches the item and moves on instead of holding a dead frame.
-                if (isWrapperWindow)
+                if (isWrapperWindow) {
                     win.webContents.send('player:item-failed', { url: validatedURL });
+                }
                 return;
             }
 
@@ -326,8 +328,6 @@ function handleShowUrl(command, _currentAttempt = 0) {
     const targetDisplay = context.hardwareIdToDisplayMap.get(screenIndex);
     if (!targetDisplay) {
         // Monitor is off: park as desired state, applied automatically on reconnect.
-        const { hasSlot, ensureSlot } = require('../services/displaySlots');
-        const { loadConfig } = require('../utils/configManager');
         const expectedScreens = Number(loadConfig().expectedScreens) || 0;
         const slotNumber = Number(screenIndex);
         const isKnownSlot =
@@ -383,7 +383,6 @@ function handleShowUrl(command, _currentAttempt = 0) {
         );
     }
 
-    const { net } = require('electron');
     const hasInternet = net.isOnline();
 
     // A playlist keeps going offline on its local files; only its web items wait.
@@ -397,16 +396,12 @@ function handleShowUrl(command, _currentAttempt = 0) {
 
     let finalUrl = url;
 
-    const { loadConfig } = require('../utils/configManager');
-    const { getServerUrl } = require('../config/constants');
     const config = loadConfig();
     const serverUrl = config.serverUrl || getServerUrl();
     const isPlayerMode = !!serverUrl && config.deviceId;
 
     // Autologin bypasses the player iframe (injection needs the login form); credentials signal it, host list is fallback.
-    const { isAutologinUrl: checkIsAutologinUrl } = require('../utils/autologinUrl');
-
-    if (isPlayerMode && !credentials && !checkIsAutologinUrl(url)) {
+    if (isPlayerMode && !credentials && !isAutologinUrl(url)) {
         log.info(
             `[COMMAND]: Player Mode active. Routing screen ${screenIndex} through the local wrapper.`
         );
@@ -498,24 +493,18 @@ function handleShowUrl(command, _currentAttempt = 0) {
         win.webContents.removeAllListeners('did-navigate-in-page');
         win.webContents.removeAllListeners('did-navigate');
 
-        const { isAutologinUrl: checkIsTargetUrl, isSameSite } = require('../utils/autologinUrl');
-
-        if (!!credentials) {
+        if (credentials) {
             const injectionScript = `
                 (() => {
                     if (window.__autologinStarted) return;
                     window.__autologinStarted = true;
                     console.log('[AUTOLOGIN] Script started at: ' + window.location.href);
 
+                    // Through the prototype's setter: React tracks the value with its own
+                    // property on the element and would miss a change made through it.
                     const setNativeValue = (element, value) => {
-                        const valueSetter = Object.getOwnPropertyDescriptor(element, 'value').set;
-                        const prototype = Object.getPrototypeOf(element);
-                        const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value').set;
-                        if (valueSetter && valueSetter !== prototypeValueSetter) {
-                            prototypeValueSetter.call(element, value);
-                        } else {
-                            valueSetter.call(element, value);
-                        }
+                        const { set } = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+                        set.call(element, value);
                         element.dispatchEvent(new Event('input', { bubbles: true }));
                     };
 
@@ -551,7 +540,7 @@ function handleShowUrl(command, _currentAttempt = 0) {
 
             let lastLoggedUrl = null;
             const injectIfTarget = (sourceUrl) => {
-                const isTarget = isSameSite(sourceUrl, trimmedUrl) || checkIsTargetUrl(sourceUrl);
+                const isTarget = isSameSite(sourceUrl, trimmedUrl) || isAutologinUrl(sourceUrl);
                 if (!win.isDestroyed() && isTarget) {
                     const shouldLog = lastLoggedUrl !== sourceUrl;
                     if (shouldLog) {
@@ -736,7 +725,7 @@ const LOG_UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
 
 // Success is the upload itself; only failures send feedback.
 async function handleGetLogs(command) {
-    const { getLogPathsForDays, getLogDir } = require('../utils/logConfig');
+    // Loaded on demand: only a log pull needs them.
     const archiver = require('archiver');
     const FormData = require('form-data');
     const days = Math.min(Math.max(Number(command.days) || DEFAULT_LOG_DAYS, 1), 30);
@@ -837,7 +826,6 @@ module.exports = {
     handleCloseScreen,
     handleIdentifyScreen,
     handleRefreshScreen,
-    sendCommandFeedback,
     createContentWindow,
     handleGetLogs,
 };

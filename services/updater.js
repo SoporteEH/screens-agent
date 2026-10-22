@@ -39,7 +39,7 @@ function updatesEnabled() {
 
 // Cached verdict for this device's channel; control panel reads it via 'get-update-state'
 // IPC so it never misreads a -beta suffix.
-let lastUpdateState = { state: 'checking', message: 'Comprobando versión…' };
+let lastUpdateState = { state: 'checking', message: 'Checking for updates…' };
 
 function getUpdateState() {
     return lastUpdateState;
@@ -51,11 +51,13 @@ function setUpdateState(state, extra = {}) {
 }
 
 // Defaults to 'latest' on any error — a config problem must never silently move a device to beta.
+// The config is required here, not at load: the updater must keep working (and replace a broken
+// build) even when the rest of the agent fails to load.
 function getChannel() {
     try {
         const { loadConfig } = require('../utils/configManager');
         return loadConfig().updateChannel === 'beta' ? 'beta' : 'latest';
-    } catch (_) {
+    } catch {
         return 'latest';
     }
 }
@@ -195,7 +197,7 @@ async function checkForUpdates() {
     autoUpdater.allowDowngrade = true;
     applyChannel();
 
-    setUpdateState('checking', { message: 'Comprobando versión…' });
+    setUpdateState('checking', { message: 'Checking for updates…' });
     // Rejection is already reported by the 'error' listener above; swallow it here so
     // a single failure isn't logged twice.
     autoUpdater.checkForUpdates().catch(() => {});
@@ -216,14 +218,6 @@ function installPendingUpdate(reason) {
     if (!downloadedVersion) return false;
     installNow(`${reason}, ${downloadedVersion}`);
     return true;
-}
-
-function isUpdating() {
-    return isCheckingForUpdate;
-}
-
-function setUpdating(value) {
-    isCheckingForUpdate = value;
 }
 
 async function handleForceUpdate() {
@@ -277,8 +271,6 @@ async function handleSetChannel(command) {
 module.exports = {
     configureUpdater,
     checkForUpdates,
-    isUpdating,
-    setUpdating,
     handleForceUpdate,
     handleSetChannel,
     getUpdateState,
