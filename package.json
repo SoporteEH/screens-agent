@@ -12,7 +12,7 @@
     "start:b": "npm run inject:b && npm start",
     "start:default": "npm run inject:default && npm start",
     "build": "electron-builder",
-    "build:prod": "node scripts/inject-config.js && electron-builder && node scripts/restore-config.js",
+    "build:prod": "node scripts/build-prod.js",
     "format": "prettier --write \"**/*.{js,mjs,json,md}\"",
     "format:check": "prettier --check \"**/*.{js,mjs,json,md}\"",
     "lint": "eslint . --max-warnings 0",

@@ -215,13 +215,16 @@ function logGpuDiagnostics() {
 }
 
 function registerGpuCrashHandlers() {
-    app.on('gpu-process-crashed', (_event, killed) => {
-        log.error(`[GPU]: Process crashed (killed: ${killed})`);
-        markGpuAsFailed();
+    const GPU_FAILURES = new Set(['crashed', 'abnormal-exit', 'oom', 'launch-failed']);
+
+    app.on('child-process-gone', (_event, details) => {
+        if (details.type !== 'GPU') return;
+        log.error(`[GPU]: Process gone (${details.reason}, exit ${details.exitCode})`);
+        if (GPU_FAILURES.has(details.reason)) markGpuAsFailed();
     });
 
     app.on('render-process-gone', (_event, _webContents, details) => {
-        if (details.reason === 'crashed' || details.reason === 'gpu-dead') {
+        if (details.reason === 'crashed') {
             log.error(`[GPU]: Render failed (${details.reason})`);
             markGpuAsFailed();
             return;

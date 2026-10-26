@@ -7,7 +7,11 @@ function writeFileAtomic(filePath, data) {
         fs.writeFileSync(tmp, data);
         fs.renameSync(tmp, filePath);
     } catch (error) {
-        fs.rmSync(tmp, { force: true });
+        try {
+            fs.rmSync(tmp, { force: true });
+        } catch {
+            // Keep the write error: it is the one worth logging.
+        }
         throw error;
     }
 }
