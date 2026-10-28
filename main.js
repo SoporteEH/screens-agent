@@ -83,15 +83,54 @@ function bootstrap() {
 
         deviceService.setupAutostart();
 
-        // What the control panel shows.
+        // What the control panel shows. Screens carry no credentials: only what is on them.
+        const connectionState = () => {
+            if (context.isOnline) return 'online';
+            if (context.networkState === 'NO_INTERNET') return 'no-internet';
+            if (context.networkState === 'NO_SERVER') return 'offline';
+            return 'connecting';
+        };
+        const screensStatus = () => {
+            const saved = stateService.loadLastState();
+            return Array.from(context.hardwareIdToDisplayMap.entries())
+                .sort(([a], [b]) => Number(a) - Number(b))
+                .map(([id, display]) => {
+                    const target = context.screenContent.get(id);
+                    const scale = display.scaleFactor || 1;
+                    return {
+                        id,
+                        resolution: `${Math.round(display.size.width * scale)}×${Math.round(display.size.height * scale)}`,
+                        // A live target wins: offline it is the carousel, not the saved content.
+                        contentName: (target ? target.contentName : saved[id]?.contentName) || '',
+                        url: (target ? target.url : saved[id]?.url) || '',
+                    };
+                });
+        };
         const appStatus = () => ({
             version: constants.AGENT_VERSION,
-            status: context.isOnline ? 'Online' : 'Offline',
+            connection: connectionState(),
             deviceName: getDeviceName(),
+            salonName: loadConfig().salonName || '',
+            screens: screensStatus(),
         });
         const broadcastAppStatus = () => updateControlWindow(appStatus());
 
-        registerIpcHandlers();
+        registerIpcHandlers({
+            reconnect: () => context.socket?.forceReconnect?.(),
+            identify: (screenId) =>
+                commandHandlers.handleIdentifyScreen({
+                    screenIndex: screenId,
+                    identifierText: screenId,
+                }),
+            askServer: async (event, ...args) => {
+                if (!context.socket?.connected) return { error: 'offline' };
+                try {
+                    return await context.socket.timeout(10000).emitWithAck(event, ...args);
+                } catch {
+                    return { error: 'timeout' };
+                }
+            },
+        });
 
         context.saveCurrentState = stateService.saveCurrentState;
         context.handleShowUrl = (cmd, att) => commandHandlers.handleShowUrl(cmd, att);
@@ -210,6 +249,9 @@ function bootstrap() {
                 onDeviceInfo: (device) => {
                     log.info('[SOCKET]: Device info received:', device.name);
                     setDeviceName(device.name);
+                    if (device.salonName !== undefined) {
+                        saveConfig({ salonName: device.salonName || '' });
+                    }
 
                     // Persists admin-configured screen count (for offline-targeted commands) and prunes slots above it.
                     try {
@@ -395,11 +437,13 @@ function bootstrap() {
             const screenData = stateService.loadLastState()[screenIdStr] || {};
             const contentUrl = screenData.url || '';
 
+            const contentName = screenData.contentName || '';
+
             if (isPlaylistUrl(contentUrl) && screenData.playlist) {
-                return context.playlistTarget(contentUrl, screenData.playlist);
+                return context.playlistTarget(contentUrl, screenData.playlist, contentName);
             }
 
-            if (context.networkState === 'ONLINE') return { url: contentUrl };
+            if (context.networkState === 'ONLINE') return { url: contentUrl, contentName };
 
             const carousel = buildLocalCarouselUrl() || '';
             const playable =
@@ -409,7 +453,7 @@ function bootstrap() {
                 !isServerDependentUrl(contentUrl, constants.getServerUrl());
 
             return playable
-                ? { url: contentUrl, fallbackUrl: carousel || null }
+                ? { url: contentUrl, contentName, fallbackUrl: carousel || null }
                 : { url: carousel };
         };
 

@@ -344,7 +344,8 @@ function handleShowUrl(command, _currentAttempt = 0) {
                 refreshInterval || 0,
                 context.autoRefreshTimers,
                 context.managedWindows,
-                playlistManifest
+                playlistManifest,
+                contentName
             );
             log.info(
                 `[COMMAND]: Screen ${screenIndex} is disconnected. Content saved for reconnect: ${url}`
@@ -379,7 +380,8 @@ function handleShowUrl(command, _currentAttempt = 0) {
             refreshInterval || 0,
             context.autoRefreshTimers,
             context.managedWindows,
-            playlistManifest
+            playlistManifest,
+            contentName
         );
     }
 

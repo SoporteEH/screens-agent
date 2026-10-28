@@ -6,9 +6,12 @@ const { handleForceUpdate } = require('./updater');
 let tray = null;
 let controlWindow = null;
 
-// getStatus returns what the control panel shows: { version, status, deviceName }.
+// getStatus returns what the control panel shows: { version, connection, deviceName, screens }.
 function createTray(getStatus) {
     if (tray) return tray;
+
+    // The panel polls it: screen content changes without any event of its own.
+    ipcMain.handle('get-agent-info', () => getStatus());
 
     try {
         const iconPath = path.join(__dirname, '..', 'icons', 'icon.png');
@@ -61,13 +64,13 @@ function openControlWindow(getStatus) {
 
     controlWindow = new BrowserWindow({
         width: 420,
-        height: 600,
+        height: 640,
         title: 'ScreensWeb Control',
         icon: path.join(__dirname, '..', 'icons', 'icon.png'),
         frame: false,
         resizable: false,
         alwaysOnTop: true,
-        backgroundColor: '#1a1a1a',
+        backgroundColor: '#141312',
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,

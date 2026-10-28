@@ -4,80 +4,89 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Control Panel</title>
+    <title>ScreensWeb Agent</title>
     <link rel="stylesheet" href="./css/theme.css">
     <link rel="stylesheet" href="./css/control.css">
 </head>
 
 <body>
+  <div class="window">
     <div class="title-bar">
-        <span class="title-bar-text">Control Panel</span>
+        <span class="title-bar-text">
+            <span class="title-bar-logo" aria-hidden="true">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"></rect><path d="M12 17v4"></path><path d="M8 21h8"></path></svg>
+            </span>
+            ScreensWeb Agent
+        </span>
         <div class="title-bar-controls">
-            <div class="title-bar-button" id="btn-minimize">
-                <span class="material-icons">minimize</span>
-            </div>
-            <div class="title-bar-button close" id="btn-window-close">
+            <button class="title-bar-button" id="btn-minimize" aria-label="Minimizar">
+                <span class="material-icons">remove</span>
+            </button>
+            <button class="title-bar-button close" id="btn-window-close" aria-label="Ocultar ventana">
                 <span class="material-icons">close</span>
-            </div>
+            </button>
         </div>
     </div>
 
-    <div class="container">
-        <div class="content-wrapper">
-            <div class="header">
-                <div class="logo">
-                    <span class="material-icons">grid_view</span>
-                </div>
-                <div id="device-name" class="title">PC CUOTAS</div>
+    <main class="content">
+        <div class="header">
+            <div class="device-icon" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path><path d="M22 12H2"></path><path d="M6 16h.01"></path><path d="M10 16h.01"></path></svg>
             </div>
-
-            <div class="card">
-                <div class="status-section">
-                    <span class="status-label">Estado</span>
-                    <div class="status-badge" id="status-container">
-                        <div class="status-dot"></div>
-                        <span class="status-text" id="agent-status">Online</span>
-                    </div>
-                </div>
-
-                <div class="actions">
-                    <button class="btn btn-primary" id="btn-restart">
-                        <span class="material-icons">restart_alt</span>
-                        <span>Reiniciar</span>
-                    </button>
-
-                    <button class="btn btn-danger" id="btn-quit">
-                        <span class="material-icons">power_settings_new</span>
-                        <span>Cerrar App</span>
-                    </button>
-                </div>
-
-                <div class="version-status" id="version-status">
-                    <span class="material-icons" id="version-status-icon">sync</span>
-                    <span id="version-status-text">Comprobando versión…</span>
-                </div>
-            </div>
-
-            <div class="footer">
-                <div class="footer-text">ScreensWeb Agent © <span id="current-year"></span></div>
+            <div class="header-text">
+                <h1 id="device-name" class="title">—</h1>
+                <span id="salon-name" class="subtitle" hidden></span>
             </div>
         </div>
-    </div>
 
-    <span class="version-badge" id="agent-version"></span>
+        <div class="status" id="status" role="status">
+            <span class="status-text" id="status-text">Offline</span>
+            <button class="btn-small" id="btn-reconnect" hidden>Reintentar</button>
+        </div>
 
-    <div id="notification" class="notification"></div>
+        <section class="screens" aria-labelledby="screens-title">
+            <h2 id="screens-title" class="screens-title">Pantallas · <span id="screen-count">0</span></h2>
+            <div id="screen-list"></div>
+        </section>
 
-    <div id="modal-overlay" class="modal-overlay">
-        <div class="modal">
-            <div class="modal-title" id="modal-title"></div>
-            <div class="modal-message" id="modal-message"></div>
-            <div class="modal-buttons">
-                <button class="modal-btn modal-btn-cancel" id="modal-cancel">Cancelar</button>
-                <button class="modal-btn modal-btn-confirm" id="modal-confirm">Aceptar</button>
+        <div class="version-status hidden" id="version-status">
+            <span class="material-icons" id="version-status-icon">sync</span>
+            <span id="version-status-text"></span>
+        </div>
+
+        <div class="actions" id="actions">
+            <button class="btn btn-primary" id="btn-restart">
+                <span class="material-icons">restart_alt</span>
+                Reiniciar
+            </button>
+            <button class="btn btn-danger" id="btn-quit">
+                <span class="material-icons">power_settings_new</span>
+                Cerrar app
+            </button>
+        </div>
+
+        <div class="confirm" id="confirm" role="alertdialog" aria-labelledby="confirm-title" hidden>
+            <div class="confirm-text">
+                <span id="confirm-title" class="confirm-title">¿Cerrar ScreensWeb Agent?</span>
+                <span class="confirm-message">Las pantallas de este equipo dejarán de reproducir hasta que vuelvas a abrir la app.</span>
+            </div>
+            <div class="confirm-buttons">
+                <button class="btn btn-secondary" id="btn-quit-cancel">Cancelar</button>
+                <button class="btn btn-danger-solid" id="btn-quit-confirm">Cerrar app</button>
             </div>
         </div>
-    </div>
+
+        <div class="busy" id="restarting" role="status" hidden>
+            <span class="material-icons spin">autorenew</span>
+            Reiniciando…
+        </div>
+    </main>
+
+    <footer class="footer">
+        <span>ScreensWeb Agent © <span id="current-year"></span></span>
+        <span class="mono" id="agent-version"></span>
+    </footer>
+  </div>
 
     <script src="./js/control.js"></script>
 </body>

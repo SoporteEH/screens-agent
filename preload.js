@@ -9,6 +9,11 @@ contextBridge.exposeInMainWorld('electron', {
 
     sendAction: (action) => ipcRenderer.send('agent-action', { action }),
     getUpdateState: () => ipcRenderer.invoke('get-update-state'),
+    getAgentInfo: () => ipcRenderer.invoke('get-agent-info'),
+    getCatalogue: () => ipcRenderer.invoke('get-catalogue'),
+    showContent: (screenId, contentId) =>
+        ipcRenderer.invoke('show-content', { screenId, contentId }),
+    identifyScreen: (screenId) => ipcRenderer.send('identify-screen', screenId),
     minimizeWindow: () => ipcRenderer.send('window-control', 'minimize'),
     closeWindow: () => ipcRenderer.send('window-control', 'close'),
 

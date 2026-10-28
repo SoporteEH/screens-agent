@@ -177,7 +177,8 @@ function saveCurrentState(
     refreshInterval,
     autoRefreshTimers,
     managedWindows,
-    playlist = null
+    playlist = null,
+    contentName = ''
 ) {
     writeLock = writeLock
         .then(() =>
@@ -188,7 +189,8 @@ function saveCurrentState(
                 refreshInterval,
                 autoRefreshTimers,
                 managedWindows,
-                playlist
+                playlist,
+                contentName
             )
         )
         // A failed write (already logged) must not block the ones queued after it.
@@ -203,7 +205,8 @@ function _saveCurrentState(
     refreshInterval,
     autoRefreshTimers,
     managedWindows,
-    playlist
+    playlist,
+    contentName
 ) {
     const state = loadRawState();
 
@@ -220,6 +223,7 @@ function _saveCurrentState(
             credentials: encryptedCredentials ?? credentials ?? null,
             refreshInterval: refreshInterval || 0,
             ...(playlist ? { playlist } : {}),
+            ...(contentName ? { contentName } : {}),
             timestamp: new Date().toISOString(),
         };
 
