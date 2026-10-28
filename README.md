@@ -33,7 +33,7 @@ Installed builds (`.exe` from GitHub Releases) start with Windows and open the s
 | `npm start`             | Run the agent                                                                                    |
 | `npm run lint`          | ESLint                                                                                           |
 | `npm run format`        | Prettier; `npm run format:check` only checks                                                     |
-| `npm test`              | `node --test`: schedule rules, sequencer, manifest, local files                                  |
+| `npm test`              | `node --test`: schedule rules, sequencer, manifest, local files, memory watchdog                 |
 | `npm run test:contract` | Static checks on the player wrapper and its playlist engine                                      |
 | `npm run build:prod`    | Installer in `dist/` with `SERVER_URL` baked in; restores `package.json` even if the build fails |
 
@@ -53,6 +53,9 @@ production builds; the setup screen can override it). Everything lives in `%APPD
 Env switches: `DISABLE_GPU`, `GPU_SAFE_MODE`, `DISABLE_VIDEO_DECODE`, `REDUCED_MOTION`. Timeouts
 and reconnection delays: `config/constants.js`.
 
+Three GPU process crashes within an hour set `gpuFailed` in `gpu-config.json`: the PC renders in
+software for 7 days (delete the key to retry sooner). A page crashing does not count.
+
 ## Resilience
 
 | Situation                           | Behaviour                                        |
@@ -65,10 +68,14 @@ and reconnection delays: `config/constants.js`.
 - `player.html` wraps every screen and is driven over IPC (`player:init/show/status/refresh`);
   `scripts/check-player-contract.js` pins that contract.
 - A frame that never loads gets `[stalled]` in its title; the screen watchdog reads it and recovers.
+- Every 10 minutes, a page using more than 15 % of the RAM (350 MB to 1 GB per renderer) is
+  reloaded, at most once an hour per screen (`services/memoryWatchdog.js`).
 - Playlists run inside the wrapper (`js/playlist-engine.js`), so they keep their schedule with the
   API down. Rules: `screens-api/documentation/PLAYLISTS.md`.
 - Reconnection backs off to 30 s and never gives up; after 10 failures a circuit breaker waits
   5 minutes, unless `/health` answers first.
+- The network monitor probes the internet every 15 s (5 s while degraded) with one request, a second
+  target only if it fails. `/health` is asked only while the socket is down, and at once when it drops.
 
 ## Security
 

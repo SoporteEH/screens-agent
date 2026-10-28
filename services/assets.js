@@ -65,10 +65,13 @@ function isIncomplete(filePath, asset) {
 
 // Files the last sync wanted but could not keep (storage cap, failed or refused download).
 let lastMissing = 0;
+// Only a sync changes the folder, so it is measured once after each one.
+let usedBytes = null;
 
 function getStorageReport() {
+    if (usedBytes === null) usedBytes = getDirSizeBytes(CONTENT_DIR);
     return {
-        usedMB: Math.round(getDirSizeBytes(CONTENT_DIR) / (1024 * 1024)),
+        usedMB: Math.round(usedBytes / (1024 * 1024)),
         limitMB: Math.round(getMaxStorageBytes() / (1024 * 1024)),
         missing: lastMissing,
     };
@@ -241,6 +244,8 @@ async function runSync(agentToken) {
     } catch (error) {
         log.error('[SYNC]: Sync failed:', error.message);
         return false;
+    } finally {
+        usedBytes = null;
     }
 }
 

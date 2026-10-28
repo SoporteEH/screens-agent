@@ -43,7 +43,7 @@ function initStore() {
             return hwStore;
         }
     } catch {
-        // Not readable with the device key: try the legacy one.
+        // Not readable with the device key: try the shared fallback key.
     }
 
     let legacyData = null;
@@ -77,14 +77,20 @@ function initStore() {
 
 const store = initStore();
 
+// Every read of the store decrypts it with a PBKDF2 round (tens of ms on a weak CPU, on the main
+// thread), and the config is read on every network check, heartbeat and watchdog pass. This
+// process is its only writer, so reads come from memory.
+let cached = null;
+
+function readStore() {
+    if (!cached) cached = store.store;
+    return cached;
+}
+
 function loadConfig() {
     try {
-        const data = store.store;
-        if (_usingFallbackKey) {
-            const safe = { ...data };
-            SENSITIVE_FIELDS.forEach((f) => delete safe[f]);
-            return safe;
-        }
+        const data = structuredClone(readStore());
+        if (_usingFallbackKey) SENSITIVE_FIELDS.forEach((f) => delete data[f]);
         return data;
     } catch (error) {
         log.error('[CONFIG]: Error reading:', error);
@@ -94,14 +100,19 @@ function loadConfig() {
 
 function saveConfig(config) {
     try {
-        if (_usingFallbackKey) {
-            const safe = { ...config };
-            SENSITIVE_FIELDS.forEach((f) => delete safe[f]);
-            store.set(safe);
-        } else {
-            store.set(config);
-        }
+        const changes = { ...config };
+        if (_usingFallbackKey) SENSITIVE_FIELDS.forEach((f) => delete changes[f]);
+        const current = readStore();
+        // Every reconnect re-sends the same device info: an unchanged file is not rewritten.
+        const changed = Object.keys(changes).some(
+            (key) => JSON.stringify(current[key]) !== JSON.stringify(changes[key])
+        );
+        if (!changed) return;
+        const next = structuredClone({ ...current, ...changes });
+        store.store = next;
+        cached = next;
     } catch (error) {
+        cached = null;
         log.error('[CONFIG]: Error saving:', error);
     }
 }
@@ -112,6 +123,8 @@ function deleteConfig() {
         log.info('[CONFIG]: Configuration deleted.');
     } catch (error) {
         log.error('[CONFIG]: Error clearing:', error);
+    } finally {
+        cached = null;
     }
 }
 

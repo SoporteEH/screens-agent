@@ -184,6 +184,7 @@ function bootstrap() {
                     context.isOnline = false;
                     broadcastAppStatus();
                     context.onNetworkOffline('SOCKET_DISCONNECT');
+                    context.checkNetworkNow?.();
                 },
                 // 'connect' fires on reconnections too and already re-registers the
                 // device; this handler only repairs what is on the screens.

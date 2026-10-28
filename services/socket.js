@@ -23,7 +23,24 @@ function connectToSocketServer(token, handlers) {
         reconnectionDelayMax: CONSTANTS.SOCKET_RECONNECT_DELAY_MAX_MS,
         randomizationFactor: 0.5,
         timeout: 20000,
+        // A transport that fails within an attempt hands over to the other one.
+        tryAllTransports: true,
         auth: { token },
+    });
+
+    // Reconnections open on the transport the last connection ended up on, so once WebSocket has
+    // worked they skip the long-polling handshake. Not engine.io's rememberUpgrade: it drops to
+    // polling after any failed attempt, an API restart included.
+    socket.io.on('open', () => {
+        const engine = socket.io.engine;
+        const remember = () => {
+            socket.io.opts.transports =
+                engine.transport.name === 'websocket'
+                    ? ['websocket', 'polling']
+                    : ['polling', 'websocket'];
+        };
+        remember();
+        engine.on('upgrade', remember);
     });
 
     const resetCircuitBreaker = () => {

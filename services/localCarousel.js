@@ -88,6 +88,8 @@ function buildLocalCarouselUrl() {
             console.warn('[PLAYER] Carousel: ' + msg);
         }
 
+        // No src until shown: the folder may hold hundreds of photos, and every loaded one
+        // stays in memory. Only the image on screen and the next one are loaded.
         const items = mediaUrls.map(function (url) {
             const isVideo = /\\.(mp4|mkv|avi)$/i.test(url);
             const el = document.createElement(isVideo ? 'video' : 'img');
@@ -95,8 +97,6 @@ function buildLocalCarouselUrl() {
                 el.muted = true;
                 el.playsInline = true;
                 el.preload = 'none';
-            } else {
-                el.src = url;
             }
             container.appendChild(el);
             return { url: url, isVideo: isVideo, el: el };
@@ -120,11 +120,19 @@ function buildLocalCarouselUrl() {
             advanceTimer = setTimeout(function () { advance(t); }, FAIL_RETRY_MS);
         }
 
-        function release(item) {
+        function release(item, keepImage) {
             const el = item.el;
             el.onended = el.onerror = el.onloadedmetadata = null;
             el.classList.remove('active');
             if (item.isVideo) MediaWatchdog.releaseVideo(el);
+            else if (!keepImage) el.removeAttribute('src');
+        }
+
+        // Decoded ahead, so the swap does not wait on a large photo.
+        function preload(item) {
+            if (item.isVideo || item.el.getAttribute('src')) return;
+            item.el.src = item.url;
+            item.el.decode().catch(function () {});
         }
 
         function show(i) {
@@ -134,7 +142,8 @@ function buildLocalCarouselUrl() {
             stopWatch = null;
             index = i;
 
-            items.forEach(function (item, j) { if (j !== i) release(item); });
+            const next = items[(i + 1) % items.length];
+            items.forEach(function (item, j) { if (j !== i) release(item, item === next); });
 
             const item = items[i];
             const el = item.el;
@@ -142,8 +151,14 @@ function buildLocalCarouselUrl() {
 
             if (!item.isVideo) {
                 el.onerror = function () { fail(t, 'image ' + i + ' failed to load'); };
-                // A src that failed before this turn will never re-fire onerror.
-                if (el.complete && el.naturalWidth === 0) { fail(t, 'image ' + i + ' is broken'); return; }
+                if (!el.getAttribute('src')) {
+                    el.src = item.url;
+                } else if (el.complete && el.naturalWidth === 0) {
+                    // Preloaded and already failed: onerror will not fire again.
+                    fail(t, 'image ' + i + ' is broken');
+                    return;
+                }
+                preload(next);
                 advanceTimer = setTimeout(function () { advance(t); }, IMAGE_MS);
                 return;
             }
@@ -163,6 +178,7 @@ function buildLocalCarouselUrl() {
             el.src = item.url;
             el.load();
             el.play().catch(function () { fail(t, 'video ' + i + ' play() rejected'); });
+            preload(next);
 
             advanceTimer = setTimeout(function () {
                 report('video ' + i + ' hit the hard ceiling');

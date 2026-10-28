@@ -37,6 +37,43 @@ function initializeHandlers(ctx) {
     context = ctx;
 }
 
+// The wrapper frames third-party pages, which may refuse to be framed. Frame documents only:
+// a listener on every request would hold each image, script and video segment on this process.
+const framingSessions = new WeakSet();
+
+function allowContentFraming(ses) {
+    if (framingSessions.has(ses)) return;
+    framingSessions.add(ses);
+
+    ses.webRequest.onHeadersReceived(
+        { urls: ['*://*/*'], types: ['subFrame'] },
+        (details, callback) => {
+            const headers = details.responseHeaders || {};
+            const keys = Object.keys(headers);
+            const xframeKey = keys.find((k) => {
+                const l = k.toLowerCase();
+                return l === 'x-frame-options' || l === 'frame-options';
+            });
+            const cspKey = keys.find((k) => k.toLowerCase() === 'content-security-policy');
+
+            if (!xframeKey && !cspKey) {
+                callback({ cancel: false });
+                return;
+            }
+
+            const responseHeaders = { ...headers };
+            if (xframeKey) delete responseHeaders[xframeKey];
+            if (cspKey) {
+                responseHeaders[cspKey] = [
+                    responseHeaders[cspKey][0].replace(/frame-ancestors[^;]+;?/gi, ''),
+                ];
+            }
+
+            callback({ cancel: false, responseHeaders });
+        }
+    );
+}
+
 function sendCommandFeedback(command, status, message, messageKey, messageParams, data) {
     if (!command || !command.commandId) return;
     if (command.silent) return;
@@ -126,30 +163,7 @@ function createContentWindow(display, urlToLoad, command, opts = {}) {
         event.preventDefault();
     });
 
-    win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-        const headers = details.responseHeaders;
-        const keys = Object.keys(headers);
-        const xframeKey = keys.find((k) => {
-            const l = k.toLowerCase();
-            return l === 'x-frame-options' || l === 'frame-options';
-        });
-        const cspKey = keys.find((k) => k.toLowerCase() === 'content-security-policy');
-
-        if (!xframeKey && !cspKey) {
-            callback({ cancel: false });
-            return;
-        }
-
-        const responseHeaders = { ...headers };
-        if (xframeKey) delete responseHeaders[xframeKey];
-        if (cspKey) {
-            responseHeaders[cspKey] = [
-                responseHeaders[cspKey][0].replace(/frame-ancestors[^;]+;?/gi, ''),
-            ];
-        }
-
-        callback({ cancel: false, responseHeaders });
-    });
+    allowContentFraming(win.webContents.session);
 
     win.once('ready-to-show', () => {
         win.show();

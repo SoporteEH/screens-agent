@@ -214,21 +214,26 @@ function logGpuDiagnostics() {
     setTimeout(report, GPU_INFO_TIMEOUT_MS).unref?.();
 }
 
+// Chromium restarts a GPU process that dies. Benching the GPU costs a week of software
+// rendering, so it takes repeated failures, not one driver hiccup.
+const GPU_FAILURE_LIMIT = 3;
+const GPU_FAILURE_WINDOW_MS = 60 * 60 * 1000;
+
 function registerGpuCrashHandlers() {
     const GPU_FAILURES = new Set(['crashed', 'abnormal-exit', 'oom', 'launch-failed']);
+    let failures = [];
 
     app.on('child-process-gone', (_event, details) => {
         if (details.type !== 'GPU') return;
         log.error(`[GPU]: Process gone (${details.reason}, exit ${details.exitCode})`);
-        if (GPU_FAILURES.has(details.reason)) markGpuAsFailed();
+        if (!GPU_FAILURES.has(details.reason)) return;
+        const now = Date.now();
+        failures = failures.filter((at) => now - at < GPU_FAILURE_WINDOW_MS).concat(now);
+        if (failures.length >= GPU_FAILURE_LIMIT) markGpuAsFailed();
     });
 
+    // A renderer dies with its page (a crash, a leak); that says nothing about the GPU.
     app.on('render-process-gone', (_event, _webContents, details) => {
-        if (details.reason === 'crashed') {
-            log.error(`[GPU]: Render failed (${details.reason})`);
-            markGpuAsFailed();
-            return;
-        }
         log.error(`[RENDERER]: Process gone (${details.reason}, exit ${details.exitCode})`);
     });
 }

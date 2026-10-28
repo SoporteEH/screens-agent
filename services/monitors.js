@@ -106,7 +106,8 @@ const initializeMonitors = (context) => {
     screen.on('display-removed', () => onScreenChange('removed'));
     screen.on('display-metrics-changed', () => onScreenChange('metrics-changed'));
 
-    startNetworkMonitoring({
+    const network = startNetworkMonitoring({
+        isServerConnected: () => !!context.socket?.connected,
         onOffline: (reason) => {
             context.networkState = reason;
             context.onNetworkOffline(reason);
@@ -124,6 +125,8 @@ const initializeMonitors = (context) => {
             }
         },
     });
+    // The socket stops proving the server the moment it drops: check it then, not on the next tick.
+    context.checkNetworkNow = network.checkNow;
 
     startScreenWatchdog(context);
 };

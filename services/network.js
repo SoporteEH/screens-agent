@@ -56,27 +56,33 @@ function probe(target) {
     return Promise.race([request, timeout]);
 }
 
+// The second target only when the first fails: one request per check while all is well.
 async function pingInternet() {
-    const results = await Promise.all(INTERNET_PROBES.map(probe));
-    return results.some(Boolean);
+    for (const target of INTERNET_PROBES) {
+        if (await probe(target)) return true;
+    }
+    return false;
 }
 
 const STABLE_INTERVAL_MS = 15_000;
 const DEGRADED_INTERVAL_MS = 5_000;
 
+// handlers.isServerConnected: a live socket already proves the server answers, so /health is
+// only asked while it is down. checkNow() is for the moment it drops.
 function startNetworkMonitoring(handlers) {
     let lastState = { internetReachable: true, serverReachable: true };
     let isDegraded = false;
     let stopped = false;
+    let timer = null;
+    let running = false;
+    let rerun = false;
 
     log.info('[NETWORK]: Starting adaptive monitoring (stable: 15s, degraded: 5s).');
 
-    async function runCheck() {
-        if (stopped) return;
-
+    async function check() {
         const osOnline = net.isOnline();
         const [internetReachable, serverReachable] = osOnline
-            ? await Promise.all([pingInternet(), pingServer()])
+            ? await Promise.all([pingInternet(), handlers.isServerConnected?.() || pingServer()])
             : [false, false];
 
         const hasStateChanged =
@@ -107,17 +113,40 @@ function startNetworkMonitoring(handlers) {
         }
 
         isDegraded = !allGood;
+    }
 
-        if (!stopped) {
-            const nextInterval = isDegraded ? DEGRADED_INTERVAL_MS : STABLE_INTERVAL_MS;
-            setTimeout(runCheck, nextInterval);
+    async function runCheck() {
+        if (stopped) return;
+        // A check asked for mid-run must still happen: the one in flight may predate the drop.
+        if (running) {
+            rerun = true;
+            return;
+        }
+        running = true;
+        clearTimeout(timer);
+        try {
+            await check();
+        } catch (error) {
+            log.error('[NETWORK]: Check failed:', error);
+        }
+        running = false;
+
+        if (rerun) {
+            rerun = false;
+            runCheck();
+        } else if (!stopped) {
+            timer = setTimeout(runCheck, isDegraded ? DEGRADED_INTERVAL_MS : STABLE_INTERVAL_MS);
         }
     }
 
-    setTimeout(runCheck, 1000);
+    timer = setTimeout(runCheck, 1000);
 
-    return () => {
-        stopped = true;
+    return {
+        checkNow: runCheck,
+        stop: () => {
+            stopped = true;
+            clearTimeout(timer);
+        },
     };
 }
 

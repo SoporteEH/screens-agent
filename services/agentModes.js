@@ -6,7 +6,8 @@ const { reconcileDisplays } = require('./displaySlots');
 const { checkForUpdates } = require('./updater');
 const { initializeMonitors } = require('./monitors');
 const { pingServer } = require('./network');
-const { net, app } = require('electron');
+const { startMemoryWatchdog } = require('./memoryWatchdog');
+const { net } = require('electron');
 
 const startNormalMode = async (context) => {
     const {
@@ -90,44 +91,7 @@ const startNormalMode = async (context) => {
     setTimeout(checkForUpdates, updateDelay);
 
     setInterval(sendHeartbeat, CONSTANTS.HEARTBEAT_INTERVAL_MS);
-
-    setInterval(() => {
-        if (managedWindows.size === 0) return;
-        log.debug('[OPTIMIZATION]: Clearing DOM storage.');
-        managedWindows.forEach((win) => {
-            if (win?.isDestroyed()) return;
-            win.webContents
-                .executeJavaScript(
-                    'try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}'
-                )
-                .catch(() => {});
-        });
-    }, CONSTANTS.GC_INTERVAL_MS);
-
-    setInterval(
-        () => {
-            const metrics = app.getAppMetrics();
-            for (const [screenId, win] of managedWindows) {
-                if (!win || win.isDestroyed()) continue;
-                try {
-                    const pid = win.webContents.getOSProcessId();
-                    const metric = metrics.find((m) => m.pid === pid);
-                    if (!metric) continue;
-                    const memMB = metric.memory.privateBytes / (1024 * 1024);
-                    log.debug(`[MEMORY]: Screen ${screenId}: ${memMB.toFixed(0)}MB`);
-                    if (memMB > 800) {
-                        log.warn(
-                            `[MEMORY]: Screen ${screenId} exceeds 800MB — reloading renderer.`
-                        );
-                        win.webContents.reload();
-                    }
-                } catch (e) {
-                    log.error(`[MEMORY]: Failed to check memory for screen ${screenId}:`, e);
-                }
-            }
-        },
-        60 * 60 * 1000
-    );
+    startMemoryWatchdog(managedWindows);
 };
 
 const startProvisioningMode = (context) => {

@@ -127,15 +127,24 @@ class ServerLogTransport extends winston.Transport {
     }
 }
 
+function isPackaged() {
+    try {
+        return require('electron').app?.isPackaged === true;
+    } catch {
+        return false;
+    }
+}
+
+const transports = [generalTransport, errorTransport, new ServerLogTransport()];
+// An installed agent has no console anyone reads: each line would be formatted for nothing.
+if (!isPackaged()) {
+    transports.push(new winston.transports.Console({ level: 'debug', format: consoleFormat }));
+}
+
 const winstonLogger = winston.createLogger({
     level: 'debug',
     format: fileFormat,
-    transports: [
-        generalTransport,
-        errorTransport,
-        new ServerLogTransport(),
-        new winston.transports.Console({ level: 'debug', format: consoleFormat }),
-    ],
+    transports,
 });
 
 // Supports multi-arg calls: log.error('msg:', errorObj)
