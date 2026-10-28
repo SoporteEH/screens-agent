@@ -38,7 +38,7 @@ function loadLastState() {
                 }
             }
 
-            // Only rewrite the file for the legacy string->object migration.
+            // Rewritten only when an entry is a bare URL string, into the object form.
             if (needsStructuralMigration) {
                 writeFileAtomic(STATE_FILE_PATH, JSON.stringify(persistedState, null, 2));
             }
@@ -94,7 +94,7 @@ function migrateStateEncryption() {
     }
 }
 
-// Drops the entries of slots that are no longer in the slot map.
+// Drops the entries of slots that are not in the slot map.
 function cleanOrphanedState(validSlotIds) {
     const state = loadRawState();
     const cleanedState = {};

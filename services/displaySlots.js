@@ -102,8 +102,8 @@ function sortedDisplays() {
         .sort((a, b) => a.bounds.x - b.bounds.x || a.bounds.y - b.bounds.y);
 }
 
-// First run: seeds left-to-right as 1..N (keeps legacy state.json keys aligned)
-// and reserves slots for any state entry whose monitor is off.
+// First run: seeds left-to-right as 1..N, matching the ids state.json uses, and reserves
+// slots for any state entry whose monitor is off.
 function seedSlots(displays) {
     const slots = {};
     displays.forEach((display, index) => {
