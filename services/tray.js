@@ -70,8 +70,13 @@ function openControlWindow(getStatus) {
         frame: false,
         resizable: false,
         alwaysOnTop: true,
-        backgroundColor: '#141312',
+        // Transparent so control.html can round the corners, as the provisioning window does.
+        transparent: true,
+        backgroundColor: '#00000000',
         webPreferences: {
+            // Own renderer: with process-per-site it would share the players' file:// process,
+            // which paints the transparent corners white.
+            partition: 'control-window',
             nodeIntegration: false,
             contextIsolation: true,
             preload: path.join(__dirname, '..', 'preload.js'),

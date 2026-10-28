@@ -35,8 +35,8 @@ function startProvisioningMode() {
     log.info(`[PROVISIONING]: Machine ID: ${deviceId}`);
 
     const provisionWindow = new BrowserWindow({
-        width: 800,
-        height: 400,
+        width: 720,
+        height: 460,
         center: true,
         icon: path.join(__dirname, '../icons/icon.ico'),
         webPreferences: {
@@ -77,8 +77,7 @@ function startProvisioningMode() {
             );
             provisionWindow.webContents.send('provision-status', {
                 type: 'error',
-                message:
-                    'The server URL must use HTTPS (plain HTTP is only allowed for local network addresses).',
+                message: 'La dirección debe usar HTTPS (HTTP solo se admite en la red local).',
             });
             return;
         }
@@ -106,7 +105,6 @@ function startProvisioningMode() {
             socket.emit('register-for-provisioning', deviceId);
             provisionWindow.webContents.send('provision-status', {
                 type: 'success',
-                message: 'Connected. Waiting for linking from control panel...',
             });
         });
 
@@ -124,7 +122,7 @@ function startProvisioningMode() {
             provisionWindow.webContents.send('provision-status', {
                 type: 'error',
                 message:
-                    'Connection to the server was lost. Generate a new setup code and connect again.',
+                    'Se ha perdido la conexión con el servidor. Genera un código nuevo y vuelve a conectar.',
                 clearNonce: true,
             });
         });
@@ -133,7 +131,7 @@ function startProvisioningMode() {
             log.error(`[PROVISIONING]: Connection error to ${pendingServerUrl}: ${error.message}`);
             provisionWindow.webContents.send('provision-status', {
                 type: 'error',
-                message: 'Could not connect to the server. Check the URL and try again.',
+                message: 'No se ha podido conectar. Revisa la dirección del servidor y el código.',
             });
         });
 
@@ -162,14 +160,20 @@ function startProvisioningMode() {
                 log.info('[PROVISIONING]: Configuration saved. Restarting...');
 
                 socket.disconnect();
-                app.relaunch();
-                app.exit(0);
+                provisionWindow.webContents.send('provision-status', { type: 'linked' });
+                // Long enough to read the confirmation before the agent restarts.
+                setTimeout(() => {
+                    app.relaunch();
+                    app.exit(0);
+                }, 1500);
             } catch (err) {
                 linking = false;
                 log.error('[PROVISIONING]: Failed to finalize linking:', err.message);
                 provisionWindow.webContents.send('provision-status', {
                     type: 'error',
-                    message: `Error finalizing: ${err.message}`,
+                    message:
+                        'No se ha podido completar la vinculación. Genera un código nuevo y vuelve a conectar.',
+                    clearNonce: true,
                 });
             }
         });

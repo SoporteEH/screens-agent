@@ -1,309 +1,91 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 
 <head>
     <meta charset="UTF-8">
-    <title>Device Setup</title>
-    <style>
-        .titlebar {
-            flex-shrink: 0;
-            height: 32px;
-            background-color: var(--color-bg-base);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 12px;
-            -webkit-app-region: drag;
-            z-index: 1000;
-            border-bottom: 1px solid var(--color-border);
-        }
-
-        .titlebar-title {
-            font-size: 12px;
-            color: var(--color-text-primary);
-            font-weight: 400;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .titlebar-icon {
-            width: 16px;
-            height: 16px;
-            background-color: var(--color-primary);
-            border-radius: 2px;
-        }
-
-        .titlebar-controls {
-            display: flex;
-            gap: 0;
-            -webkit-app-region: no-drag;
-        }
-
-        .titlebar-button {
-            width: 46px;
-            height: 32px;
-            border: none;
-            background: transparent;
-            color: var(--color-text-secondary);
-            font-size: 10px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: background-color 0.15s;
-            -webkit-app-region: no-drag;
-        }
-
-        .titlebar-button:hover {
-            background-color: rgba(255, 255, 255, 0.1);
-        }
-
-        .titlebar-button.close:hover {
-            background-color: var(--color-error);
-            color: white;
-        }
-
-        .titlebar-button svg {
-            width: 10px;
-            height: 10px;
-            fill: currentColor;
-        }
-
-    </style>
-    <link rel="stylesheet" href="css/theme.css">
-    <style>
-        :root {
-            /* Variables especificas de esta vista */
-            --font-size-base: 16px;
-            --font-size-xl: 24px;
-            --spacing-4: 12px;
-            --spacing-5: 16px;
-            --spacing-10: 24px;
-            --border-radius-lg: 6px;
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        /* The window is transparent: the rounded corners are drawn by .window, not by the OS. */
-        html,
-        body {
-            height: 100%;
-            background: transparent;
-        }
-
-        body {
-            font-family: var(--font-sans);
-            color: var(--color-text-primary);
-            text-align: center;
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-        }
-
-        .window {
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            background-color: var(--color-bg-base);
-            border: 1px solid var(--color-border);
-            border-radius: 10px;
-            overflow: hidden;
-        }
-
-        .content {
-            flex: 1;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .container {
-            padding: var(--spacing-10);
-            max-width: 90%;
-        }
-
-        h1 {
-            color: var(--color-primary);
-            font-size: var(--font-size-xl);
-            font-weight: 600;
-            margin-bottom: var(--spacing-4);
-        }
-
-        p {
-            color: var(--color-text-secondary);
-            font-size: var(--font-size-base);
-            margin-bottom: var(--spacing-5);
-        }
-
-        #deviceId {
-            background-color: var(--color-bg-input);
-            padding: 15px;
-            border-radius: var(--border-radius-lg);
-            font-size: 1em;
-            margin-top: var(--spacing-5);
-            user-select: all;
-            /* Form controls do not inherit the page font unless told to. */
-            font-family: inherit;
-            letter-spacing: 0.3;
-            color: var(--color-text-primary);
-            border: 1px solid var(--color-border);
-        }
-    </style>
+    <title>ScreensWeb Agent · Vincular equipo</title>
+    <link rel="stylesheet" href="./css/theme.css">
+    <link rel="stylesheet" href="./css/provision.css">
 </head>
 
 <body>
-    <div class="window">
-    <div class="titlebar">
-        <div class="titlebar-title">
-            <div class="titlebar-icon"></div>
-        </div>
-        <div class="titlebar-controls">
-            <button class="titlebar-button minimize" title="Minimizar">
-                <svg viewBox="0 0 10 1">
-                    <rect width="10" height="1" />
-                </svg>
+  <div class="window">
+    <div class="title-bar">
+        <span class="title-bar-text">
+            <span class="title-bar-logo" aria-hidden="true">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"></rect><path d="M12 17v4"></path><path d="M8 21h8"></path></svg>
+            </span>
+            ScreensWeb Agent
+        </span>
+        <div class="title-bar-controls">
+            <button class="title-bar-button" id="btn-minimize" aria-label="Minimizar">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"></path></svg>
             </button>
-            <button class="titlebar-button close" title="Close">
-                <svg viewBox="0 0 10 10">
-                    <path d="M0,0 L10,10 M10,0 L0,10" stroke="currentColor" stroke-width="1" />
-                </svg>
+            <button class="title-bar-button close" id="btn-close" aria-label="Cerrar">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
             </button>
         </div>
     </div>
 
     <main class="content">
-    <div class="container" id="config-container">
-        <h1>Device Setup</h1>
+        <form class="panel" id="form" novalidate>
+            <div class="header">
+                <div class="header-icon" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"></path><path d="M15 7h2a5 5 0 1 1 0 10h-2"></path><path d="M8 12h8"></path></svg>
+                </div>
+                <h1>Vincular este equipo</h1>
+            </div>
 
-        <div style="margin-bottom: 20px;">
-            <input type="text" id="serverUrl" placeholder="Server URL" style="
-                width: 100%;
-                background-color: var(--color-bg-input);
-                padding: 12px;
-                border-radius: var(--border-radius-lg);
-                font-family: inherit;
-                font-size: 14px;
-                color: var(--color-text-primary);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                margin-bottom: 10px;
-                outline: none;
-            ">
-            <input type="text" id="nonceInput" placeholder="Setup code" style="
-                width: 100%;
-                background-color: var(--color-bg-input);
-                padding: 12px;
-                border-radius: var(--border-radius-lg);
-                font-size: 14px;
-                color: var(--color-text-primary);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                margin-bottom: 15px;
-                outline: none;
-                font-family: inherit;
-                letter-spacing: 0.05em;
-            ">
-            <button id="connectBtn" style="
-                width: 100%;
-                background-color: var(--color-primary);
-                color: white;
-                border: none;
-                padding: 12px;
-                border-radius: var(--border-radius-lg);
-                font-family: inherit;
-                font-size: 14px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: opacity 0.2s;
-            ">Connect</button>
+            <div class="fields">
+                <label class="field">
+                    <span>Servidor</span>
+                    <input class="input" id="serverUrl" type="url" autocomplete="off" spellcheck="false">
+                </label>
+                <label class="field">
+                    <span>Código de configuración</span>
+                    <input class="input mono" id="nonceInput" type="text" autocomplete="off" spellcheck="false">
+                </label>
+            </div>
+
+            <div class="alert" id="alert" role="alert" hidden>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path></svg>
+                <span id="alert-text"></span>
+            </div>
+
+            <button type="submit" class="btn-primary" id="connectBtn">
+                <svg class="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.22-8.56"></path></svg>
+                <span id="connectLabel">Conectar</span>
+            </button>
+        </form>
+
+        <!-- Connected: the device is linked from the panel by this ID. -->
+        <div class="panel centered" id="waiting" role="status" hidden>
+            <div class="badge-icon" aria-hidden="true">
+                <svg class="spinner" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.22-8.56"></path></svg>
+            </div>
+            <div class="stack">
+                <h1>Esperando vinculación</h1>
+                <span class="muted">Vincula este equipo desde el panel con su ID.</span>
+            </div>
+            <div class="device-id mono" id="deviceId"></div>
         </div>
 
-        <div id="statusMessage" style="color: var(--color-text-secondary); font-size: 13px; min-height: 20px;"></div>
-
-        <div id="id-section"
-            style="display: none; margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 20px;">
-            <p style="font-size: 13px; margin-bottom: 8px;">Machine ID:</p>
-            <div id="deviceId">Loading ID...</div>
+        <div class="panel centered" id="done" role="status" hidden>
+            <div class="badge-icon ok" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+            </div>
+            <div class="stack">
+                <h1>Equipo vinculado</h1>
+                <span class="muted">Abriendo el panel de control…</span>
+            </div>
         </div>
-    </div>
     </main>
-    </div>
-    <script>
-        const deviceIdElement = document.getElementById('deviceId');
-        const serverUrlInput = document.getElementById('serverUrl');
-        const nonceInput = document.getElementById('nonceInput');
-        const connectBtn = document.getElementById('connectBtn');
-        const statusMessage = document.getElementById('statusMessage');
-        const idSection = document.getElementById('id-section');
 
-        // Listen for Device ID
-        window.electron.onDeviceId((deviceId) => {
-            deviceIdElement.innerText = deviceId;
-        });
-
-        // Listen for pairing status
-        window.electron.on('provision-status', ({ type, message, clearNonce }) => {
-            statusMessage.innerText = message;
-            statusMessage.style.color = type === 'error' ? '#ef4444' : (type === 'success' ? '#10b981' : 'var(--color-text-secondary)');
-
-            if (type === 'success') {
-                idSection.style.display = 'block';
-                serverUrlInput.parentElement.style.display = 'none';
-            } else {
-                // A success may have hidden the form; any error must bring it back.
-                serverUrlInput.parentElement.style.display = '';
-                if (clearNonce) nonceInput.value = '';
-                connectBtn.disabled = false;
-                serverUrlInput.disabled = false;
-                nonceInput.disabled = false;
-                connectBtn.style.opacity = '1';
-            }
-        });
-
-        connectBtn.addEventListener('click', () => {
-            const url = serverUrlInput.value.trim();
-            const nonce = nonceInput.value.trim();
-
-            if (!url) {
-                statusMessage.innerText = 'Please enter a valid URL';
-                statusMessage.style.color = '#ef4444';
-                return;
-            }
-
-            try {
-                new URL(url); // Basic validation
-            } catch (e) {
-                statusMessage.innerText = 'Malformed URL (https://server.com)';
-                statusMessage.style.color = '#ef4444';
-                return;
-            }
-
-            if (!nonce) {
-                statusMessage.innerText = 'Please enter the setup code from the admin panel';
-                statusMessage.style.color = '#ef4444';
-                return;
-            }
-
-            statusMessage.innerText = 'Connecting to server...';
-            statusMessage.style.color = 'var(--color-text-secondary)';
-            connectBtn.disabled = true;
-            serverUrlInput.disabled = true;
-            nonceInput.disabled = true;
-            connectBtn.style.opacity = '0.5';
-
-            window.electron.send('set-server-url', { url, nonce });
-        });
-
-        document.querySelector('.titlebar-button.minimize')?.addEventListener('click', () => {
-            window.electron.minimizeWindow();
-        });
-
-        document.querySelector('.titlebar-button.close')?.addEventListener('click', () => {
-            window.electron.closeWindow();
-        });
-    </script>
+    <footer class="footer">
+        <span>ScreensWeb Agent © <span id="current-year"></span></span>
+    </footer>
+  </div>
+  <script src="./js/provision.js"></script>
 </body>
 
 </html>
