@@ -136,8 +136,9 @@ function isPackaged() {
 }
 
 const transports = [generalTransport, errorTransport, new ServerLogTransport()];
-// An installed agent has no console anyone reads: each line would be formatted for nothing.
-if (!isPackaged()) {
+// An installed agent has no console anyone reads, unless ELECTRON_ENABLE_LOGGING asks for one:
+// the CI smoke test reads the boot line from stdout.
+if (!isPackaged() || process.env.ELECTRON_ENABLE_LOGGING) {
     transports.push(new winston.transports.Console({ level: 'debug', format: consoleFormat }));
 }
 

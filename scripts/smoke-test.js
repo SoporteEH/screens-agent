@@ -15,25 +15,38 @@ function findBinary() {
     return exe ? path.join(dir, exe) : null;
 }
 
-// Fallback for environments where the GUI subsystem does not pipe stdout:
-function markerInLogFiles() {
-    const appData = process.env.APPDATA || path.join(os.homedir(), '.config');
-    const candidates = [
-        path.join(appData, 'ScreensWeb Agent', 'logs'),
-        path.join(appData, 'ScreensWeb', 'logs'),
-        path.join(appData, 'screensWeb', 'logs'),
-    ];
-    for (const dir of candidates) {
+// The agent's userData is %APPDATA%\local-agent (the package name), packaged or not.
+const LOG_DIR = path.join(
+    process.env.APPDATA || path.join(os.homedir(), '.config'),
+    'local-agent',
+    'logs'
+);
+
+function generalLogs() {
+    try {
+        return fs
+            .readdirSync(LOG_DIR)
+            .filter((file) => file.startsWith('general') && file.endsWith('.log'));
+    } catch {
+        return [];
+    }
+}
+
+function logSizes() {
+    return new Map(generalLogs().map((file) => [file, fs.statSync(path.join(LOG_DIR, file)).size]));
+}
+
+// Fallback for environments where the GUI subsystem does not pipe stdout. Only what this launch
+// appended counts: an earlier run on the same machine has the marker in the file already.
+function markerInLogFiles(sizesAtLaunch) {
+    for (const file of generalLogs()) {
         try {
-            if (!fs.existsSync(dir)) continue;
-            for (const file of fs.readdirSync(dir)) {
-                if (!file.startsWith('general') || !file.endsWith('.log')) continue;
-                if (fs.readFileSync(path.join(dir, file), 'utf8').includes(BOOT_MARKER)) {
-                    return true;
-                }
-            }
+            const appended = fs
+                .readFileSync(path.join(LOG_DIR, file))
+                .subarray(sizesAtLaunch.get(file) || 0);
+            if (appended.toString('utf8').includes(BOOT_MARKER)) return true;
         } catch {
-            // An unreadable candidate dir: try the next one.
+            // Being rotated: the next file or check will have it.
         }
     }
     return false;
@@ -62,6 +75,7 @@ function main() {
 
     let output = '';
     let settled = false;
+    const sizesAtLaunch = logSizes();
 
     const child = spawn(bin, ['--disable-gpu', '--no-sandbox'], {
         env: { ...process.env, ELECTRON_ENABLE_LOGGING: '1' },
@@ -103,7 +117,7 @@ function main() {
 
     child.on('exit', (code, signal) => {
         if (settled) return;
-        if (markerInLogFiles()) {
+        if (markerInLogFiles(sizesAtLaunch)) {
             finish(true, 'boot marker found in log file (process exited after booting)');
         } else {
             finish(
@@ -114,7 +128,7 @@ function main() {
     });
 
     const timer = setTimeout(() => {
-        if (markerInLogFiles()) {
+        if (markerInLogFiles(sizesAtLaunch)) {
             finish(true, 'boot marker found in log file');
         } else {
             finish(false, `timed out after ${TIMEOUT_MS / 1000}s without reaching boot marker`);
