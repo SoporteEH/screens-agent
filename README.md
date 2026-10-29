@@ -69,7 +69,8 @@ software for 7 days (delete the key to retry sooner). A page crashing does not c
   `scripts/check-player-contract.js` pins that contract.
 - A frame that never loads gets `[stalled]` in its title; the screen watchdog reads it and recovers.
 - Every 10 minutes, a page using more than 15 % of the RAM (350 MB to 1 GB per renderer) is
-  reloaded, at most once an hour per screen (`services/memoryWatchdog.js`).
+  reloaded, at most once an hour per screen (`services/memoryWatchdog.js`). Each check logs the
+  agent's memory by process, with the sites and screens each one holds, as a `[MEMORY]` line.
 - Playlists run inside the wrapper (`js/playlist-engine.js`), so they keep their schedule with the
   API down. Rules: `screens-api/documentation/PLAYLISTS.md`.
 - Reconnection backs off to 30 s and never gives up; after 10 failures a circuit breaker waits

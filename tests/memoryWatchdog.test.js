@@ -11,7 +11,13 @@ require.cache[logConfigPath] = {
     exports: { log: { debug: noop, info: noop, warn: noop, error: noop } },
 };
 
-const { planReloads, memoryLimitMb } = require('../services/memoryWatchdog');
+const {
+    planReloads,
+    memoryLimitMb,
+    formatUsage,
+    frameLabel,
+} = require('../services/memoryWatchdog');
+const { getWrapperUrl } = require('../utils/wrapperUrl');
 
 const WRAPPER_PID = 10;
 const usage = (entries) => new Map(entries);
@@ -96,5 +102,54 @@ test('nothing under the limit is touched', () => {
             614
         ),
         []
+    );
+});
+
+test('a frame is named by its site, the agent pages by name', () => {
+    assert.equal(frameLabel(getWrapperUrl()), 'wrapper');
+    assert.equal(frameLabel('https://c.bannerflow.net/scripts/iframe?did=1'), 'c.bannerflow.net');
+    assert.equal(
+        frameLabel(
+            'file:///C:/Users/x/AppData/Roaming/local-agent/ScreensWeb/offline-carousel.html'
+        ),
+        'offline-carousel'
+    );
+    assert.equal(frameLabel('about:blank'), null);
+    assert.equal(frameLabel(''), null);
+});
+
+test('the usage line names each process by what it shows, biggest first', () => {
+    const line = formatUsage({
+        totalMb: 640.4,
+        mainMb: 55.2,
+        gpuMb: 83.1,
+        usageMb: usage([
+            [10, 40],
+            [20, 230],
+            [30, 120],
+            [99, 15],
+        ]),
+        screens: [
+            {
+                screenId: '1',
+                frames: [
+                    { pid: 10, label: 'wrapper' },
+                    { pid: 20, label: 'c.bannerflow.net' },
+                ],
+            },
+            {
+                screenId: '2',
+                frames: [
+                    { pid: 10, label: 'wrapper' },
+                    { pid: 30, label: 'example.com' },
+                    { pid: 30, label: null },
+                ],
+            },
+        ],
+    });
+    assert.equal(
+        line,
+        'Agent 640 MB (main 55, GPU 83, renderers 405) | 230 c.bannerflow.net (screen 1) | ' +
+            '120 example.com (screen 2) | 40 wrapper (screen 1, 2) | 15 other'
     );
 });
