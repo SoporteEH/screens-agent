@@ -50,8 +50,23 @@ jobs:
 
           echo "SERVER_URL=$SERVER_URL" >> "$GITHUB_ENV"
 
+      # Full history: the release source check needs main.
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # A beta can be cut from any branch to try it on the beta PCs; a stable release only from
+      # what was merged into main.
+      - name: Check release source
+        shell: bash
+        run: |
+          case "$GITHUB_REF_NAME" in *-beta*) exit 0 ;; esac
+          commit=$(git rev-parse "$GITHUB_REF_NAME^{commit}")
+          if ! git merge-base --is-ancestor "$commit" origin/main; then
+            echo "::error::Stable $GITHUB_REF_NAME points at a commit that is not on main. Merge the PR into main and tag main, or tag vX.Y.Z-beta.N to try a branch."
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -61,6 +76,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Unit tests
+        run: npm test
 
       - name: Player wrapper contract check
         run: node scripts/check-player-contract.js

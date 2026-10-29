@@ -91,11 +91,17 @@ Full model: `screens-api/documentation/SECURITY.md`.
 
 ## Auto-update and release
 
-`electron-updater` checks GitHub Releases at startup and hourly. Routine updates install between
-03:00 and 06:00 or at a scheduled restart; `force_update` installs at once. Channels are `latest`
-(default) and `beta` (canary), switched remotely with `set_channel`.
+`electron-updater` checks GitHub Releases at startup, hourly, on a channel change, on
+`force_update` and when the control window opens, and installs a new version as soon as it is
+downloaded. Channels are `latest` (default) and `beta` (canary), switched remotely with
+`set_channel`.
 
-- **Release**: push a tag `vX.Y.Z` (or `vX.Y.Z-beta.N`); CI builds, smoke-tests and publishes.
+- **Stable release**: changes reach `main` through a PR (CI must pass); tag `main` with `vX.Y.Z`.
+  A stable tag on a commit outside `main` fails the release.
+- **Beta release**: tag any branch with `vX.Y.Z-beta.N`; only devices on `beta` install it.
+- **Version**: the tag sets it at build time; `package.json` stays at `0.0.0-dev`, so no commit
+  bumps it. Patch for fixes, minor for features, major for a change that needs a new API.
+- CI runs the unit tests, builds, smoke-tests and publishes.
 - **Rollback**: point the channel file to an older version (`allowDowngrade` is on).
 
 ## Troubleshooting
