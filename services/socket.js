@@ -6,6 +6,7 @@ const { SERVER_URL, CONSTANTS } = require('../config/constants');
 const FORCE_RECONNECT_MIN_INTERVAL_MS = 10 * 1000;
 // Another machine holds this identity: step aside.
 const DUPLICATE_BACKOFF_MS = 10 * 60 * 1000;
+const OUTAGE_LOG_INTERVAL_MS = 60 * 60 * 1000;
 
 function connectToSocketServer(token, handlers) {
     let consecutiveFailures = 0;
@@ -14,6 +15,7 @@ function connectToSocketServer(token, handlers) {
     let lastForcedAt = 0;
     let hasConnected = false;
     let holdUntil = 0;
+    let outageLoggedAt = 0;
     const onHold = () => Date.now() < holdUntil;
 
     const socket = io(SERVER_URL, {
@@ -89,40 +91,44 @@ function connectToSocketServer(token, handlers) {
     });
 
     // Fires on every failed attempt, reconnections included: the one place they are logged.
+    // An outage is logged when it starts and then hourly; single attempts go to debug.
     socket.on('connect_error', (err) => {
         consecutiveFailures++;
+        const message = `[SOCKET]: Connection error: ${err.message}`;
+        if (consecutiveFailures === 1) log.error(message);
+        else log.debug(message);
 
         if (
             circuitBreakerState !== 'OPEN' &&
             consecutiveFailures >= CONSTANTS.CIRCUIT_BREAKER_THRESHOLD
         ) {
+            const reopened = circuitBreakerState === 'HALF_OPEN';
             circuitBreakerState = 'OPEN';
-            log.warn(
-                `[CIRCUIT BREAKER]: OPEN — ${consecutiveFailures} consecutive failures. ` +
-                    `Disconnecting and pausing for 5 minutes before next attempt.`
-            );
+            const now = Date.now();
+            if (!reopened) {
+                outageLoggedAt = now;
+                log.warn(
+                    `[CIRCUIT BREAKER]: OPEN — ${consecutiveFailures} consecutive failures. ` +
+                        `Retrying every 5 minutes.`
+                );
+            } else if (now - outageLoggedAt >= OUTAGE_LOG_INTERVAL_MS) {
+                outageLoggedAt = now;
+                log.warn(
+                    `[CIRCUIT BREAKER]: Server still unreachable — ${consecutiveFailures} consecutive failures.`
+                );
+            }
             socket.disconnect();
             circuitBreakerTimer = setTimeout(
                 () => {
                     circuitBreakerTimer = null;
                     circuitBreakerState = 'HALF_OPEN';
-                    log.info('[CIRCUIT BREAKER]: HALF_OPEN — attempting reconnect after pause.');
+                    log.debug('[CIRCUIT BREAKER]: HALF_OPEN — attempting reconnect after pause.');
                     socket.connect();
                 },
                 5 * 60 * 1000
             );
-        } else if (
-            circuitBreakerState === 'OPEN' &&
-            consecutiveFailures > CONSTANTS.CIRCUIT_BREAKER_THRESHOLD &&
-            consecutiveFailures % 10 === 0
-        ) {
-            log.warn(
-                `[CIRCUIT BREAKER]: Still open — ${consecutiveFailures} total failures. ` +
-                    `Server still unreachable.`
-            );
         }
 
-        log.error(`[SOCKET]: Connection error: ${err.message}`);
         // Expired or revoked token.
         if (err.message === 'Unauthorized') handlers.onUnauthorized?.();
     });

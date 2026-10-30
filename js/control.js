@@ -271,7 +271,7 @@ function applyUpdateState(s) {
     } else if (state === 'downloaded') {
         versionStatus.className = 'version-status update-available';
         versionStatusIcon.textContent = 'system_update_alt';
-        versionStatusText.textContent = 'Actualización lista — reiniciando…';
+        versionStatusText.textContent = 'Actualización lista, reiniciando…';
     } else {
         versionStatus.className = 'version-status';
         versionStatusIcon.textContent = 'sync';

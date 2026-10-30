@@ -541,8 +541,30 @@ function bootstrap() {
             context.ensurePlayerScreen(screenId, { url: buildLocalCarouselUrl() || '' });
         };
 
+        const hasInternet = () => context.networkState !== 'NO_INTERNET' && net.isOnline();
+
+        // Autologin content needs its own window: inside the wrapper's iframe nothing fills
+        // the login form. It only needs the internet, not the server.
+        context.restoreAutologinScreen = (screenId) => {
+            const screenIdStr = String(screenId);
+            const screenData = stateService.loadLastState()[screenIdStr];
+            if (!screenData?.url || !screenData.credentials || !hasInternet()) return false;
+
+            log.info(`[NETWORK]: Re-applying autologin content for screen ${screenIdStr}`);
+            commandHandlers.handleShowUrl({
+                action: 'show_url',
+                screenIndex: screenIdStr,
+                url: screenData.url,
+                credentials: screenData.credentials,
+                refreshInterval: screenData.refreshInterval || 0,
+                silent: true,
+            });
+            return true;
+        };
+
         context.applyOfflineScreen = (screenId) => {
             log.info(`[NETWORK]: Screen ${screenId} → offline target (${context.networkState})`);
+            if (context.restoreAutologinScreen(screenId)) return;
             context.ensurePlayerScreen(screenId, context.resolveScreenTarget(screenId));
         };
 
@@ -552,18 +574,7 @@ function bootstrap() {
             const serverUrl = onlineConfig.serverUrl || constants.getServerUrl();
             if (!serverUrl || !onlineConfig.deviceId) return false;
 
-            const screenData = stateService.loadLastState()[screenIdStr];
-            if (screenData?.url && screenData.credentials) {
-                log.info(`[NETWORK]: Re-applying autologin content for screen ${screenIdStr}`);
-                commandHandlers.handleShowUrl({
-                    action: 'show_url',
-                    screenIndex: screenIdStr,
-                    url: screenData.url,
-                    credentials: screenData.credentials,
-                    refreshInterval: screenData.refreshInterval || 0,
-                    silent: true,
-                });
-            } else {
+            if (!context.restoreAutologinScreen(screenIdStr)) {
                 log.info(`[NETWORK]: Re-asserting wrapper target for screen ${screenIdStr}`);
                 context.ensurePlayerScreen(screenIdStr, context.resolveScreenTarget(screenIdStr));
             }
@@ -608,7 +619,11 @@ function bootstrap() {
             const bypassesWrapper = !!screenData.credentials || isAutologinUrl(contentUrl);
             if (bypassesWrapper || !cfg.deviceId || !serverUrl) {
                 if (!online) {
-                    if (loadedUrl.startsWith('file://')) return { ok: true };
+                    if (loadedUrl.startsWith('file://')) {
+                        return screenData.credentials && contentUrl && hasInternet()
+                            ? { ok: false, reason: 'in the player instead of its autologin window' }
+                            : { ok: true };
+                    }
                     if (context.networkState === 'NO_INTERNET') {
                         return { ok: false, reason: 'showing remote content with no network' };
                     }
