@@ -1,7 +1,7 @@
 const { log } = require('../utils/logConfig');
 const { loadConfig } = require('../utils/configManager');
 const { startTokenRefreshLoop } = require('./auth');
-const { loadLastState, rearmAutoRefreshTimers } = require('./state');
+const { rearmAutoRefreshTimers } = require('./state');
 const { reconcileDisplays } = require('./displaySlots');
 const { checkForUpdates } = require('./updater');
 const { initializeMonitors } = require('./monitors');
@@ -34,8 +34,6 @@ const startNormalMode = async (context) => {
     const serverUrl = config.serverUrl || require('../config/constants').getServerUrl();
 
     if (serverUrl) {
-        const { handleShowUrl } = require('../handlers/commands');
-        const savedState = loadLastState();
         const screens = Array.from(hardwareIdToDisplayMap.keys());
         const serverAvailable = await pingServer();
 
@@ -48,27 +46,13 @@ const startNormalMode = async (context) => {
         log.info(`[NORMAL]: Server available: ${serverAvailable}`);
 
         screens.forEach((screenIndex, i) => {
-            const screenData = savedState[String(screenIndex)];
             setTimeout(() => {
-                if (screenData?.url && screenData.credentials) {
-                    log.info(
-                        `[PLAYER]: Screen ${screenIndex} has autologin content, restoring directly: ${screenData.url}`
-                    );
-                    handleShowUrl({
-                        action: 'show_url',
-                        screenIndex,
-                        url: screenData.url,
-                        credentials: screenData.credentials,
-                        refreshInterval: screenData.refreshInterval || 0,
-                        silent: true,
-                    });
-                } else {
-                    const target = context.resolveScreenTarget(screenIndex);
-                    log.info(
-                        `[PLAYER]: Screen ${screenIndex} → local wrapper (${context.networkState}${target.url ? `: ${target.url}` : ': no content'})`
-                    );
-                    context.ensurePlayerScreen(screenIndex, target);
-                }
+                if (context.restoreAutologinScreen(screenIndex)) return;
+                const target = context.resolveScreenTarget(screenIndex);
+                log.info(
+                    `[PLAYER]: Screen ${screenIndex} → local wrapper (${context.networkState}${target.url ? `: ${target.url}` : ': no content'})`
+                );
+                context.ensurePlayerScreen(screenIndex, target);
             }, 500 * i);
         });
 
