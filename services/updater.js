@@ -11,6 +11,7 @@ const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 let updateCheckTimer = null;
 
 let downloadedVersion = null;
+let appliedChannel = null;
 
 function installNow(reason) {
     log.info(`[UPDATER]: Installing update (${reason}).`);
@@ -53,7 +54,8 @@ function applyChannel() {
     const channel = getChannel();
     autoUpdater.channel = channel;
     autoUpdater.allowPrerelease = channel === 'beta';
-    log.info(`[UPDATER]: Update channel = ${channel}`);
+    if (channel !== appliedChannel) log.info(`[UPDATER]: Update channel = ${channel}`);
+    appliedChannel = channel;
     return channel;
 }
 
