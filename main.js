@@ -550,7 +550,7 @@ function bootstrap() {
             const screenData = stateService.loadLastState()[screenIdStr];
             if (!screenData?.url || !screenData.credentials || !hasInternet()) return false;
 
-            log.info(`[NETWORK]: Re-applying autologin content for screen ${screenIdStr}`);
+            log.info(`[AUTOLOGIN]: Restoring screen ${screenIdStr} in its own window`);
             commandHandlers.handleShowUrl({
                 action: 'show_url',
                 screenIndex: screenIdStr,
