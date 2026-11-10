@@ -288,7 +288,20 @@
 
         window.playerAPI.onStatus(({ state }) => setStatus(state));
 
-        window.playerAPI.onItemFailed(({ url }) => playlist.itemFailed(url));
+        const bareUrl = (u) => String(u || '').split('#')[0].replace(/\/$/, '');
+
+        // The frame's load event fires on an error page too; only the main process sees it fail.
+        window.playerAPI.onItemFailed(({ url }) => {
+            if (playlist.isActive()) {
+                playlist.itemFailed(url);
+                return;
+            }
+            if (!fallbackUrl || activeUrl === fallbackUrl) return;
+            if (bareUrl(url) !== bareUrl(activeUrl)) return;
+            console.warn('[PLAYER] Content failed to load, switching to fallback');
+            contentRetries = 0;
+            showContent(fallbackUrl);
+        });
 
         window.playerAPI.onRefresh(() => {
             if (playlist.isActive()) {

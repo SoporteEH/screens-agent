@@ -78,8 +78,8 @@
         {
           "id": "december",
           "window": {
-            "startDate": "2026-12-01",
-            "endDate": "2026-12-31"
+            "validFrom": "2026-12-01T00:00",
+            "validUntil": "2027-01-01T00:00"
           }
         }
       ]
@@ -119,6 +119,30 @@
       "fallback": {
         "id": "fallback"
       }
+    },
+    "launch": {
+      "mode": "carousel",
+      "items": [
+        {
+          "id": "promo",
+          "window": {
+            "validFrom": "2026-11-10T14:30",
+            "validUntil": "2026-11-12T09:00"
+          }
+        },
+        {
+          "id": "lateShow",
+          "window": {
+            "startTime": "22:00",
+            "endTime": "02:00",
+            "validUntil": "2026-11-11T01:00"
+          }
+        },
+        {
+          "id": "always",
+          "window": {}
+        }
+      ]
     }
   },
   "cases": [
@@ -283,7 +307,7 @@
       }
     },
     {
-      "name": "date range includes its last day",
+      "name": "item validity runs to its last minute",
       "playlist": "carousel",
       "clock": {
         "date": "2026-12-31",
@@ -304,7 +328,7 @@
       }
     },
     {
-      "name": "date range ends after its last day",
+      "name": "item validUntil at midnight ends the range",
       "playlist": "carousel",
       "clock": {
         "date": "2027-01-01",
@@ -423,6 +447,119 @@
           "fallback"
         ],
         "minutesUntilNextChange": 90
+      }
+    },
+    {
+      "name": "an item waits for its start time",
+      "playlist": "launch",
+      "clock": {
+        "date": "2026-11-10",
+        "time": "14:29",
+        "day": 2,
+        "minutes": 869,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [
+          "always"
+        ],
+        "state": "playing",
+        "items": [
+          "always"
+        ],
+        "minutesUntilNextChange": 1
+      }
+    },
+    {
+      "name": "an item's validFrom is inclusive",
+      "playlist": "launch",
+      "clock": {
+        "date": "2026-11-10",
+        "time": "14:30",
+        "day": 2,
+        "minutes": 870,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [
+          "promo",
+          "always"
+        ],
+        "state": "playing",
+        "items": [
+          "promo",
+          "always"
+        ],
+        "minutesUntilNextChange": 450
+      }
+    },
+    {
+      "name": "an overnight window plays until the item expires",
+      "playlist": "launch",
+      "clock": {
+        "date": "2026-11-11",
+        "time": "00:59",
+        "day": 3,
+        "minutes": 59,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [
+          "promo",
+          "lateShow",
+          "always"
+        ],
+        "state": "playing",
+        "items": [
+          "promo",
+          "lateShow",
+          "always"
+        ],
+        "minutesUntilNextChange": 1
+      }
+    },
+    {
+      "name": "an expired item stops inside its hours",
+      "playlist": "launch",
+      "clock": {
+        "date": "2026-11-11",
+        "time": "01:00",
+        "day": 3,
+        "minutes": 60,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [
+          "promo",
+          "always"
+        ],
+        "state": "playing",
+        "items": [
+          "promo",
+          "always"
+        ],
+        "minutesUntilNextChange": 60
+      }
+    },
+    {
+      "name": "an item's validUntil is exclusive",
+      "playlist": "launch",
+      "clock": {
+        "date": "2026-11-12",
+        "time": "09:00",
+        "day": 4,
+        "minutes": 540,
+        "seconds": 0
+      },
+      "expect": {
+        "active": [
+          "always"
+        ],
+        "state": "playing",
+        "items": [
+          "always"
+        ],
+        "minutesUntilNextChange": 780
       }
     }
   ]

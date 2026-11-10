@@ -3,8 +3,9 @@
 // screens-front/src/lib/playlist-schedule.js and screens-front/public/play/assets/ (the banner
 // player). Each repo runs playlist-schedule.fixtures.json against its copy, so they cannot drift.
 //
-// All times are the salon's wall clock: "HH:mm", dates "YYYY-MM-DD", validity bounds
-// "YYYY-MM-DDTHH:mm". Nothing here converts time zones; the caller builds the clock.
+// All times are the salon's wall clock: "HH:mm", dates "YYYY-MM-DD", validity bounds (a
+// playlist's and an item window's) "YYYY-MM-DDTHH:mm". Nothing here converts time zones; the
+// caller builds the clock.
 (function (root, factory) {
     const api = factory();
     if (typeof module === 'object' && module.exports) module.exports = api;
@@ -67,49 +68,32 @@
         return h * 60 + m;
     }
 
-    function shiftDate(date, days) {
-        const [y, m, d] = date.split('-').map(Number);
-        return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-    }
-
     function dayAllowed(window, day) {
         const days = window.daysOfWeek;
         return !days || days.length === 0 || days.indexOf(day) !== -1;
     }
 
-    function dateAllowed(window, date) {
-        if (window.startDate && date < window.startDate) return false;
-        if (window.endDate && date > window.endDate) return false;
+    // `validFrom` inclusive, `validUntil` exclusive, against the clock itself.
+    function isWithinValidity(bounds, clock) {
+        const stamp = `${clock.date}T${clock.time}`;
+        if (bounds.validFrom && stamp < bounds.validFrom) return false;
+        if (bounds.validUntil && stamp >= bounds.validUntil) return false;
         return true;
     }
 
     function isWindowActive(window, clock) {
         const w = window || {};
-        if (!w.startTime || !w.endTime) {
-            return dayAllowed(w, clock.day) && dateAllowed(w, clock.date);
-        }
+        if (!isWithinValidity(w, clock)) return false;
+        if (!w.startTime || !w.endTime) return dayAllowed(w, clock.day);
 
         const start = toMinutes(w.startTime);
         const end = toMinutes(w.endTime);
         const now = clock.minutes;
-        if (start < end) {
-            return (
-                now >= start && now < end && dayAllowed(w, clock.day) && dateAllowed(w, clock.date)
-            );
-        }
+        if (start < end) return now >= start && now < end && dayAllowed(w, clock.day);
         // Crosses midnight: the hours after 00:00 belong to the day the window opened.
-        if (now >= start) return dayAllowed(w, clock.day) && dateAllowed(w, clock.date);
-        if (now < end) {
-            return dayAllowed(w, (clock.day + 6) % 7) && dateAllowed(w, shiftDate(clock.date, -1));
-        }
+        if (now >= start) return dayAllowed(w, clock.day);
+        if (now < end) return dayAllowed(w, (clock.day + 6) % 7);
         return false;
-    }
-
-    function isWithinValidity(playlist, clock) {
-        const stamp = `${clock.date}T${clock.time}`;
-        if (playlist.validFrom && stamp < playlist.validFrom) return false;
-        if (playlist.validUntil && stamp >= playlist.validUntil) return false;
-        return true;
     }
 
     function activeItems(items, clock) {
@@ -136,14 +120,16 @@
             if (delta <= 0) delta += DAY_MINUTES;
             candidates.push(delta);
         };
+        const bounds = [playlist.validFrom, playlist.validUntil];
         (playlist.items || []).forEach((item) => {
             const w = item.window || {};
             if (w.startTime && w.endTime) {
                 consider(toMinutes(w.startTime));
                 consider(toMinutes(w.endTime));
             }
+            bounds.push(w.validFrom, w.validUntil);
         });
-        [playlist.validFrom, playlist.validUntil].forEach((bound) => {
+        bounds.forEach((bound) => {
             if (bound && bound.slice(0, 10) === clock.date) {
                 consider(toMinutes(bound.slice(11, 16)));
             }

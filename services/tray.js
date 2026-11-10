@@ -70,12 +70,10 @@ function openControlWindow(getStatus) {
         frame: false,
         resizable: false,
         alwaysOnTop: true,
-        // Transparent so control.html can round the corners, as the provisioning window does.
-        transparent: true,
-        backgroundColor: '#00000000',
+        // Opaque: Chromium drops ClearType on transparent windows and the text turns blurry.
+        backgroundColor: '#141312',
         webPreferences: {
-            // Own renderer: with process-per-site it would share the players' file:// process,
-            // which paints the transparent corners white.
+            // Own renderer: with process-per-site it would share the players' file:// process.
             partition: 'control-window',
             nodeIntegration: false,
             contextIsolation: true,

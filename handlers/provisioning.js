@@ -48,9 +48,8 @@ function startProvisioningMode() {
             devTools: false,
         },
         title: 'Linking - ScreensWeb',
-        // Transparent so provision.html can round the corners; Windows 10 never rounds a frameless window.
-        transparent: true,
-        backgroundColor: '#00000000',
+        // Opaque: Chromium drops ClearType on transparent windows and the text turns blurry.
+        backgroundColor: '#141312',
         frame: false,
         resizable: false,
     });

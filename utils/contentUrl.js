@@ -3,9 +3,19 @@ const fs = require('fs');
 const { pathToFileURL } = require('url');
 const { CONTENT_DIR, ASSET_INDEX_PATH } = require('../config/constants');
 
+// A banner's public page: its Service Worker keeps it playing with no server and no network.
+function isBannerUrl(url) {
+    try {
+        const { protocol, pathname } = new URL(url);
+        return /^https?:$/.test(protocol) && pathname.startsWith('/play/');
+    } catch {
+        return false;
+    }
+}
+
 // True for URLs that cannot render without the live server.
 function isServerDependentUrl(url, serverUrl) {
-    if (!url) return false;
+    if (!url || isBannerUrl(url)) return false;
     // Views (playlists) require the live server to render.
     if (url.includes('/view/')) return true;
     if (serverUrl && url.startsWith(serverUrl)) return true;
@@ -38,4 +48,4 @@ function resolveLocalContentUrl(url) {
     return filePath ? pathToFileURL(filePath).href : '';
 }
 
-module.exports = { isServerDependentUrl, localAssetPath, resolveLocalContentUrl };
+module.exports = { isBannerUrl, isServerDependentUrl, localAssetPath, resolveLocalContentUrl };

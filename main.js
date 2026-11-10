@@ -60,7 +60,11 @@ function bootstrap() {
         const deviceService = require('./services/device');
         const assetsService = require('./services/assets');
         const { getWrapperUrl, isWrapperUrl } = require('./utils/wrapperUrl');
-        const { isServerDependentUrl, resolveLocalContentUrl } = require('./utils/contentUrl');
+        const {
+            isBannerUrl,
+            isServerDependentUrl,
+            resolveLocalContentUrl,
+        } = require('./utils/contentUrl');
         const { isPlaylistUrl, resolveForRenderer } = require('./utils/playlistManifest');
         const { isAutologinUrl, isSameSite } = require('./utils/autologinUrl');
 
@@ -447,11 +451,13 @@ function bootstrap() {
             if (context.networkState === 'ONLINE') return { url: contentUrl, contentName };
 
             const carousel = buildLocalCarouselUrl() || '';
+            // A banner plays from its own cache; one never loaded here fails and falls back.
             const playable =
-                context.networkState !== 'NO_INTERNET' &&
-                net.isOnline() &&
-                !!contentUrl &&
-                !isServerDependentUrl(contentUrl, constants.getServerUrl());
+                isBannerUrl(contentUrl) ||
+                (context.networkState !== 'NO_INTERNET' &&
+                    net.isOnline() &&
+                    !!contentUrl &&
+                    !isServerDependentUrl(contentUrl, constants.getServerUrl()));
 
             return playable
                 ? { url: contentUrl, contentName, fallbackUrl: carousel || null }

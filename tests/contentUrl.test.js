@@ -17,7 +17,12 @@ require.cache[constantsPath] = {
     exports: { CONTENT_DIR, ASSET_INDEX_PATH },
 };
 
-const { localAssetPath, resolveLocalContentUrl } = require('../utils/contentUrl');
+const {
+    isBannerUrl,
+    isServerDependentUrl,
+    localAssetPath,
+    resolveLocalContentUrl,
+} = require('../utils/contentUrl');
 
 const ASSET_ID = '65f0c0ffee0000000000abcd';
 
@@ -51,4 +56,18 @@ test('an index entry cannot escape the content directory', () => {
 
 test('remote URLs pass through untouched', () => {
     assert.equal(resolveLocalContentUrl('https://example.com/a'), 'https://example.com/a');
+});
+
+test('a banner page is not tied to the server, wherever it is hosted', () => {
+    const server = 'https://panel.example.com';
+    assert.ok(isBannerUrl(`${server}/play/promo-k7Qx2mVb9TzR4pLw8NcY3d`));
+    assert.ok(isBannerUrl('http://localhost:3001/play/promo-k7Qx2mVb9TzR4pLw8NcY3d'));
+    assert.ok(!isBannerUrl(`${server}/view/abc`));
+    assert.ok(!isBannerUrl('local:65f0c0ffee0000000000abcd'));
+    assert.ok(!isBannerUrl(''));
+
+    assert.ok(!isServerDependentUrl(`${server}/play/promo`, server));
+    assert.ok(!isServerDependentUrl('http://localhost:3001/play/promo', server));
+    assert.ok(isServerDependentUrl(`${server}/other`, server));
+    assert.ok(!isServerDependentUrl('https://example.org/page', server));
 });
