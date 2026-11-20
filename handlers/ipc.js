@@ -3,7 +3,7 @@ const { log } = require('../utils/logConfig');
 const { handleForceUpdate, getUpdateState } = require('../services/updater');
 
 // The control panel's buttons (js/control.js).
-const registerIpcHandlers = ({ reconnect, identify, askServer } = {}) => {
+const registerIpcHandlers = ({ reconnect, identify, catalogue } = {}) => {
     ipcMain.on('agent-action', (event, { action }) => {
         log.debug(`[IPC]: Action received: ${action}`);
 
@@ -34,14 +34,14 @@ const registerIpcHandlers = ({ reconnect, identify, askServer } = {}) => {
         if (typeof screenId === 'string') identify?.(screenId);
     });
 
-    // The salon's URLs and changing a screen go through the API, which applies the salon's rules.
-    ipcMain.handle('get-catalogue', () => askServer('agent:catalogue'));
+    // Connected, the API applies the salon's rules; offline, the saved catalogue does.
+    ipcMain.handle('get-catalogue', () => catalogue.getCatalogue());
     ipcMain.handle('show-content', (_event, { screenId, contentId } = {}) => {
         if (typeof screenId !== 'string' || typeof contentId !== 'string') {
             return { error: 'invalid' };
         }
         log.info(`[IPC]: Control window puts content ${contentId} on screen ${screenId}`);
-        return askServer('agent:show-content', { screenId, contentId });
+        return catalogue.showContent(screenId, contentId);
     });
 };
 

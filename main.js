@@ -44,6 +44,7 @@ function bootstrap() {
             startProvisioningMode: startProvisioningHandler,
         } = require('./handlers/provisioning');
         const { createTray, updateControlWindow } = require('./services/tray');
+        const { createControlCatalogue } = require('./services/controlCatalogue');
         const { getDeviceName, setDeviceName } = require('./services/identity');
         const { refreshAfterRejection } = require('./services/auth');
         const { handleForceUpdate, handleSetChannel } = require('./services/updater');
@@ -119,13 +120,7 @@ function bootstrap() {
         });
         const broadcastAppStatus = () => updateControlWindow(appStatus());
 
-        registerIpcHandlers({
-            reconnect: () => context.socket?.forceReconnect?.(),
-            identify: (screenId) =>
-                commandHandlers.handleIdentifyScreen({
-                    screenIndex: screenId,
-                    identifierText: screenId,
-                }),
+        context.controlCatalogue = createControlCatalogue({
             askServer: async (event, ...args) => {
                 if (!context.socket?.connected) return { error: 'offline' };
                 try {
@@ -134,6 +129,45 @@ function bootstrap() {
                     return { error: 'timeout' };
                 }
             },
+            isConnected: () => !!context.socket?.connected,
+            isPlayableOffline: (url) => context.isPlayableOffline(url),
+            screenUrls: () =>
+                Object.fromEntries(
+                    Object.entries(stateService.loadLastState()).map(([id, s]) => [
+                        id,
+                        s?.url || '',
+                    ])
+                ),
+            // Recorded like a show_url without credentials, then shown under the offline rules.
+            apply: async (screenId, content) => {
+                const retry = context.retryManager.get(screenId);
+                if (retry) {
+                    clearTimeout(retry.timerId);
+                    context.retryManager.delete(screenId);
+                }
+                await stateService.saveCurrentState(
+                    screenId,
+                    content.url,
+                    null,
+                    content.refreshInterval || 0,
+                    context.autoRefreshTimers,
+                    context.managedWindows,
+                    null,
+                    content.name
+                );
+                context.ensurePlayerScreen(screenId, context.resolveScreenTarget(screenId));
+                broadcastAppStatus();
+            },
+        });
+
+        registerIpcHandlers({
+            reconnect: () => context.socket?.forceReconnect?.(),
+            identify: (screenId) =>
+                commandHandlers.handleIdentifyScreen({
+                    screenIndex: screenId,
+                    identifierText: screenId,
+                }),
+            catalogue: context.controlCatalogue,
         });
 
         context.saveCurrentState = stateService.saveCurrentState;
@@ -254,6 +288,8 @@ function bootstrap() {
                 onDeviceInfo: (device) => {
                     log.info('[SOCKET]: Device info received:', device.name);
                     setDeviceName(device.name);
+                    // Sent once registration is stored: the catalogue then sees the merged screens.
+                    context.controlCatalogue.refresh();
                     if (device.salonName !== undefined) {
                         saveConfig({ salonName: device.salonName || '' });
                     }
@@ -451,17 +487,22 @@ function bootstrap() {
             if (context.networkState === 'ONLINE') return { url: contentUrl, contentName };
 
             const carousel = buildLocalCarouselUrl() || '';
-            // A banner plays from its own cache; one never loaded here fails and falls back.
-            const playable =
-                isBannerUrl(contentUrl) ||
-                (context.networkState !== 'NO_INTERNET' &&
-                    net.isOnline() &&
-                    !!contentUrl &&
-                    !isServerDependentUrl(contentUrl, constants.getServerUrl()));
-
-            return playable
+            return context.isPlayableOffline(contentUrl)
                 ? { url: contentUrl, contentName, fallbackUrl: carousel || null }
                 : { url: carousel };
+        };
+
+        // Whether `url` can play without the server under the current network state. A banner
+        // plays from its own cache; one never loaded here fails and falls back.
+        context.isPlayableOffline = (url) => {
+            if (!url) return false;
+            if (isBannerUrl(url)) return true;
+            if (url.startsWith('local:')) return !!resolveLocalContentUrl(url);
+            return (
+                context.networkState !== 'NO_INTERNET' &&
+                net.isOnline() &&
+                !isServerDependentUrl(url, constants.getServerUrl())
+            );
         };
 
         context.pushPlayerState = (screenId, win) => {

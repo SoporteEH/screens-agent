@@ -9,6 +9,8 @@ const { pingServer } = require('./network');
 const { startMemoryWatchdog } = require('./memoryWatchdog');
 const { net } = require('electron');
 
+const CONTROL_CATALOGUE_REFRESH_MS = 10 * 60 * 1000;
+
 const startNormalMode = async (context) => {
     const {
         setDeviceId,
@@ -75,6 +77,10 @@ const startNormalMode = async (context) => {
     setTimeout(checkForUpdates, updateDelay);
 
     setInterval(sendHeartbeat, CONSTANTS.HEARTBEAT_INTERVAL_MS);
+    // Keeps the copy the control window falls back to offline close to the panel's grants and pins.
+    setInterval(() => {
+        if (context.socket?.connected) context.controlCatalogue.refresh();
+    }, CONTROL_CATALOGUE_REFRESH_MS);
     startMemoryWatchdog(managedWindows);
 };
 

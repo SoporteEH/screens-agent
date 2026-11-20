@@ -34,12 +34,14 @@ const CHANGE_ERRORS = {
     accountSuspended: 'La cuenta del salón está desactivada.',
     contentNotAllowed: 'Ese contenido ya no está disponible para este salón.',
     throttled: 'Demasiados cambios seguidos. Espera un momento.',
+    needsServer: 'Ese contenido necesita conexión con el servidor.',
+    unavailableOffline: 'Ese contenido no se puede mostrar sin conexión.',
 };
 
 const view = {
     screens: [],
     catalogue: [],
-    online: false,
+    connection: null,
     pending: new Set(),
     errors: {},
     openPicker: null,
@@ -142,8 +144,8 @@ function screenRow(screen) {
     name.append(' ', el('span', 'mono screen-resolution', screen.resolution));
     text.append(name);
 
-    // Changing content needs the server: offline the screen just says what it shows.
-    if (view.online && view.catalogue.length > 0) {
+    // Offline the catalogue is the copy saved at the last connection, narrowed to what can play.
+    if (view.catalogue.length > 0) {
         text.append(contentPicker(screen));
     } else {
         const content = el('span', 'screen-content', contentLabel(screen));
@@ -165,7 +167,6 @@ function renderScreens() {
     const key = JSON.stringify([
         view.screens,
         view.catalogue,
-        view.online,
         [...view.pending],
         view.errors,
         view.openPicker,
@@ -197,7 +198,7 @@ async function changeContent(screenId, contentId) {
 
 async function loadCatalogue() {
     const result = await window.electron.getCatalogue().catch(() => null);
-    if (Array.isArray(result?.contents)) view.catalogue = result.contents;
+    view.catalogue = Array.isArray(result?.contents) ? result.contents : [];
     renderScreens();
 }
 
@@ -213,11 +214,14 @@ function applyAgentInfo(info) {
     $('status-text').textContent = state.text;
     $('btn-reconnect').hidden = !state.retry;
 
-    const cameOnline = info.connection === 'online' && !view.online;
-    view.online = info.connection === 'online';
-    if (!view.online) view.openPicker = null;
+    // What may be picked depends on the connection: reload it on every change.
+    const connectionChanged = info.connection !== view.connection;
+    view.connection = info.connection;
     view.screens = info.screens || [];
-    if (cameOnline) loadCatalogue();
+    if (connectionChanged) {
+        view.openPicker = null;
+        loadCatalogue();
+    }
     renderScreens();
 }
 
@@ -230,7 +234,7 @@ const refreshInfo = () =>
 refreshInfo();
 setInterval(refreshInfo, 3000);
 // Grants change from the panel; a minute is fresh enough for a picker.
-setInterval(() => view.online && loadCatalogue(), 60000);
+setInterval(loadCatalogue, 60000);
 
 $('btn-reconnect').addEventListener('click', () => {
     window.electron.sendAction('reconnect');
